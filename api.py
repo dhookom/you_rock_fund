@@ -3,7 +3,6 @@ import asyncio
 import json
 import logging
 import os
-import random
 import re
 import socket
 import subprocess
@@ -49,7 +48,9 @@ ET  = ZoneInfo("America/New_York")
 ANNUAL_TARGET = 100_000
 CONTAINERIZED = os.environ.get("YRVI_CONTAINERIZED", "0") == "1"
 HEARTBEAT_FILE = BASE_DIR / "scheduler_heartbeat.json"
-# clientId 100-999 used at runtime (random per call) — never conflicts with trader(1) wheel(2) risk(3)
+# Dashboard IBKR reads use one serialized client ID so polling does not create
+# a growing list of random clients in IB Gateway. Trader/wheel/risk use 1/2/3.
+IBKR_DASHBOARD_CLIENT_ID = 101
 
 # ── Watchdog ───────────────────────────────────────────────────
 # Tracks how long each subsystem has been in a failed state so we
@@ -114,6 +115,7 @@ def load_ytd() -> dict:
 # ── IBKR helpers ──────────────────────────────────────────────
 
 _ibkr_cache: dict = {"data": None, "ts": 0.0}
+_ibkr_lock = threading.Lock()
 IBKR_CACHE_TTL = 30.0
 
 _ACCT_TAGS = (
@@ -352,7 +354,7 @@ def restart_scheduler():
     if CONTAINERIZED:
         raise HTTPException(
             status_code=501,
-            detail="In Docker mode use: docker restart yrvi-scheduler",
+            detail="Containerized mode: restart with `docker compose --env-file .env.compose restart scheduler`.",
         )
     uid = os.getuid()
     service = "com.yourockfund.scheduler"
@@ -395,6 +397,18 @@ def _get_ibkr_data(settings: dict) -> dict:
     if _ibkr_cache["data"] and (now - _ibkr_cache["ts"]) < IBKR_CACHE_TTL:
         return _ibkr_cache["data"]
 
+    with _ibkr_lock:
+        now = time.time()
+        if _ibkr_cache["data"] and (now - _ibkr_cache["ts"]) < IBKR_CACHE_TTL:
+            return _ibkr_cache["data"]
+        return _refresh_ibkr_data(settings)
+
+
+def _refresh_ibkr_data(settings: dict) -> dict:
+    now = time.time()
+    if _ibkr_cache["data"] and (now - _ibkr_cache["ts"]) < IBKR_CACHE_TTL:
+        return _ibkr_cache["data"]
+
     result      = dict(_IBKR_EMPTY)
     port        = settings.get("ibkr_port", 4002)
     host        = os.environ.get("IBKR_HOST", "127.0.0.1")
@@ -406,7 +420,10 @@ def _get_ibkr_data(settings: dict) -> dict:
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
-    client_id = random.randint(100, 999)
+    try:
+        client_id = int(os.environ.get("IBKR_DASHBOARD_CLIENT_ID", IBKR_DASHBOARD_CLIENT_ID))
+    except ValueError:
+        client_id = IBKR_DASHBOARD_CLIENT_ID
     print(f"[api] IBKR connect → {host}:{port} clientId={client_id}")
     from ib_insync import IB
     ib = IB()
@@ -723,6 +740,14 @@ def set_trading_mode(body: TradingModeRequest):
         raise HTTPException(status_code=400, detail="confirmation must be exactly 'CONFIRM'")
     if body.mode not in ("paper", "live"):
         raise HTTPException(status_code=400, detail="mode must be 'paper' or 'live'")
+    if CONTAINERIZED:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Containerized mode: change TRADING_MODE and IBKR_PORT in .env.compose, "
+                "update Docker secrets as needed, then restart the stack."
+            ),
+        )
 
     if body.mode == "live":
         ready = _live_ready()
