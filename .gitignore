@@ -5,6 +5,10 @@ __pycache__/
 .env.compose
 .DS_Store
 nohup.out
+docker_watchdog.log
+docker_watchdog_stdout.log
+docker_watchdog_stderr.log
+docker_watchdog_state
 scheduler_stdout.log
 scheduler_stderr.log
 trade_log.txt

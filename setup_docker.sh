@@ -28,8 +28,8 @@ trap 'rm -f "$LOCKFILE"' EXIT
 #    3. Validates .env.compose and config (docker/preflight.sh)
 #    4. Builds and starts all 4 containers (ib_gateway, api, scheduler, web)
 #       then optionally wipes the plaintext secret files
-#    5. Installs com.yourockfund.docker launchd service so containers
-#       start automatically on every login / reboot
+#    5. Installs com.yourockfund.docker and com.yourockfund.ibkr-watchdog so
+#       containers auto-start and IB Gateway API readiness is monitored
 #    6. Installs YRVI Startup.app in /Applications
 # ─────────────────────────────────────────────────────────────
 
@@ -70,6 +70,9 @@ PROJ=$(cd "$(dirname "$0")" && pwd)
 DOCKER_PLIST_SRC="$PROJ/com.yourockfund.docker.plist"
 DOCKER_PLIST_DEST="$HOME/Library/LaunchAgents/com.yourockfund.docker.plist"
 DOCKER_LABEL="com.yourockfund.docker"
+WATCHDOG_PLIST_SRC="$PROJ/com.yourockfund.ibkr-watchdog.plist"
+WATCHDOG_PLIST_DEST="$HOME/Library/LaunchAgents/com.yourockfund.ibkr-watchdog.plist"
+WATCHDOG_LABEL="com.yourockfund.ibkr-watchdog"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
@@ -326,21 +329,30 @@ else
     exit 1
 fi
 
-# ── Step 5: Install Docker auto-start on login ────────────────
+# ── Step 5: Install Docker auto-start and IBKR watchdog ───────
 echo ""
-echo "${BOLD}Step 5 / 6   Install Docker auto-start on login${NC}"
+echo "${BOLD}Step 5 / 6   Install Docker auto-start and IBKR watchdog${NC}"
 echo "──────────────────────────────────────────────────────"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 
+launchctl bootout "gui/$(id -u)/$DOCKER_LABEL" 2>/dev/null || true
+launchctl unload "$DOCKER_PLIST_DEST" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/$WATCHDOG_LABEL" 2>/dev/null || true
+launchctl unload "$WATCHDOG_PLIST_DEST" 2>/dev/null || true
+
 sed -e "s|__PROJ__|$PROJ|g" -e "s|__HOME__|$HOME|g" "$DOCKER_PLIST_SRC" > "$DOCKER_PLIST_DEST"
+sed -e "s|__PROJ__|$PROJ|g" "$WATCHDOG_PLIST_SRC" > "$WATCHDOG_PLIST_DEST"
 
 if [ -t 0 ]; then
     launchctl bootstrap "gui/$(id -u)" "$DOCKER_PLIST_DEST" 2>/dev/null || \
         launchctl load "$DOCKER_PLIST_DEST" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$WATCHDOG_PLIST_DEST" 2>/dev/null || \
+        launchctl load "$WATCHDOG_PLIST_DEST" 2>/dev/null || true
     ok "com.yourockfund.docker installed — containers will auto-start on every login"
+    ok "com.yourockfund.ibkr-watchdog installed — IBKR API readiness will be monitored"
 else
-    ok "com.yourockfund.docker already active (launched by launchd — skipping re-register)"
+    ok "com.yourockfund.docker / ibkr-watchdog already active (launched by launchd — skipping re-register)"
 fi
 info "  Reboot log: cat ~/Library/Logs/yrvi-autostart.log"
 

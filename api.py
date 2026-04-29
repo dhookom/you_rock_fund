@@ -572,12 +572,15 @@ def get_status():
     settings = load_settings()
     ibkr = _get_ibkr_data(settings)
     port = settings.get("ibkr_port", 4002)
+    gateway_tcp_open = _gateway_running(port)
     state = load_state()
     wheel_count = sum(
         1 for h in state.get("wheel_holdings", []) if h.get("shares", 0) > 0
     )
     return {
-        "gateway_running":    _gateway_running(port),
+        "gateway_running":    gateway_tcp_open,
+        "gateway_tcp_open":   gateway_tcp_open,
+        "gateway_api_ready":  ibkr["connected"],
         "scheduler_pid":      _scheduler_pid(),
         "ibkr_connected":     ibkr["connected"],
         "ibkr_error":         ibkr.get("error"),

@@ -755,6 +755,52 @@ docker compose --env-file .env.compose logs -f ib_gateway
 
 Set `VNC_SERVER_PASSWORD` in `.env.compose`, recreate `ib_gateway`, and connect to `localhost:5900` if IBKR needs 2FA, a warning confirmation, or credential correction.
 
+### IB Gateway API Recovery
+
+`docker compose ps` only proves that the `ib_gateway` container process is running. A raw TCP check only proves the API port is open. Neither one proves the IBKR login session is healthy enough for `ib_insync` to complete its API handshake.
+
+Use `/api/status` to distinguish the layers:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/status | python3 -m json.tool
+```
+
+Important fields:
+
+- `gateway_running`: legacy raw Gateway TCP check.
+- `gateway_tcp_open`: raw Gateway TCP check. This can be `true` even when IBKR login/API handshake is unhealthy.
+- `gateway_api_ready`: true only when the dashboard API completed an IBKR API connection.
+- `ibkr_connected`: same practical readiness signal as `gateway_api_ready`.
+- `ibkr_error`: the most recent API connection error, such as `TimeoutError`.
+
+The Docker setup installs a host-side launchd watchdog, `com.yourockfund.ibkr-watchdog`, that checks `/api/status` every 120 seconds. After repeated unhealthy checks, it restarts only `ib_gateway`:
+
+```bash
+docker compose --env-file .env.compose restart ib_gateway
+```
+
+Watchdog logs are local-only and ignored by git:
+
+```bash
+tail -f docker_watchdog.log
+tail -f docker_watchdog_stdout.log
+tail -f docker_watchdog_stderr.log
+```
+
+Check the watchdog service:
+
+```bash
+launchctl print gui/$(id -u)/com.yourockfund.ibkr-watchdog
+```
+
+Run the watchdog manually without waiting for launchd:
+
+```bash
+bash docker/ibkr-watchdog.sh
+```
+
+VNC is still useful for 2FA, warning dialogs, or manual login recovery, but it should not be the normal reconnect mechanism. If `gateway_tcp_open` is true and `gateway_api_ready` is false for several checks, the watchdog should recover by restarting `ib_gateway`.
+
 If IB Gateway shows a growing number of API client tabs, check the API logs:
 
 ```bash
