@@ -159,6 +159,10 @@ bash ~/you_rock_fund/startup.sh
 # Status
 docker compose --env-file .env.compose ps
 
+# API health and full trading readiness
+curl -sS http://127.0.0.1:8000/api/health
+curl -sS http://127.0.0.1:8000/api/status
+
 # Logs
 docker compose --env-file .env.compose logs -f scheduler
 docker compose --env-file .env.compose logs -f ib_gateway
@@ -445,8 +449,9 @@ cat state.json               # Full system state
 - Secrets management via macOS Keychain (ephemeral docker/secrets/ files)
 - Auto-start via Docker login plist
 - nginx serving React dashboard
-- Socket-based health checks
-- Scheduler heartbeat monitoring
+- Docker healthchecks for API and scheduler
+- Host watchdog for IB Gateway API recovery
+- Discord alerts for Gateway, scheduler, and critical job failures
 
 ### v0.1.0-beta (April 2026)
 - Initial automated trading system

@@ -23,6 +23,7 @@ COLOR_YELLOW = 0xF1C40F   # yield 0.5–1%
 COLOR_RED    = 0xE74C3C   # yield < 0.5%
 COLOR_BLUE   = 0x3498DB   # preview
 COLOR_PURPLE = 0x9B59B6   # assignment alert
+COLOR_GRAY   = 0x95A5A6   # infrastructure resolved/info
 COLOR_FIRE   = 0xFF0000   # emergency share sale
 
 
@@ -52,6 +53,27 @@ def _post_plan(payload: dict) -> bool:
     except Exception as e:
         print(f"[discord] weekly plan post failed: {e}")
         return False
+
+
+def post_infra_alert(title: str, message: str, severity: str = "warning") -> bool:
+    """Post an optional infrastructure alert to the main YRVI Discord webhook."""
+    if not WEBHOOK_URL:
+        return False
+
+    color = {
+        "error": COLOR_RED,
+        "warning": COLOR_YELLOW,
+        "resolved": COLOR_GREEN,
+        "info": COLOR_GRAY,
+    }.get(severity, COLOR_YELLOW)
+
+    return _post({"embeds": [{
+        "title":       title,
+        "description": message,
+        "color":       color,
+        "footer":      {"text": "You Rock Volatility Income Fund"},
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
+    }]})
 
 
 def _load_ytd() -> dict:

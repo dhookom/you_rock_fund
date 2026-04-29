@@ -51,6 +51,9 @@ HEARTBEAT_FILE = BASE_DIR / "scheduler_heartbeat.json"
 # Dashboard IBKR reads use one serialized client ID so polling does not create
 # a growing list of random clients in IB Gateway. Trader/wheel/risk use 1/2/3.
 IBKR_DASHBOARD_CLIENT_ID = 101
+INFRA_ALERT_CHECK_SECS = int(os.environ.get("YRVI_INFRA_ALERT_CHECK_SECS", "300"))
+INFRA_ALERT_AFTER_SECS = int(os.environ.get("YRVI_INFRA_ALERT_AFTER_SECS", "600"))
+INFRA_ALERT_REPEAT_SECS = int(os.environ.get("YRVI_INFRA_ALERT_REPEAT_SECS", "3600"))
 
 # ── Watchdog ───────────────────────────────────────────────────
 # Tracks how long each subsystem has been in a failed state so we
@@ -117,6 +120,8 @@ def load_ytd() -> dict:
 _ibkr_cache: dict = {"data": None, "ts": 0.0}
 _ibkr_lock = threading.Lock()
 IBKR_CACHE_TTL = 30.0
+_infra_alert_states: dict = {}
+_infra_watchdog_started = False
 
 _ACCT_TAGS = (
     "NetLiquidation,SettledCash,UnrealizedPnL,"
@@ -518,14 +523,7 @@ def _refresh_ibkr_data(settings: dict) -> dict:
 
 def _scheduler_pid() -> Optional[int]:
     if CONTAINERIZED:
-        try:
-            hb = json.loads(HEARTBEAT_FILE.read_text())
-            ts = datetime.fromisoformat(hb["timestamp"])
-            if datetime.now(PST) - ts < timedelta(minutes=3):
-                return 1
-        except Exception:
-            pass
-        return None
+        return 1 if _scheduler_status()["running"] else None
     try:
         r = subprocess.run(["pgrep", "-f", "python.*scheduler.py"],
                            capture_output=True, text=True)
@@ -548,6 +546,154 @@ def _gateway_running(port: int) -> bool:
     except Exception:
         return False
 
+def _scheduler_status(max_age_seconds: int = 180) -> dict:
+    try:
+        hb = json.loads(HEARTBEAT_FILE.read_text())
+        ts = datetime.fromisoformat(hb["timestamp"])
+        age = (datetime.now(PST) - ts).total_seconds()
+        return {
+            "running": age < max_age_seconds,
+            "heartbeat_age_seconds": round(age, 1),
+            "heartbeat_timestamp": ts.isoformat(),
+        }
+    except Exception as exc:
+        return {
+            "running": False,
+            "heartbeat_age_seconds": None,
+            "heartbeat_timestamp": None,
+            "error": str(exc),
+        }
+
+def _gateway_port(settings: dict) -> int:
+    try:
+        return int(settings.get("ibkr_port", 4002))
+    except (TypeError, ValueError):
+        return 4002
+
+def _cached_ibkr_data() -> dict:
+    data = _ibkr_cache.get("data") or dict(_IBKR_EMPTY)
+    age = time.time() - _ibkr_cache.get("ts", 0.0) if _ibkr_cache.get("ts") else None
+    return {**data, "cache_age_seconds": round(age, 1) if age is not None else None}
+
+def _status_snapshot(refresh_ibkr: bool = True) -> dict:
+    settings = load_settings()
+    ibkr = _get_ibkr_data(settings) if refresh_ibkr else _cached_ibkr_data()
+    port = _gateway_port(settings)
+    gateway_tcp_open = _gateway_running(port)
+    scheduler = _scheduler_status()
+    state = load_state()
+    wheel_count = sum(
+        1 for h in state.get("wheel_holdings", []) if h.get("shares", 0) > 0
+    )
+    return {
+        "gateway_running":    gateway_tcp_open,
+        "gateway_tcp_open":   gateway_tcp_open,
+        "gateway_api_ready":  ibkr["connected"],
+        "scheduler_pid":      1 if scheduler["running"] else None,
+        "scheduler_running":  scheduler["running"],
+        "scheduler_heartbeat_age_seconds": scheduler["heartbeat_age_seconds"],
+        "ibkr_connected":     ibkr["connected"],
+        "ibkr_error":         ibkr.get("error"),
+        "account_value":      ibkr["account_value"],
+        "buying_power":       ibkr["buying_power"],
+        "unrealized_pnl":     ibkr.get("unrealized_pnl"),
+        "net_liquidation":    ibkr.get("account_value"),
+        "account":            ibkr["account"],
+        "next_execution":     _next_execution(),
+        "trading_mode":       settings.get("trading_mode", "paper"),
+        "execution_time":     settings.get("execution_time", "10:00"),
+        "wheel_count":        wheel_count,
+    }
+
+def _post_infra_alert(title: str, message: str, severity: str = "warning") -> None:
+    try:
+        from discord_poster import post_infra_alert
+        post_infra_alert(title, message, severity)
+    except Exception as exc:
+        logger.warning("Infrastructure alert failed: %s", exc)
+
+def _track_infra_condition(category: str, unhealthy: bool, title: str, message: str) -> None:
+    now = time.time()
+    state = _infra_alert_states.setdefault(
+        category,
+        {"first_seen": None, "last_alert": 0.0, "active": False},
+    )
+
+    if unhealthy:
+        if state["first_seen"] is None:
+            state["first_seen"] = now
+        sustained_for = now - state["first_seen"]
+        should_alert = (
+            sustained_for >= INFRA_ALERT_AFTER_SECS
+            and (not state["active"] or now - state["last_alert"] >= INFRA_ALERT_REPEAT_SECS)
+        )
+        if should_alert:
+            _post_infra_alert(title, message, "warning")
+            state["last_alert"] = now
+            state["active"] = True
+        return
+
+    if state["active"]:
+        _post_infra_alert(
+            "YRVI infrastructure recovered",
+            f"{title.replace('YRVI infrastructure warning: ', '')} has recovered.",
+            "resolved",
+        )
+    state["first_seen"] = None
+    state["last_alert"] = 0.0
+    state["active"] = False
+
+def _api_infra_watchdog_loop() -> None:
+    vnc_port = os.environ.get("IB_GATEWAY_VNC_PORT", "5900")
+    while True:
+        try:
+            status = _status_snapshot(refresh_ibkr=True)
+            gateway_tcp_open = status["gateway_tcp_open"]
+            gateway_api_ready = status["gateway_api_ready"]
+            scheduler_running = status["scheduler_running"]
+            ibkr_error = status.get("ibkr_error")
+
+            _track_infra_condition(
+                "gateway_tcp_down",
+                not gateway_tcp_open,
+                "YRVI infrastructure warning: Gateway TCP down",
+                (
+                    "IB Gateway is not listening on its API port. "
+                    f"Check VNC on localhost:{vnc_port} for login, 2FA, or startup state."
+                ),
+            )
+            _track_infra_condition(
+                "gateway_api_down",
+                gateway_tcp_open and (not gateway_api_ready or bool(ibkr_error)),
+                "YRVI infrastructure warning: Gateway API not ready",
+                (
+                    "IB Gateway port is open, but the IBKR API handshake is failing. "
+                    f"Check VNC on localhost:{vnc_port} for a dialog or login issue."
+                    + (f" Last error: {ibkr_error}" if ibkr_error else "")
+                ),
+            )
+            _track_infra_condition(
+                "scheduler_stale",
+                not scheduler_running,
+                "YRVI infrastructure warning: Scheduler heartbeat stale",
+                (
+                    "The scheduler heartbeat is stale or missing. "
+                    "Run: docker compose --env-file .env.compose restart scheduler"
+                ),
+            )
+        except Exception as exc:
+            logger.warning("API infrastructure watchdog check failed: %s", exc)
+
+        time.sleep(INFRA_ALERT_CHECK_SECS)
+
+@app.on_event("startup")
+def _start_api_infra_watchdog() -> None:
+    global _infra_watchdog_started
+    if _infra_watchdog_started:
+        return
+    _infra_watchdog_started = True
+    threading.Thread(target=_api_infra_watchdog_loop, daemon=True).start()
+
 def _parse_exec_time(settings: dict) -> tuple:
     try:
         h, m = map(int, settings.get("execution_time", "10:00").split(":"))
@@ -569,30 +715,22 @@ def _next_execution() -> str:
 
 @app.get("/api/status")
 def get_status():
+    return _status_snapshot(refresh_ibkr=True)
+
+@app.get("/api/health")
+def get_health():
     settings = load_settings()
-    ibkr = _get_ibkr_data(settings)
-    port = settings.get("ibkr_port", 4002)
-    gateway_tcp_open = _gateway_running(port)
-    state = load_state()
-    wheel_count = sum(
-        1 for h in state.get("wheel_holdings", []) if h.get("shares", 0) > 0
-    )
+    port = _gateway_port(settings)
+    scheduler = _scheduler_status()
+    cached_ibkr = _cached_ibkr_data()
     return {
-        "gateway_running":    gateway_tcp_open,
-        "gateway_tcp_open":   gateway_tcp_open,
-        "gateway_api_ready":  ibkr["connected"],
-        "scheduler_pid":      _scheduler_pid(),
-        "ibkr_connected":     ibkr["connected"],
-        "ibkr_error":         ibkr.get("error"),
-        "account_value":      ibkr["account_value"],
-        "buying_power":       ibkr["buying_power"],
-        "unrealized_pnl":     ibkr.get("unrealized_pnl"),
-        "net_liquidation":    ibkr.get("account_value"),
-        "account":            ibkr["account"],
-        "next_execution":     _next_execution(),
-        "trading_mode":       settings.get("trading_mode", "paper"),
-        "execution_time":     settings.get("execution_time", "10:00"),
-        "wheel_count":        wheel_count,
+        "ok": True,
+        "api_running": True,
+        "gateway_tcp_open": _gateway_running(port),
+        "gateway_api_ready_cached": cached_ibkr["connected"],
+        "ibkr_cache_age_seconds": cached_ibkr.get("cache_age_seconds"),
+        "scheduler_running": scheduler["running"],
+        "scheduler_heartbeat_age_seconds": scheduler["heartbeat_age_seconds"],
     }
 
 @app.get("/api/positions")

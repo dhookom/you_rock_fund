@@ -559,6 +559,7 @@ Expected result: the container branch is ahead because of Docker/docs/container 
 Validate the running backend and dashboard proxy:
 
 ```bash
+curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/status
 curl -sS http://127.0.0.1:3000/api/status
 curl -sS http://127.0.0.1:3000/api/settings
@@ -772,12 +773,41 @@ Important fields:
 - `gateway_api_ready`: true only when the dashboard API completed an IBKR API connection.
 - `ibkr_connected`: same practical readiness signal as `gateway_api_ready`.
 - `ibkr_error`: the most recent API connection error, such as `TimeoutError`.
+- `scheduler_running`: true when the scheduler heartbeat is fresh.
+- `scheduler_heartbeat_age_seconds`: age of the last scheduler heartbeat.
 
-The Docker setup installs a host-side launchd watchdog, `com.yourockfund.ibkr-watchdog`, that checks `/api/status` every 120 seconds. After repeated unhealthy checks, it restarts only `ib_gateway`:
+The API also exposes a lightweight health endpoint for Docker healthchecks:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/health | python3 -m json.tool
+```
+
+`/api/health` confirms the API process is responsive and reports cheap/cached Gateway and scheduler signals. It does not force a fresh IBKR connection on every Docker health probe.
+
+`docker compose ps` now shows health for `api` and `scheduler`. The scheduler healthcheck reads `scheduler_heartbeat.json` and fails if the heartbeat is older than 180 seconds:
+
+```bash
+docker compose --env-file .env.compose ps
+docker inspect --format='{{json .State.Health}}' yrvi-api-1 | python3 -m json.tool
+docker inspect --format='{{json .State.Health}}' yrvi-scheduler-1 | python3 -m json.tool
+```
+
+The Docker setup installs a host-side launchd watchdog, `com.yourockfund.ibkr-watchdog`, that checks `/api/status` every 120 seconds. It classifies failures before acting:
+
+- API unreachable or invalid JSON: sends/logs an API status warning and does not blindly restart Gateway.
+- `gateway_tcp_open=false`: Gateway is not listening or not logged in.
+- `gateway_tcp_open=true` and `gateway_api_ready=false`: Gateway port is open, but IBKR API authentication is failing; VNC may show a dialog or login issue.
+- stale scheduler heartbeat: alerts with the scheduler restart command.
+
+After repeated Gateway-specific readiness failures, it restarts only `ib_gateway`:
 
 ```bash
 docker compose --env-file .env.compose restart ib_gateway
 ```
+
+The API container runs a separate alert-only monitor every five minutes. It sends Discord alerts after about 10 minutes of sustained Gateway or scheduler trouble, repeats hourly while still unhealthy, and sends a resolved message after recovery. This API monitor never restarts containers; the host watchdog remains the recovery path.
+
+Discord infrastructure alerts use `DISCORD_WEBHOOK_URL`, loaded from `docker/secrets/discord_webhook_url` in containers. If that secret is blank or missing, the stack still runs and alerts silently no-op.
 
 Watchdog logs are local-only and ignored by git:
 
@@ -799,7 +829,9 @@ Run the watchdog manually without waiting for launchd:
 bash docker/ibkr-watchdog.sh
 ```
 
-VNC is still useful for 2FA, warning dialogs, or manual login recovery, but it should not be the normal reconnect mechanism. If `gateway_tcp_open` is true and `gateway_api_ready` is false for several checks, the watchdog should recover by restarting `ib_gateway`.
+VNC is still useful for 2FA, warning dialogs, or manual login recovery, but it should not be the normal reconnect mechanism. If `gateway_tcp_open` is true and `gateway_api_ready` is false for several checks, the watchdog should recover by restarting `ib_gateway` and alerting through Discord if configured.
+
+The Monday trading jobs also run a pre-check before attempting orders. If the Gateway API port is unreachable, `scheduler.py` logs the failure, sends a Discord infrastructure alert, and skips the wheel check or CSP execution instead of trying to place trades against a disconnected Gateway.
 
 If IB Gateway shows a growing number of API client tabs, check the API logs:
 

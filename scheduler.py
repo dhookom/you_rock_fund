@@ -91,6 +91,50 @@ def _load_state() -> dict:
         return {}
 
 
+def _gateway_reachable(timeout: float = 3.0) -> bool:
+    host = os.environ.get("IBKR_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("IBKR_PORT", "4002"))
+    except ValueError:
+        port = 4002
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _post_infra_alert(title: str, message: str, severity: str = "warning") -> None:
+    try:
+        from discord_poster import post_infra_alert
+        post_infra_alert(title, message, severity)
+    except Exception as exc:
+        log.warning("Infrastructure alert failed: %s", exc)
+
+
+def _require_gateway(job_name: str) -> bool:
+    if _gateway_reachable():
+        return True
+
+    message = (
+        f"{job_name} skipped because IB Gateway is unreachable at "
+        f"{os.environ.get('IBKR_HOST', '127.0.0.1')}:{os.environ.get('IBKR_PORT', '4002')}. "
+        "Check Gateway login/VNC before allowing trades to run."
+    )
+    log.error("❌ %s", message)
+    _post_infra_alert(f"YRVI {job_name} skipped", message, "error")
+    return False
+
+
+def _alert_job_exception(job_name: str, exc: Exception) -> None:
+    _post_infra_alert(
+        f"YRVI {job_name} failed",
+        f"{job_name} raised {type(exc).__name__}: {exc}",
+        "error",
+    )
+
+
 # ── Saturday 6PM — screener preview ───────────────────────────
 
 def run_screener_preview():
@@ -152,7 +196,7 @@ def run_assignment_detection():
             post_assignment_alert(new_ones)
     except Exception as e:
         log.error(f"❌ Assignment detection error: {e}", exc_info=True)
-        _discord_alert(f"🚨 **YRVI** Friday assignment detection failed: `{type(e).__name__}: {e}`")
+        _alert_job_exception("Friday assignment detection", e)
     finally:
         loop.close()
 
@@ -205,13 +249,15 @@ def run_wheel_check_job():
         log.error(f"❌ {msg}")
         _discord_alert(f"🚨 **YRVI** {msg}. Check gateway login / VNC port 5900.")
     try:
+        if not _require_gateway("Monday wheel check"):
+            return
         from wheel_manager import run_wheel_check
         freed, skip, reserved = run_wheel_check()
         log.info(f"✅ Wheel check done — freed ${freed:,.0f}  "
                  f"reserved ${reserved:,.0f}  skip {skip or 'none'}")
     except Exception as e:
         log.error(f"❌ Wheel check error: {e}", exc_info=True)
-        _discord_alert(f"🚨 **YRVI** Monday wheel check failed: `{type(e).__name__}: {e}`")
+        _alert_job_exception("Monday wheel check", e)
     finally:
         loop.close()
 
@@ -229,6 +275,8 @@ def run_pipeline():
         log.error(f"❌ {msg}")
         _discord_alert(f"🚨 **YRVI** {msg}. Check gateway login / VNC port 5900.")
     try:
+        if not _require_gateway("Monday CSP execution"):
+            return
         from screener import get_top_targets
         from position_sizer import size_all
         from trader import execute_positions
@@ -301,7 +349,7 @@ def run_pipeline():
 
     except Exception as e:
         log.error(f"❌ Pipeline error: {e}", exc_info=True)
-        _discord_alert(f"🚨 **YRVI** Monday CSP pipeline failed: `{type(e).__name__}: {e}`")
+        _alert_job_exception("Monday CSP execution", e)
     finally:
         loop.close()
 

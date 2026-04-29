@@ -1,20 +1,41 @@
-"""Docker healthcheck for the scheduler container.
+#!/usr/bin/env python3
+"""Docker healthcheck for the scheduler container heartbeat.
 
-Exits 0 if the heartbeat file was written within the last 3 minutes, 1 otherwise.
-Called by the docker-compose healthcheck; never imported by application code.
+Exits 0 if scheduler_heartbeat.json was written within the last N seconds.
+Default path is /data (persists via yrvi_data volume after entrypoint symlinks).
 """
 import json
+import os
 import sys
 from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
-HEARTBEAT = "/data/scheduler_heartbeat.json"
-MAX_AGE_SECONDS = 180
+PST = ZoneInfo("America/Los_Angeles")
+HEARTBEAT_FILE = Path(
+    os.environ.get("YRVI_SCHEDULER_HEARTBEAT", "/data/scheduler_heartbeat.json")
+)
+MAX_AGE_SECS = int(os.environ.get("YRVI_SCHEDULER_HEALTH_MAX_AGE_SECS", "180"))
 
-try:
-    with open(HEARTBEAT) as f:
-        d = json.load(f)
-    ts = datetime.fromisoformat(d["timestamp"])
-    age = (datetime.now().astimezone() - ts).total_seconds()
-    sys.exit(0 if age < MAX_AGE_SECONDS else 1)
-except Exception:
-    sys.exit(1)
+
+def main() -> int:
+    try:
+        data = json.loads(HEARTBEAT_FILE.read_text())
+        ts = datetime.fromisoformat(data["timestamp"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=PST)
+        age = (datetime.now(PST) - ts).total_seconds()
+    except Exception as exc:
+        print(f"scheduler heartbeat unreadable: {exc}")
+        return 1
+
+    if age > MAX_AGE_SECS:
+        print(f"scheduler heartbeat stale: {age:.0f}s > {MAX_AGE_SECS}s")
+        return 1
+
+    print(f"scheduler heartbeat ok: {age:.0f}s old")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
