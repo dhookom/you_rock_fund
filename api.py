@@ -402,11 +402,22 @@ def _get_ibkr_data(settings: dict) -> dict:
     if _ibkr_cache["data"] and (now - _ibkr_cache["ts"]) < IBKR_CACHE_TTL:
         return _ibkr_cache["data"]
 
-    with _ibkr_lock:
+    if not _ibkr_lock.acquire(blocking=False):
+        cached = _ibkr_cache.get("data")
+        if cached:
+            return cached
+        return {
+            **_IBKR_EMPTY,
+            "error": "IBKR refresh already in progress; no cached data available",
+        }
+
+    try:
         now = time.time()
         if _ibkr_cache["data"] and (now - _ibkr_cache["ts"]) < IBKR_CACHE_TTL:
             return _ibkr_cache["data"]
         return _refresh_ibkr_data(settings)
+    finally:
+        _ibkr_lock.release()
 
 
 def _refresh_ibkr_data(settings: dict) -> dict:
@@ -647,7 +658,7 @@ def _api_infra_watchdog_loop() -> None:
     vnc_port = os.environ.get("IB_GATEWAY_VNC_PORT", "5900")
     while True:
         try:
-            status = _status_snapshot(refresh_ibkr=True)
+            status = _status_snapshot(refresh_ibkr=False)
             gateway_tcp_open = status["gateway_tcp_open"]
             gateway_api_ready = status["gateway_api_ready"]
             scheduler_running = status["scheduler_running"]

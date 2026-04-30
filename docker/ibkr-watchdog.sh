@@ -9,7 +9,7 @@ PROJ=$(cd "$(dirname "$0")/.." && pwd)
 ENV_FILE="$PROJ/.env.compose"
 LOG_FILE="${YRVI_WATCHDOG_LOG:-$PROJ/docker_watchdog.log}"
 STATE_FILE="${YRVI_WATCHDOG_STATE:-$PROJ/docker_watchdog_state}"
-API_URL="${YRVI_WATCHDOG_API_URL:-http://127.0.0.1:8000/api/status}"
+API_URL="${YRVI_WATCHDOG_API_URL:-http://127.0.0.1:8000/api/health}"
 FAIL_THRESHOLD="${YRVI_WATCHDOG_FAIL_THRESHOLD:-3}"
 RESTART_COOLDOWN_SECS="${YRVI_WATCHDOG_RESTART_COOLDOWN_SECS:-600}"
 ALERT_REPEAT_SECS="${YRVI_WATCHDOG_ALERT_REPEAT_SECS:-3600}"
@@ -137,6 +137,8 @@ else:
     gateway_tcp_open = gateway_tcp_open is True
 
 gateway_api_ready = data.get("gateway_api_ready")
+if gateway_api_ready is None:
+    gateway_api_ready = data.get("gateway_api_ready_cached")
 if gateway_api_ready is None:
     gateway_api_ready = data.get("ibkr_connected") is True
 else:
