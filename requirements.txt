@@ -1,6 +1,7 @@
 ib_insync
 pandas
 requests
+anthropic
 apscheduler
 python-dotenv
 numpy
