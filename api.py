@@ -992,28 +992,34 @@ def secrets_update(req: SecretsUpdateRequest):
             logger.error("[secrets] failed to write %s: %s", name, e)
             errors[name] = str(e)
 
+    restarted: list[str] = []
+
     if updated:
-        env_file = str(BASE_DIR / ".env.compose")
-        compose_cmd = ["docker", "compose", "--env-file", env_file]
-
-        def _restart_stack() -> None:
-            time.sleep(2)
+        def _docker_restart(names: list[str]) -> None:
             try:
-                subprocess.run(
-                    compose_cmd + ["down"],
-                    cwd=str(BASE_DIR), capture_output=True, check=False,
-                )
-                subprocess.run(
-                    compose_cmd + ["up", "-d"],
-                    cwd=str(BASE_DIR), capture_output=True, check=False,
-                )
-                logger.info("[secrets] compose stack restarted")
+                import docker as docker_sdk
+                client = docker_sdk.from_env()
+                for cname in names:
+                    try:
+                        client.containers.get(cname).restart()
+                        logger.info("[secrets] restarted %s", cname)
+                    except Exception as e:
+                        logger.error("[secrets] failed to restart %s: %s", cname, e)
+                        errors[cname] = str(e)
             except Exception as e:
-                logger.error("[secrets] compose restart failed: %s", e)
+                logger.error("[secrets] docker client error: %s", e)
 
-        threading.Thread(target=_restart_stack, daemon=True).start()
+        _docker_restart(["ib_gateway", "yrvi-scheduler-1"])
+        restarted.extend(["ib_gateway", "yrvi-scheduler-1"])
 
-    return {"updated": updated, "restarted": "full stack" if updated else "", "errors": errors}
+        def _delayed_api_restart() -> None:
+            time.sleep(2)
+            _docker_restart(["yrvi-api-1"])
+
+        threading.Thread(target=_delayed_api_restart, daemon=True).start()
+        restarted.append("yrvi-api-1")
+
+    return {"updated": updated, "restarted": restarted, "errors": errors}
 
 @app.post("/api/discord-test")
 def test_discord():
