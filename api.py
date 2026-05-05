@@ -383,40 +383,28 @@ def _run_watchdog() -> None:
         time.sleep(WATCHDOG_INTERVAL)
 
 
-def _get_gateway_started_at() -> str:
-    """Return the container StartedAt timestamp, used to detect restarts."""
-    try:
-        r = subprocess.run(
-            ["docker", "inspect", "--format", "{{.State.StartedAt}}", "ib_gateway"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return r.stdout.strip()
-    except Exception:
-        return ""
-
-
 def _run_gateway_log_monitor() -> None:
-    """Tail docker logs for ib_gateway and alert on login failures or lockouts."""
+    """Tail ib_gateway logs via Docker SDK and alert on login failures or lockouts."""
     global _gateway_login_status
+    import docker as docker_sdk
     time.sleep(60)  # let the gateway container finish starting
 
     while True:
         _gateway_login_status = "unknown"
-        started_at = _get_gateway_started_at()
-        proc = None
         terminal = False
+        container = None
+        started_at = ""
 
         try:
-            proc = subprocess.Popen(
-                ["docker", "logs", "--tail", "100", "-f", "ib_gateway"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
+            client = docker_sdk.from_env()
+            container = client.containers.get("ib_gateway")
+            container.reload()
+            started_at = container.attrs["State"]["StartedAt"]
 
             login_attempts = 0
 
-            for line in proc.stdout:
+            for chunk in container.logs(stream=True, follow=True, tail=100):
+                line = chunk.decode("utf-8").strip()
                 ll = line.lower()
 
                 if "locked out" in ll:
@@ -452,13 +440,6 @@ def _run_gateway_log_monitor() -> None:
 
         except Exception as e:
             print(f"[api/gateway-log-monitor] error: {e}")
-        finally:
-            if proc:
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=5)
-                except Exception:
-                    pass
 
         if terminal:
             # Hold the terminal status until the container is actually restarted.
@@ -466,10 +447,14 @@ def _run_gateway_log_monitor() -> None:
                   "pausing until container restarts")
             while True:
                 time.sleep(60)
-                new_started_at = _get_gateway_started_at()
-                if new_started_at and new_started_at != started_at:
-                    print("[api/gateway-log-monitor] container restarted, resuming")
-                    break
+                try:
+                    container.reload()
+                    new_started_at = container.attrs["State"]["StartedAt"]
+                    if new_started_at != started_at:
+                        print("[api/gateway-log-monitor] container restarted, resuming")
+                        break
+                except Exception:
+                    pass
         else:
             time.sleep(15)  # brief pause before reconnecting after a non-terminal exit
 
