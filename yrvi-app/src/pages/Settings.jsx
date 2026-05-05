@@ -253,9 +253,8 @@ export default function SettingsPage() {
       setSecretValues(prev => ({ ...prev, [key]: '' }))
       await refreshSecretStatus()
       const restarted = res.data.restarted ?? []
-      const text = restarted.length > 0
-        ? `Saved · restarted: ${restarted.join(', ')}`
-        : 'Saved'
+      const restartedStr = Array.isArray(restarted) ? restarted.join(', ') : restarted
+      const text = restartedStr ? `Saved · restarted: ${restartedStr}` : 'Saved'
       setSecretMsg(prev => ({ ...prev, [key]: { type: 'success', text } }))
     } catch (err) {
       setSecretMsg(prev => ({ ...prev, [key]: { type: 'error', text: err.response?.data?.detail ?? err.message } }))
@@ -279,7 +278,8 @@ export default function SettingsPage() {
       }
       await refreshSecretStatus()
       const restarted = res.data.restarted ?? []
-      const text = `Saved ${res.data.updated.length} secret(s)${restarted.length ? ` · restarted: ${restarted.join(', ')}` : ''}`
+      const restartedStr = Array.isArray(restarted) ? restarted.join(', ') : restarted
+      const text = `Saved ${res.data.updated.length} secret(s)${restartedStr ? ` · restarted: ${restartedStr}` : ''}`
       showMsg('success', text)
     } catch (err) {
       showMsg('error', err.response?.data?.detail ?? err.message)
