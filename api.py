@@ -959,13 +959,6 @@ _KNOWN_SECRETS = [
     "anthropic_api_key",
 ]
 
-# Keychain service names (macOS only — must match yrvi-restart.sh / setup_docker.sh)
-_KEYCHAIN_SERVICES: dict[str, str] = {
-    "tws_password_paper": "YRVI_TWS_PAPER",
-    "tws_password_live":  "YRVI_TWS_LIVE",
-    "render_secret":      "YRVI_RENDER",
-}
-
 # Compose project is "yrvi"; ib_gateway has an explicit container_name.
 _SECRET_CONTAINERS: dict[str, list[str]] = {
     "tws_password_paper":          ["ib_gateway"],
@@ -991,7 +984,6 @@ class SecretsUpdateRequest(BaseModel):
 
 @app.post("/api/secrets/update")
 def secrets_update(req: SecretsUpdateRequest):
-    import sys
     updated: list[str] = []
     errors: dict[str, str] = {}
     containers_to_restart: set[str] = set()
@@ -1008,15 +1000,6 @@ def secrets_update(req: SecretsUpdateRequest):
             path.chmod(0o600)
             logger.info("[secrets] wrote %s", name)
             updated.append(name)
-
-            if sys.platform == "darwin" and name in _KEYCHAIN_SERVICES:
-                service = _KEYCHAIN_SERVICES[name]
-                subprocess.run(
-                    ["security", "add-generic-password", "-U",
-                     "-s", service, "-a", "yrvi", "-w", value],
-                    check=False, capture_output=True,
-                )
-                logger.info("[secrets] synced %s to Keychain service %s", name, service)
 
             for container in _SECRET_CONTAINERS.get(name, []):
                 containers_to_restart.add(container)
