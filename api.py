@@ -65,6 +65,8 @@ _watchdog_state: dict = {
     "ibkr_restart_attempted":      False,
     "scheduler_restart_attempted": False,
 }
+_gateway_login_status: str = "unknown"
+
 WATCHDOG_INTERVAL  = 300   # seconds between checks
 ALERT_THRESHOLD    = 600   # seconds a failure must persist before we alert
 ALERT_REPEAT       = 3600  # seconds between repeated alerts for the same issue
@@ -381,11 +383,106 @@ def _run_watchdog() -> None:
         time.sleep(WATCHDOG_INTERVAL)
 
 
+def _get_gateway_started_at() -> str:
+    """Return the container StartedAt timestamp, used to detect restarts."""
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.StartedAt}}", "ib_gateway"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _run_gateway_log_monitor() -> None:
+    """Tail docker logs for ib_gateway and alert on login failures or lockouts."""
+    global _gateway_login_status
+    time.sleep(60)  # let the gateway container finish starting
+
+    while True:
+        _gateway_login_status = "unknown"
+        started_at = _get_gateway_started_at()
+        proc = None
+        terminal = False
+
+        try:
+            proc = subprocess.Popen(
+                ["docker", "logs", "--tail", "100", "-f", "ib_gateway"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+
+            login_attempts = 0
+
+            for line in proc.stdout:
+                ll = line.lower()
+
+                if "locked out" in ll:
+                    _gateway_login_status = "locked"
+                    _send_discord_alert(
+                        "🔒 IBKR account locked out — too many failed login attempts. "
+                        "Stop the gateway and reset your password."
+                    )
+                    terminal = True
+                    break
+
+                if "login failed" in ll or "authentication failed" in ll:
+                    _gateway_login_status = "failed"
+                    _send_discord_alert(
+                        "❌ IB Gateway login failed — check your IBKR credentials."
+                    )
+                    terminal = True
+                    break
+
+                if "login attempt" in ll:
+                    login_attempts += 1
+                    if login_attempts > 3:
+                        _gateway_login_status = "failed"
+                        _send_discord_alert(
+                            "⚠️ IB Gateway repeated login failures — possible wrong password."
+                        )
+                        terminal = True
+                        break
+
+                if "login has completed" in ll or "logged in" in ll:
+                    login_attempts = 0
+                    _gateway_login_status = "ok"
+
+        except Exception as e:
+            print(f"[api/gateway-log-monitor] error: {e}")
+        finally:
+            if proc:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+
+        if terminal:
+            # Hold the terminal status until the container is actually restarted.
+            print(f"[api/gateway-log-monitor] terminal state ({_gateway_login_status}), "
+                  "pausing until container restarts")
+            while True:
+                time.sleep(60)
+                new_started_at = _get_gateway_started_at()
+                if new_started_at and new_started_at != started_at:
+                    print("[api/gateway-log-monitor] container restarted, resuming")
+                    break
+        else:
+            time.sleep(15)  # brief pause before reconnecting after a non-terminal exit
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     t = threading.Thread(target=_run_watchdog, daemon=True, name="yrvi-watchdog")
     t.start()
     print("[api] Health watchdog started")
+    if CONTAINERIZED:
+        t2 = threading.Thread(target=_run_gateway_log_monitor, daemon=True, name="yrvi-gateway-log-monitor")
+        t2.start()
+        print("[api] Gateway log monitor started")
 
 
 @app.post("/api/restart-scheduler")
@@ -610,10 +707,11 @@ def get_status():
         "unrealized_pnl":     ibkr.get("unrealized_pnl"),
         "net_liquidation":    ibkr.get("account_value"),
         "account":            ibkr["account"],
-        "next_execution":     _next_execution(),
-        "trading_mode":       settings.get("trading_mode", "paper"),
-        "execution_time":     settings.get("execution_time", "10:00"),
-        "wheel_count":        wheel_count,
+        "next_execution":       _next_execution(),
+        "trading_mode":         settings.get("trading_mode", "paper"),
+        "execution_time":       settings.get("execution_time", "10:00"),
+        "wheel_count":          wheel_count,
+        "gateway_login_status": _gateway_login_status,
     }
 
 @app.get("/api/positions")
