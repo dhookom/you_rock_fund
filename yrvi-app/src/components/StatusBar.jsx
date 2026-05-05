@@ -171,7 +171,14 @@ export default function StatusBar() {
       <div className="h-12 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center px-6 gap-6 shrink-0">
         {/* Status pills */}
         <div className="flex items-center gap-4">
-          <Indicator ok={status?.gateway_running} label="Gateway" />
+          <Indicator
+            ok={status?.gateway_running && status?.gateway_login_status !== 'failed' && status?.gateway_login_status !== 'locked'}
+            label={
+              status?.gateway_login_status === 'locked' ? 'Gateway · locked out' :
+              status?.gateway_login_status === 'failed' ? 'Gateway · login failed' :
+              'Gateway'
+            }
+          />
 
           {/* Scheduler with PID-change flash */}
           <div className="flex items-center gap-1.5">
