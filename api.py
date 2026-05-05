@@ -957,3 +957,29 @@ def test_discord():
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Spike test endpoints (temporary) ─────────────────────────────────────────
+
+@app.post("/api/secrets/test-write")
+def secrets_test_write():
+    path = Path("/run/secrets/spike_test.txt")
+    path.write_text("spike_test")
+    path.chmod(0o600)
+    return {"wrote": str(path), "success": True}
+
+
+class ContainerRestartRequest(BaseModel):
+    container: str
+
+
+@app.post("/api/secrets/test-restart")
+def secrets_test_restart(req: ContainerRestartRequest):
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        container = client.containers.get(req.container)
+        container.restart()
+        return {"restarted": req.container, "success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
