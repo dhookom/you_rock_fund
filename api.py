@@ -959,17 +959,6 @@ _KNOWN_SECRETS = [
     "anthropic_api_key",
 ]
 
-# Compose project is "yrvi"; ib_gateway has an explicit container_name.
-_SECRET_CONTAINERS: dict[str, list[str]] = {
-    "tws_password_paper":          ["ib_gateway"],
-    "tws_password_live":           ["ib_gateway"],
-    "render_secret":               ["yrvi-api-1", "yrvi-scheduler-1"],
-    "discord_webhook_url":         ["yrvi-scheduler-1"],
-    "discord_webhook_weekly_plan": ["yrvi-scheduler-1"],
-    "anthropic_api_key":           ["yrvi-scheduler-1"],
-}
-
-
 @app.get("/api/secrets/status")
 def secrets_status():
     return {
@@ -986,7 +975,6 @@ class SecretsUpdateRequest(BaseModel):
 def secrets_update(req: SecretsUpdateRequest):
     updated: list[str] = []
     errors: dict[str, str] = {}
-    containers_to_restart: set[str] = set()
 
     for name, value in req.secrets.items():
         if not value:
@@ -1000,45 +988,32 @@ def secrets_update(req: SecretsUpdateRequest):
             path.chmod(0o600)
             logger.info("[secrets] wrote %s", name)
             updated.append(name)
-
-            for container in _SECRET_CONTAINERS.get(name, []):
-                containers_to_restart.add(container)
         except Exception as e:
             logger.error("[secrets] failed to write %s: %s", name, e)
             errors[name] = str(e)
 
-    restarted: list[str] = []
-    api_container = "yrvi-api-1"
+    if updated:
+        env_file = str(BASE_DIR / ".env.compose")
+        compose_cmd = ["docker", "compose", "--env-file", env_file]
 
-    def _restart_containers(names: list[str]) -> None:
-        try:
-            import docker as docker_sdk
-            client = docker_sdk.from_env()
-            for cname in names:
-                try:
-                    client.containers.get(cname).restart()
-                    logger.info("[secrets] restarted container %s", cname)
-                except Exception as e:
-                    logger.error("[secrets] failed to restart %s: %s", cname, e)
-                    errors[cname] = str(e)
-        except Exception as e:
-            logger.error("[secrets] docker client error: %s", e)
-
-    restart_now = [c for c in containers_to_restart if c != api_container]
-    restart_self = api_container in containers_to_restart
-
-    if restart_now:
-        _restart_containers(restart_now)
-        restarted.extend(restart_now)
-
-    if restart_self:
-        def _delayed_self_restart():
+        def _restart_stack() -> None:
             time.sleep(2)
-            _restart_containers([api_container])
-        threading.Thread(target=_delayed_self_restart, daemon=True).start()
-        restarted.append(api_container)
+            try:
+                subprocess.run(
+                    compose_cmd + ["down"],
+                    cwd=str(BASE_DIR), capture_output=True, check=False,
+                )
+                subprocess.run(
+                    compose_cmd + ["up", "-d"],
+                    cwd=str(BASE_DIR), capture_output=True, check=False,
+                )
+                logger.info("[secrets] compose stack restarted")
+            except Exception as e:
+                logger.error("[secrets] compose restart failed: %s", e)
 
-    return {"updated": updated, "restarted": restarted, "errors": errors}
+        threading.Thread(target=_restart_stack, daemon=True).start()
+
+    return {"updated": updated, "restarted": "full stack" if updated else "", "errors": errors}
 
 @app.post("/api/discord-test")
 def test_discord():
