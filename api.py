@@ -945,6 +945,118 @@ def health_check():
     """Liveness probe used by Docker healthcheck — always 200 while the process is alive."""
     return {"status": "ok"}
 
+
+# ── Secrets management ────────────────────────────────────────────────────────
+
+_SECRETS_DIR = Path("/run/secrets")
+
+_KNOWN_SECRETS = [
+    "tws_password_paper",
+    "tws_password_live",
+    "render_secret",
+    "discord_webhook_url",
+    "discord_webhook_weekly_plan",
+    "anthropic_api_key",
+]
+
+# Keychain service names (macOS only — must match yrvi-restart.sh / setup_docker.sh)
+_KEYCHAIN_SERVICES: dict[str, str] = {
+    "tws_password_paper": "YRVI_TWS_PAPER",
+    "tws_password_live":  "YRVI_TWS_LIVE",
+    "render_secret":      "YRVI_RENDER",
+}
+
+# Compose project is "yrvi"; ib_gateway has an explicit container_name.
+_SECRET_CONTAINERS: dict[str, list[str]] = {
+    "tws_password_paper":          ["ib_gateway"],
+    "tws_password_live":           ["ib_gateway"],
+    "render_secret":               ["yrvi-api-1", "yrvi-scheduler-1"],
+    "discord_webhook_url":         ["yrvi-scheduler-1"],
+    "discord_webhook_weekly_plan": ["yrvi-scheduler-1"],
+    "anthropic_api_key":           ["yrvi-scheduler-1"],
+}
+
+
+@app.get("/api/secrets/status")
+def secrets_status():
+    return {
+        name: (_SECRETS_DIR / name).exists() and (_SECRETS_DIR / name).stat().st_size > 0
+        for name in _KNOWN_SECRETS
+    }
+
+
+class SecretsUpdateRequest(BaseModel):
+    secrets: dict[str, str]
+
+
+@app.post("/api/secrets/update")
+def secrets_update(req: SecretsUpdateRequest):
+    import sys
+    updated: list[str] = []
+    errors: dict[str, str] = {}
+    containers_to_restart: set[str] = set()
+
+    for name, value in req.secrets.items():
+        if not value:
+            continue
+        if name not in _KNOWN_SECRETS:
+            errors[name] = "Unknown secret"
+            continue
+        try:
+            path = _SECRETS_DIR / name
+            path.write_text(value)
+            path.chmod(0o600)
+            logger.info("[secrets] wrote %s", name)
+            updated.append(name)
+
+            if sys.platform == "darwin" and name in _KEYCHAIN_SERVICES:
+                service = _KEYCHAIN_SERVICES[name]
+                subprocess.run(
+                    ["security", "add-generic-password", "-U",
+                     "-s", service, "-a", "yrvi", "-w", value],
+                    check=False, capture_output=True,
+                )
+                logger.info("[secrets] synced %s to Keychain service %s", name, service)
+
+            for container in _SECRET_CONTAINERS.get(name, []):
+                containers_to_restart.add(container)
+        except Exception as e:
+            logger.error("[secrets] failed to write %s: %s", name, e)
+            errors[name] = str(e)
+
+    restarted: list[str] = []
+    api_container = "yrvi-api-1"
+
+    def _restart_containers(names: list[str]) -> None:
+        try:
+            import docker as docker_sdk
+            client = docker_sdk.from_env()
+            for cname in names:
+                try:
+                    client.containers.get(cname).restart()
+                    logger.info("[secrets] restarted container %s", cname)
+                except Exception as e:
+                    logger.error("[secrets] failed to restart %s: %s", cname, e)
+                    errors[cname] = str(e)
+        except Exception as e:
+            logger.error("[secrets] docker client error: %s", e)
+
+    restart_now = [c for c in containers_to_restart if c != api_container]
+    restart_self = api_container in containers_to_restart
+
+    if restart_now:
+        _restart_containers(restart_now)
+        restarted.extend(restart_now)
+
+    if restart_self:
+        def _delayed_self_restart():
+            time.sleep(2)
+            _restart_containers([api_container])
+        threading.Thread(target=_delayed_self_restart, daemon=True).start()
+        restarted.append(api_container)
+
+    return {"updated": updated, "restarted": restarted, "errors": errors}
+
 @app.post("/api/discord-test")
 def test_discord():
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")

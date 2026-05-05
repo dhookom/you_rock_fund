@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
-import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw } from 'lucide-react'
+import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Eye, EyeOff } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
 
 const PRESET_TIMES = [
@@ -99,6 +99,15 @@ const THEME_OPTIONS = [
   { value: 'dark',   label: 'Dark',   icon: Moon },
 ]
 
+const SECRETS_META = [
+  { key: 'tws_password_paper',        label: 'TWS Paper Password',       description: 'IBKR paper trading account password',    placeholder: 'Your IBKR paper account password' },
+  { key: 'tws_password_live',         label: 'TWS Live Password',        description: 'IBKR live trading account password',     placeholder: 'Your IBKR live account password' },
+  { key: 'render_secret',             label: 'Render API Secret',        description: 'Used to sync trade data with Render DB', placeholder: 'API secret token' },
+  { key: 'discord_webhook_url',       label: 'Discord Webhook (Trades)', description: 'Webhook URL for trade alerts',           placeholder: 'https://discord.com/api/webhooks/...' },
+  { key: 'discord_webhook_weekly_plan', label: 'Discord Webhook (Weekly)', description: 'Webhook URL for weekly plan posts',   placeholder: 'https://discord.com/api/webhooks/...' },
+  { key: 'anthropic_api_key',         label: 'Anthropic API Key',        description: 'Used for AI-powered trade analysis',     placeholder: 'sk-ant-...' },
+]
+
 export default function SettingsPage() {
   const [settings, setSettings]           = useState(null)
   const [original, setOriginal]           = useState(null)
@@ -114,6 +123,12 @@ export default function SettingsPage() {
   const [accountMasked, setAccountMasked] = useState('')
   const [restarting, setRestarting]       = useState(false)
   const [restartResult, setRestartResult] = useState(null)
+  const [secretStatus, setSecretStatus]   = useState({})
+  const [secretValues, setSecretValues]   = useState({})
+  const [secretVisible, setSecretVisible] = useState({})
+  const [secretSaving, setSecretSaving]   = useState({})
+  const [secretMsg, setSecretMsg]         = useState({})
+  const [saveAllSaving, setSaveAllSaving] = useState(false)
 
   const { theme, setTheme } = useThemeContext()
 
@@ -122,6 +137,7 @@ export default function SettingsPage() {
       setSettings(r.data)
       setOriginal(r.data)
     })
+    axios.get('/api/secrets/status').then(r => setSecretStatus(r.data))
   }, [])
 
   const set = useCallback((key, val) => {
@@ -221,6 +237,54 @@ export default function SettingsPage() {
     } catch (err) {
       set('auto_restart_gateway', !val)                               // revert
       showMsg('error', err.response?.data?.detail ?? err.message)
+    }
+  }
+
+  const refreshSecretStatus = () =>
+    axios.get('/api/secrets/status').then(r => setSecretStatus(r.data))
+
+  const saveSecret = async (key) => {
+    const value = secretValues[key] || ''
+    if (!value) return
+    setSecretSaving(prev => ({ ...prev, [key]: true }))
+    setSecretMsg(prev => ({ ...prev, [key]: null }))
+    try {
+      const res = await axios.post('/api/secrets/update', { secrets: { [key]: value } })
+      setSecretValues(prev => ({ ...prev, [key]: '' }))
+      await refreshSecretStatus()
+      const restarted = res.data.restarted ?? []
+      const text = restarted.length > 0
+        ? `Saved · restarted: ${restarted.join(', ')}`
+        : 'Saved'
+      setSecretMsg(prev => ({ ...prev, [key]: { type: 'success', text } }))
+    } catch (err) {
+      setSecretMsg(prev => ({ ...prev, [key]: { type: 'error', text: err.response?.data?.detail ?? err.message } }))
+    } finally {
+      setSecretSaving(prev => ({ ...prev, [key]: false }))
+      setTimeout(() => setSecretMsg(prev => ({ ...prev, [key]: null })), 5000)
+    }
+  }
+
+  const saveAllSecrets = async () => {
+    const toSave = {}
+    for (const { key } of SECRETS_META) {
+      if (secretValues[key]) toSave[key] = secretValues[key]
+    }
+    if (Object.keys(toSave).length === 0) return
+    setSaveAllSaving(true)
+    try {
+      const res = await axios.post('/api/secrets/update', { secrets: toSave })
+      for (const key of Object.keys(toSave)) {
+        setSecretValues(prev => ({ ...prev, [key]: '' }))
+      }
+      await refreshSecretStatus()
+      const restarted = res.data.restarted ?? []
+      const text = `Saved ${res.data.updated.length} secret(s)${restarted.length ? ` · restarted: ${restarted.join(', ')}` : ''}`
+      showMsg('success', text)
+    } catch (err) {
+      showMsg('error', err.response?.data?.detail ?? err.message)
+    } finally {
+      setSaveAllSaving(false)
     }
   }
 
@@ -437,6 +501,77 @@ export default function SettingsPage() {
           <Send size={13} />
           {testing ? 'Sending...' : 'Send test notification'}
         </button>
+      </Section>
+
+      {/* Secrets */}
+      <Section title="Secrets" emoji="🔑">
+        <div className="space-y-5">
+          {SECRETS_META.map(({ key, label, description, placeholder }, i) => (
+            <div key={key}>
+              {i > 0 && <div className="border-t border-gray-200 dark:border-gray-800 mb-5" />}
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <div className="text-gray-700 dark:text-gray-300 text-sm font-medium">{label}</div>
+                  <div className="text-gray-500 dark:text-gray-600 text-xs mt-0.5">{description}</div>
+                </div>
+                <span className={`shrink-0 ml-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
+                  secretStatus[key]
+                    ? 'bg-green-900/20 text-green-400 border-green-800'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 border-gray-200 dark:border-gray-700'
+                }`}>
+                  {secretStatus[key] ? <CheckCircle size={10} /> : null}
+                  {secretStatus[key] ? 'Configured' : 'Not set'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={secretVisible[key] ? 'text' : 'password'}
+                    value={secretValues[key] || ''}
+                    onChange={e => setSecretValues(prev => ({ ...prev, [key]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && saveSecret(key)}
+                    placeholder={placeholder}
+                    className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSecretVisible(prev => ({ ...prev, [key]: !prev[key] }))}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  >
+                    {secretVisible[key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <button
+                  onClick={() => saveSecret(key)}
+                  disabled={!secretValues[key] || secretSaving[key]}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {secretSaving[key] ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              {secretMsg[key] && (
+                <div className={`mt-1.5 flex items-center gap-1.5 text-xs ${
+                  secretMsg[key].type === 'success' ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {secretMsg[key].type === 'success'
+                    ? <CheckCircle size={11} />
+                    : <AlertTriangle size={11} />}
+                  {secretMsg[key].text}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-1">
+          <button
+            onClick={saveAllSecrets}
+            disabled={saveAllSaving || !SECRETS_META.some(({ key }) => secretValues[key])}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Save size={14} />
+            {saveAllSaving ? 'Saving…' : 'Save All'}
+          </button>
+        </div>
       </Section>
 
       {/* Trading Mode Modal */}
