@@ -1,5 +1,5 @@
 services:
   api:
     volumes:
-      - ./docker/secrets:/run/secrets:rw
+      - ./docker/secrets:/app/secrets:rw
       - /var/run/docker.sock:/var/run/docker.sock

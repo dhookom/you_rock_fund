@@ -948,7 +948,7 @@ def health_check():
 
 # ── Secrets management ────────────────────────────────────────────────────────
 
-_SECRETS_DIR = Path("/run/secrets")
+_SECRETS_DIR = Path("/app/secrets")
 
 _KNOWN_SECRETS = [
     "tws_password_paper",
