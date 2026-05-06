@@ -295,6 +295,8 @@ Secrets are pulled from Keychain automatically — no passwords needed.
 
 ## Troubleshooting
 
+> ❓ For common setup issues and fixes, see [FAQ.md](./FAQ.md).
+
 | Problem | Fix |
 |---------|-----|
 | "Existing session detected" in gateway log | Another machine is connected to the same IBKR paper account. Shut it down first. |
