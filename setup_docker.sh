@@ -23,7 +23,7 @@ trap 'rm -f "$LOCKFILE"' EXIT
 #    bash setup_docker.sh --live    # live trading  (IBKR live account)
 #
 #  What it does:
-#    1. Checks Docker is running (install Rancher Desktop first)
+#    1. Checks Docker is running (install Docker Desktop first)
 #    2. Configures secrets via the secrets container (browser or CLI)
 #    3. Validates .env.compose and config (docker/preflight.sh)
 #    4. Builds and starts all 5 containers (ib_gateway, api, scheduler, web, secrets)
@@ -91,24 +91,22 @@ echo "${BOLD}Step 1 / 6   Check Docker${NC}"
 echo "──────────────────────────────────────────────────────"
 
 if ! command -v docker &>/dev/null; then
-    fail "docker not found — install Rancher Desktop from https://rancherdesktop.io and retry"
+    fail "docker not found — install Docker Desktop from https://www.docker.com/products/docker-desktop and retry"
 fi
 
 if ! docker info &>/dev/null 2>&1; then
-    fail "Docker daemon not running — start Rancher Desktop and retry"
+    fail "Docker daemon not running — start Docker Desktop and retry"
 fi
 
 DOCKER_VER=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
 ok "Docker running  (server $DOCKER_VER)"
 
 echo ""
-warn "Make sure Rancher Desktop is set to auto-start:"
-echo "       Preferences → Application → Behavior tab:"
-echo "         ✅  Automatically start at login  (under Startup)"
-echo "         ✅  Start in the background        (under Background)"
-echo "         ☐   Quit when closing window      (leave UNCHECKED)"
-echo "       This ensures Docker is running before YRVI containers"
-echo "       restart after a reboot."
+warn "Make sure Docker Desktop is set to auto-start:"
+echo "       Docker Desktop → Settings → General:"
+echo "         ✅  Start Docker Desktop when you sign in"
+echo "       This ensures Docker is running before YRVI"
+echo "       containers restart after a reboot."
 echo ""
 
 # ── Step 2: Configure secrets ────────────────────────────────
@@ -182,12 +180,12 @@ else
 
     BROWSER_OK=false
     ELAPSED=0
-    while [ "$ELAPSED" -lt 120 ]; do
+    while [ "$ELAPSED" -lt 300 ]; do
         if [ "$(secrets_complete)" = "true" ]; then
             BROWSER_OK=true
             break
         fi
-        printf "\r  Waiting for secrets... (%ds / 120s)" "$ELAPSED"
+        printf "\r  Waiting for secrets... (%ds / 300s)" "$ELAPSED"
         sleep 5
         ELAPSED=$((ELAPSED + 5))
     done

@@ -58,17 +58,16 @@ else
     fi
 fi
 
-for secret_name in tws_password_paper render_secret; do
-    secret_file="$secrets_dir/$secret_name"
-    if [ ! -f "$secret_file" ]; then
-        fail "$secret_file is missing."
-    else
-        value="$(tr -d '\r\n' < "$secret_file")"
-        if is_placeholder "$value"; then
-            fail "$secret_file is blank or still a placeholder."
-        fi
+status_body="$(curl -sf http://localhost:8001/secrets/status 2>/dev/null || true)"
+
+if [ -z "$status_body" ]; then
+    fail "Secrets container is not running — run setup_docker.sh first"
+else
+    complete="$(printf '%s' "$status_body" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")"
+    if [ "$complete" != "true" ]; then
+        fail "Required secrets not configured — open http://localhost:8001 to enter missing secrets"
     fi
-done
+fi
 
 if [ "$failed" -ne 0 ]; then
     exit 1
