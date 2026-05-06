@@ -347,6 +347,8 @@ When you confirm, YRVI automatically:
 
 ## Common Issues & Solutions
 
+> ❓ For YRVI-specific setup issues (Docker, secrets, Screen Sharing), see [FAQ.md](./FAQ.md).
+
 | Problem | Solution |
 |---------|----------|
 | Options trading denied | Call IBKR (1-877-442-2757), explain CSP/CC strategy — they often approve manually |
