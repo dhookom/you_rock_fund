@@ -64,14 +64,18 @@ When you first power on the Mac Mini, follow these decisions at each setup scree
 
 ## Phase 2 — macOS System Settings
 
-### Enable Screen Sharing (Remote Access)
-1. System Settings → General → Sharing → Screen Sharing → **On**
-2. Set **Allow access for: Only these users → Administrators**
-3. Leave "Anyone may request permission" and "VNC viewers may control with password" **Off**
+### Remote Access — Use SSH, Not Screen Sharing
 
-You can now connect from another Mac on the same network via Finder sidebar or **Go → Connect to Server → `vnc://[MAC_MINI_IP]`**
+> ⚠️ **Do NOT enable macOS Screen Sharing.** IB Gateway uses port 5900 for VNC (required for 2FA). macOS Screen Sharing also binds port 5900 and will cause `docker compose up` to fail with an "address already in use" error.
 
-> 💡 Both machines must be on the same network. Ethernet on both is most reliable.
+Use SSH for remote terminal access instead:
+```bash
+ssh [your-user]@[MAC_MINI_IP]
+```
+
+Make sure SSH is enabled: **System Settings → General → Sharing → Remote Login → On**
+
+> 💡 Connect over your local network (Ethernet on both machines is most reliable) or via your router's remote access / VPN if accessing from outside your home.
 
 ### Enable Automatic Login
 1. System Settings → Users & Groups (search "automatic" in Settings search bar)
@@ -166,6 +170,25 @@ cd you_rock_fund
 bash scripts/yrvi-register-url-scheme.sh
 ```
 This registers `yrvi://upgrade` so the dashboard Upgrade button can open Terminal directly for one-click upgrades. Run it once after cloning; re-run it if you move the repo.
+
+### Configure `.env.compose`
+```bash
+cp .env.compose.example .env.compose
+nano .env.compose
+```
+
+Fill in these values for your account (everything else can stay as the default for paper trading):
+
+| Variable | What to enter |
+|---|---|
+| `ACCOUNT_PAPER` | Your IBKR paper account ID (e.g. `DU1234567`) |
+| `TWS_USERID_PAPER` | Your IBKR paper username |
+| `ACCOUNT_LIVE` | Your IBKR live account ID |
+| `TWS_USERID_LIVE` | Your IBKR live username |
+| `IBKR_USERNAME_LIVE` | Same as `TWS_USERID_LIVE` |
+| `VNC_SERVER_PASSWORD` | A VNC password for IB Gateway 2FA access |
+
+Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
 
 ### Run Paper Trading Setup
 ```bash
