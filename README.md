@@ -70,6 +70,8 @@ New to IBKR? See the **[IBKR Account Setup Guide](IBKR_SETUP_GUIDE.md)** for a c
 
 > 📖 **You Rock Club Mac Mini Setup Guide:** See [MAC_MINI_SETUP.md](./MAC_MINI_SETUP.md) for a complete step-by-step walkthrough from unboxing to first trade.
 
+> ❓ **Troubleshooting:** See [FAQ.md](./FAQ.md) for common setup issues and fixes.
+
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended for Mac) or [Rancher Desktop](https://rancherdesktop.io) (alternative)
