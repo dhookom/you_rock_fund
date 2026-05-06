@@ -37,3 +37,5 @@ touch docker/secrets/anthropic_api_key
 - `setup_docker.sh` creates `tws_password_paper`, `tws_password_live`, and `render_secret` automatically from macOS Keychain on first run.
 - Discord and Anthropic secrets must be created manually.
 - Secret files are never committed to git.
+
+> ❓ Having trouble? See [FAQ.md](../../FAQ.md) for common setup issues and fixes.
