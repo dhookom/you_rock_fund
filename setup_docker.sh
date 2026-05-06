@@ -24,10 +24,9 @@ trap 'rm -f "$LOCKFILE"' EXIT
 #
 #  What it does:
 #    1. Checks Docker is running (install Rancher Desktop first)
-#    2. Injects secrets from macOS Keychain → docker/secrets/ files
+#    2. Configures secrets via the secrets container (browser or CLI)
 #    3. Validates .env.compose and config (docker/preflight.sh)
-#    4. Builds and starts all 4 containers (ib_gateway, api, scheduler, web)
-#       then optionally wipes the plaintext secret files
+#    4. Builds and starts all 5 containers (ib_gateway, api, scheduler, web, secrets)
 #    5. Installs com.yourockfund.docker launchd service so containers
 #       start automatically on every login / reboot
 #    6. Installs YRVI Startup.app in /Applications
@@ -39,21 +38,18 @@ set -euo pipefail
 
 usage() {
     echo ""
-    echo "  Usage: setup_docker.sh --paper|--live [--keep-secrets]"
+    echo "  Usage: setup_docker.sh --paper|--live"
     echo ""
     echo "    --paper          use paper trading secrets (IBKR paper account)"
     echo "    --live           use live trading secrets  (IBKR live account)"
-    echo "    --keep-secrets   skip deletion of plaintext secret files after launch"
     echo ""
 }
 
 TRADING_MODE=""
-KEEP_SECRETS=false
 for arg in "$@"; do
     case "$arg" in
         --paper)         TRADING_MODE="paper" ;;
         --live)          TRADING_MODE="live"  ;;
-        --keep-secrets)  KEEP_SECRETS=true    ;;
         --help|-h) usage; exit 0 ;;
         *) printf "Unknown flag: %s\n" "$arg" >&2; usage; exit 1 ;;
     esac
@@ -115,100 +111,151 @@ echo "       This ensures Docker is running before YRVI containers"
 echo "       restart after a reboot."
 echo ""
 
-# ── Step 2: Inject secrets from macOS Keychain ───────────────
+# ── Step 2: Configure secrets ────────────────────────────────
 echo ""
-echo "${BOLD}Step 2 / 6   Inject secrets from macOS Keychain${NC}"
+echo "${BOLD}Step 2 / 6   Configure secrets${NC}"
 echo "──────────────────────────────────────────────────────"
 
 cd "$PROJ"
 mkdir -p docker/secrets
 
-# Create empty placeholder files for optional secrets (only if absent — never overwrite real values)
+# Empty placeholders for the file-based secrets: block in
+# docker-compose.yml — ib_gateway still reads tws_password_paper
+# from /run/secrets/. Other services use the secrets container
+# HTTP path; their files stay empty.
 for _placeholder in \
+    docker/secrets/tws_password_paper \
+    docker/secrets/tws_password_live \
+    docker/secrets/render_secret \
+    docker/secrets/anthropic_api_key \
     docker/secrets/discord_webhook_url \
     docker/secrets/discord_webhook_weekly_plan \
-    docker/secrets/anthropic_api_key \
-    docker/secrets/ibkr_password_live \
-    docker/secrets/tws_password_live; do
+    docker/secrets/ibkr_password_live; do
     [ -f "$_placeholder" ] || touch "$_placeholder"
 done
 unset _placeholder
 
-# Keychain service names (fixed — do not change without updating Keychain entries)
-KC_RENDER="YRVI_RENDER"
-if [ "$TRADING_MODE" = "paper" ]; then
-    KC_TWS="YRVI_TWS_PAPER"
-    TWS_SECRET_FILE="docker/secrets/tws_password_paper"
-    TWS_LABEL="IBKR paper trading password"
-else
-    KC_TWS="YRVI_TWS_LIVE"
-    TWS_SECRET_FILE="docker/secrets/tws_password_live"
-    TWS_LABEL="IBKR live trading password"
-fi
+SECRETS_URL="http://localhost:8001"
 
-# Files written this run — tracked so we can offer to delete them after launch
-WRITTEN_SECRET_FILES=()
+info "Starting secrets container..."
+docker compose --env-file .env.compose up -d --build secrets >/dev/null 2>&1 \
+    || fail "Failed to start secrets container — check: docker compose --env-file .env.compose logs secrets"
 
-echo ""
-info "macOS may prompt you to allow access to Keychain — click Allow."
-echo ""
-
-# inject_secret SERVICE FILE LABEL
-#   Checks Keychain for SERVICE. If found, uses it silently.
-#   If not found, prompts the user (with double-entry confirmation)
-#   and stores the value in Keychain.
-#   Always writes the value to FILE and sets chmod 600.
-inject_secret() {
-    local service="$1"
-    local file="$2"
-    local label="$3"
-    local value
-
-    value=$(security find-generic-password -s "$service" -w 2>/dev/null || true)
-
-    if [ -n "$value" ]; then
-        ok "Retrieved '$label' from Keychain"
-    else
-        local confirm
-        while true; do
-            printf "  (you can paste — input is hidden but accepted)\n"
-            printf "  Enter %s: " "$label"
-            read -rs value </dev/tty
-            echo ""
-
-            if [ -z "$value" ]; then
-                fail "'$label' cannot be empty"
-            fi
-
-            printf "  Confirm %s: " "$label"
-            read -rs confirm </dev/tty
-            echo ""
-
-            if [ "$value" = "$confirm" ]; then
-                local char_count=${#value}
-                printf "  ${GREEN}✅${NC}  Password confirmed (%d characters stored).\n" "$char_count"
-                break
-            else
-                printf "  ${RED}❌${NC}  Passwords do not match. Please try again.\n"
-            fi
-        done
-
-        # -U: add or update if the item already exists
-        if ! security add-generic-password -U -s "$service" -a "$USER" -w "$value" 2>/dev/null; then
-            fail "Failed to store '$label' in Keychain — check Keychain Access permissions"
-        fi
-        ok "Stored '$label' in Keychain"
+WAIT=0
+until curl -sf "$SECRETS_URL/health" >/dev/null 2>&1; do
+    if [ "$WAIT" -ge 30 ]; then
+        fail "Secrets container did not become healthy within 30s — check: docker compose --env-file .env.compose logs secrets"
     fi
+    sleep 3
+    WAIT=$((WAIT + 3))
+done
+ok "Secrets container running"
 
-    printf '%s' "$value" > "$file"
-    chmod 600 "$file"
-    WRITTEN_SECRET_FILES+=("$file")
+secrets_complete() {
+    curl -sf "$SECRETS_URL/secrets/status" 2>/dev/null \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('complete') else 'false')" 2>/dev/null \
+        || echo "false"
 }
 
-inject_secret "$KC_TWS"    "$TWS_SECRET_FILE"            "$TWS_LABEL"
-inject_secret "$KC_RENDER" "docker/secrets/render_secret" "Render screener API secret"
+post_secret() {
+    local name="$1"
+    local value="$2"
+    local code
+    code=$(printf '%s' "$value" \
+        | python3 -c "import json,sys; print(json.dumps({'value': sys.stdin.read()}))" \
+        | curl -s -o /dev/null -w '%{http_code}' \
+            -X POST "$SECRETS_URL/secret/$name" \
+            -H 'Content-Type: application/json' \
+            --data-binary @-)
+    [ "$code" = "200" ]
+}
 
-ok "Secret files written to docker/secrets/"
+if [ "$(secrets_complete)" = "true" ]; then
+    ok "Secrets already configured"
+else
+    info "Opening $SECRETS_URL in your browser..."
+    case "$(uname -s)" in
+        Darwin) open "$SECRETS_URL" 2>/dev/null || true ;;
+        Linux)  xdg-open "$SECRETS_URL" 2>/dev/null || true ;;
+        *)      info "Open $SECRETS_URL in a browser to enter secrets" ;;
+    esac
+
+    BROWSER_OK=false
+    ELAPSED=0
+    while [ "$ELAPSED" -lt 120 ]; do
+        if [ "$(secrets_complete)" = "true" ]; then
+            BROWSER_OK=true
+            break
+        fi
+        printf "\r  Waiting for secrets... (%ds / 120s)" "$ELAPSED"
+        sleep 5
+        ELAPSED=$((ELAPSED + 5))
+    done
+    printf "\r%-60s\r" ""
+
+    if [ "$BROWSER_OK" = true ]; then
+        ok "Secrets configured via browser"
+    else
+        warn "Browser setup incomplete — switching to CLI..."
+
+        prompt_required() {
+            local name="$1"
+            local label="$2"
+            local value confirm
+            while true; do
+                printf "  Enter %s: " "$label"
+                read -rs value </dev/tty
+                echo ""
+                if [ -z "$value" ]; then
+                    printf "  ${RED}❌${NC}  '%s' cannot be empty.\n" "$label"
+                    continue
+                fi
+                printf "  Confirm %s: " "$label"
+                read -rs confirm </dev/tty
+                echo ""
+                if [ "$value" = "$confirm" ]; then
+                    if post_secret "$name" "$value"; then
+                        ok "$label saved"
+                        return 0
+                    else
+                        fail "Failed to save '$label' to secrets container"
+                    fi
+                else
+                    printf "  ${RED}❌${NC}  Values do not match. Please try again.\n"
+                fi
+            done
+        }
+
+        prompt_optional() {
+            local name="$1"
+            local label="$2"
+            local value
+            printf "  %s (press Enter to skip): " "$label"
+            read -rs value </dev/tty
+            echo ""
+            if [ -n "$value" ]; then
+                if post_secret "$name" "$value"; then
+                    ok "$label saved"
+                else
+                    fail "Failed to save '$label' to secrets container"
+                fi
+            else
+                info "$label — skipped"
+            fi
+        }
+
+        echo ""
+        info "Required secrets:"
+        prompt_required "tws_password_paper" "IBKR paper trading password"
+        prompt_required "tws_password_live"  "IBKR live trading password"
+        prompt_required "render_secret"      "Render screener API secret"
+
+        echo ""
+        info "Optional secrets:"
+        prompt_optional "discord_webhook_url"          "Discord webhook URL"
+        prompt_optional "discord_webhook_weekly_plan"  "Discord weekly plan webhook"
+    fi
+fi
 
 # ── Step 3: Validate .env.compose and config ─────────────────
 echo ""
@@ -268,33 +315,20 @@ ok "Config validated"
 
 # ── Step 4: Build and start containers ───────────────────────
 echo ""
-echo "${BOLD}Step 4 / 6   Build and start all 4 containers${NC}"
+echo "${BOLD}Step 4 / 6   Build and start all 5 containers${NC}"
 echo "──────────────────────────────────────────────────────"
 
-info "Building images and starting ib_gateway, api, scheduler, web..."
+info "Building images and starting api, scheduler, ib_gateway, web (secrets already running)..."
 
 if docker compose --env-file .env.compose up -d --build; then
-
-    # ── Wipe plaintext secret files ───────────────────────────
-    if [ "$KEEP_SECRETS" = true ]; then
-        warn "--keep-secrets: secret files left on disk in docker/secrets/"
-        warn "Delete manually when done: rm docker/secrets/*"
-    else
-        if [ ${#WRITTEN_SECRET_FILES[@]} -gt 0 ]; then
-            for f in "${WRITTEN_SECRET_FILES[@]}"; do
-                rm -f "$f"
-            done
-        fi
-        ok "Secret files wiped — passwords remain safely in macOS Keychain"
-    fi
 
     sleep 3
     RUNNING=$(docker compose --env-file .env.compose ps 2>/dev/null \
         | grep -cE "Up|running|healthy" || true)
-    if [ "$RUNNING" -ge 4 ]; then
+    if [ "$RUNNING" -ge 5 ]; then
         ok "All $RUNNING containers running"
     elif [ "$RUNNING" -gt 0 ]; then
-        warn "$RUNNING / 4 containers running — IB Gateway may still be initializing (allow 60 s)"
+        warn "$RUNNING / 5 containers running — IB Gateway may still be initializing (allow 60 s)"
         info "Monitor: docker compose --env-file .env.compose logs -f ib_gateway"
     else
         warn "Containers started but status unclear — check:"
@@ -320,7 +354,6 @@ if docker compose --env-file .env.compose up -d --build; then
 else
     echo ""
     printf "  ${RED}❌${NC}  docker compose up failed.\n"
-    warn "Secret files NOT deleted — you may need them to debug the failure."
     info "  docker compose --env-file .env.compose ps"
     info "  docker compose --env-file .env.compose logs"
     exit 1
@@ -397,46 +430,6 @@ echo ""
 echo "  Pre-flight check anytime:"
 echo "    bash startup.sh"
 echo ""
-echo "  Re-run setup (secrets pulled from Keychain, no prompts):"
+echo "  Re-run setup (skips already-configured secrets):"
 echo "    bash setup_docker.sh --$TRADING_MODE"
 echo ""
-
-# ─────────────────────────────────────────────────────────────
-# KEYCHAIN TEST CHECKLIST
-# Run each scenario in order and confirm the expected result.
-#
-# [ ] First run --paper:
-#       prompted for IBKR paper password and Render secret
-#       stores both in Keychain under YRVI_TWS_PAPER and YRVI_RENDER
-#
-# [ ] Passwords visible in Keychain Access app:
-#       open Keychain Access → search "YRVI" → two items visible
-#
-# [ ] Second run --paper:
-#       no prompts — both secrets pulled silently from Keychain
-#       "Retrieved '...' from Keychain" lines printed
-#
-# [ ] Containers start successfully with paper credentials:
-#       docker compose --env-file .env.compose ps → all 4 Up
-#       http://localhost:8000/api/status → ibkr_connected: true
-#
-# [ ] Secret files deleted after successful launch:
-#       answer Y at the deletion prompt
-#       ls docker/secrets/ → tws_password_paper and render_secret absent
-#
-# [ ] Third run --paper:
-#       secrets still in Keychain, works without files on disk
-#
-# [ ] Run --live:
-#       prompted separately for live password
-#       stored under YRVI_TWS_LIVE (separate from YRVI_TWS_PAPER)
-#       render secret reused from existing YRVI_RENDER Keychain entry
-#
-# [ ] .env.compose missing ACCOUNT_PAPER:
-#       exits with "Missing or placeholder values" and lists the var
-#       does NOT proceed to build containers
-#
-# [ ] docker compose up fails (e.g., bad .env.compose port conflict):
-#       secret files NOT deleted
-#       error message points to: docker compose ... ps / logs
-# ─────────────────────────────────────────────────────────────

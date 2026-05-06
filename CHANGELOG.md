@@ -1,3 +1,19 @@
+## [1.3.0-beta] — unreleased
+### Added
+- secrets container: AES-256-GCM encrypted secrets store (docker/secrets_service/)
+- secrets_client.py: 3-tier secret resolution (secrets container → /run/secrets/ file → env var)
+- SecretsPage in dashboard: manage all credentials via UI with status indicators and inline editing
+- setup_docker.sh: browser-first secrets entry with CLI fallback, removes macOS Keychain dependency
+- yrvi-restart.sh: verifies secrets container instead of re-injecting from Keychain
+### Changed
+- docker-compose.yml: added secrets service, updated depends_on for api/scheduler/ib_gateway
+- api.py: /api/secrets/* proxy endpoints, secrets read via secrets_client
+- scheduler.py: discord webhook read via secrets_client
+### Removed
+- macOS Keychain dependency — stack now works on Mac, Windows, and Linux
+- --keep-secrets flag from setup_docker.sh and yrvi-restart.sh
+- Plaintext secret file injection on restart
+
 ## [1.2.6] - May 2026
 ### Added
 - Discord weekly results: footnotes explaining skip reasons appear at the bottom of the trades field when applicable — "Spread too wide" (liquidity check) and "Contract too large" ($70K max per position) only included if that skip occurred that week

@@ -22,10 +22,28 @@ x-python-secrets: &python-secrets
   - ibkr_password_live
 
 services:
+  secrets:
+    build: ./docker/secrets_service
+    container_name: yrvi-secrets-1
+    ports:
+      - "8001:8001"
+    volumes:
+      - yrvi_data:/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   ib_gateway:
     image: ghcr.io/gnzsnz/ib-gateway:${IB_GATEWAY_TAG:-latest}
     container_name: ib_gateway
     restart: unless-stopped
+    depends_on:
+      secrets:
+        condition: service_healthy
     environment:
       # This stack currently starts the paper Gateway only.
       TWS_USERID: ${TWS_USERID_PAPER:?Set TWS_USERID_PAPER in .env.compose or your shell}
@@ -59,7 +77,10 @@ services:
     image: yrvi-api:local
     restart: unless-stopped
     depends_on:
-      - ib_gateway
+      ib_gateway:
+        condition: service_started
+      secrets:
+        condition: service_healthy
     environment:
       <<: *python-env
       ACCOUNT_LIVE: ${ACCOUNT_LIVE:-}
@@ -83,7 +104,10 @@ services:
     image: yrvi-scheduler:local
     restart: unless-stopped
     depends_on:
-      - ib_gateway
+      ib_gateway:
+        condition: service_started
+      secrets:
+        condition: service_healthy
     environment:
       <<: *python-env
       ACCOUNT_LIVE: ${ACCOUNT_LIVE:-}

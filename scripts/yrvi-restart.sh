@@ -18,16 +18,15 @@ trap 'rm -f "$LOCKFILE"' EXIT
 #  Container Restart — You Rock Volatility Income Fund
 #
 #  Usage:
-#    ./scripts/yrvi-restart.sh <container> --paper|--live [--dry-run] [--keep-secrets]
+#    ./scripts/yrvi-restart.sh <container> --paper|--live [--dry-run]
 #
 #  Valid containers: ib_gateway  api  scheduler  web
 #
 #  What it does:
 #    1. Verifies the docker compose stack is running
-#    2. Re-injects secrets from macOS Keychain → docker/secrets/
+#    2. Verifies the secrets container is reachable and configured
 #    3. Restarts the named container
 #    4. Polls health status every 3s until healthy or 60s timeout
-#    5. Wipes secret files unless --keep-secrets passed
 # ─────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -38,27 +37,24 @@ VALID_CONTAINERS="ib_gateway api scheduler web"
 
 usage() {
     echo ""
-    echo "  Usage: yrvi-restart.sh <container> --paper|--live [--dry-run] [--keep-secrets]"
+    echo "  Usage: yrvi-restart.sh <container> --paper|--live [--dry-run]"
     echo ""
     echo "    <container>      one of: ib_gateway  api  scheduler  web"
     echo "    --paper          paper trading mode (IBKR paper account)"
     echo "    --live           live trading mode  (IBKR live account)"
     echo "    --dry-run        print what would happen; make no changes"
-    echo "    --keep-secrets   skip deletion of plaintext secret files after restart"
     echo ""
 }
 
 CONTAINER=""
 TRADING_MODE=""
 DRY_RUN=false
-KEEP_SECRETS=false
 
 for arg in "$@"; do
     case "$arg" in
         --paper)        TRADING_MODE="paper" ;;
         --live)         TRADING_MODE="live"  ;;
         --dry-run)      DRY_RUN=true         ;;
-        --keep-secrets) KEEP_SECRETS=true    ;;
         --help|-h) usage; exit 0 ;;
         --*) printf "Unknown flag: %s\n" "$arg" >&2; usage; exit 1 ;;
         *)
@@ -155,78 +151,33 @@ fi
 
 ok "$RUNNING container(s) running — $CONTAINER found (id: ${CONTAINER_ID:0:12})"
 
-# ── Step 2: Inject secrets from macOS Keychain ─────────────────
+# ── Step 2: Verify secrets container ───────────────────────────
 echo ""
-printf "${BOLD}Step 2 / 4   Inject secrets from macOS Keychain${NC}\n"
+printf "${BOLD}Step 2 / 4   Verify secrets container${NC}\n"
 echo "──────────────────────────────────────────────────────"
 
-mkdir -p docker/secrets
+SECRETS_URL="http://localhost:8001"
 
-# Create empty placeholder files for optional secrets (only if absent — never overwrite)
-for _placeholder in \
-    docker/secrets/discord_webhook_url \
-    docker/secrets/discord_webhook_weekly_plan \
-    docker/secrets/anthropic_api_key \
-    docker/secrets/ibkr_password_live; do
-    if [ ! -f "$_placeholder" ]; then
-        if [ "$DRY_RUN" = true ]; then
-            info "Would create placeholder: $_placeholder"
-        else
-            touch "$_placeholder"
-        fi
-    fi
-done
-unset _placeholder
+STATUS_BODY=$(curl -sf "$SECRETS_URL/secrets/status" 2>/dev/null || true)
 
-# Keychain service names (fixed — do not change without updating Keychain entries)
-KC_RENDER="YRVI_RENDER"
-if [ "$TRADING_MODE" = "paper" ]; then
-    KC_TWS="YRVI_TWS_PAPER"
-    TWS_SECRET_FILE="docker/secrets/tws_password_paper"
-    TWS_LABEL="IBKR paper trading password"
-else
-    KC_TWS="YRVI_TWS_LIVE"
-    TWS_SECRET_FILE="docker/secrets/tws_password_live"
-    TWS_LABEL="IBKR live trading password"
+if [ -z "$STATUS_BODY" ]; then
+    printf "  ${RED}❌${NC}  Secrets container is not running.\n" >&2
+    info "Start it first:"
+    info "  docker compose --env-file .env.compose up -d secrets"
+    exit 1
 fi
 
-WRITTEN_SECRET_FILES=()
+COMPLETE=$(printf '%s' "$STATUS_BODY" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('complete') else 'false')" 2>/dev/null \
+    || echo "false")
 
-# fetch_secret SERVICE FILE LABEL
-#   Retrieves secret from Keychain only — exits if missing, never prompts.
-fetch_secret() {
-    local service="$1"
-    local file="$2"
-    local label="$3"
+if [ "$COMPLETE" != "true" ]; then
+    printf "  ${RED}❌${NC}  Secrets not fully configured.\n" >&2
+    info "Open $SECRETS_URL to enter missing secrets, then retry."
+    exit 1
+fi
 
-    local value
-    value=$(security find-generic-password -s "$service" -w 2>/dev/null || true)
-
-    if [ -z "$value" ]; then
-        printf "  ${RED}❌${NC}  '%s' not found in Keychain (service: %s)\n" "$label" "$service" >&2
-        printf "  ${BLUE}ℹ️${NC}   Run setup_docker.sh first to store secrets:\n" >&2
-        printf "         bash setup_docker.sh --%s\n" "$TRADING_MODE" >&2
-        exit 1
-    fi
-
-    if [ "$DRY_RUN" = true ]; then
-        ok "[dry run] Would write '$label' → $file"
-        return
-    fi
-
-    printf '%s' "$value" > "$file"
-    chmod 600 "$file"
-    WRITTEN_SECRET_FILES+=("$file")
-    ok "Retrieved '$label' from Keychain"
-}
-
-info "macOS may prompt you to allow Keychain access — click Allow."
-echo ""
-
-fetch_secret "$KC_TWS"    "$TWS_SECRET_FILE"            "$TWS_LABEL"
-fetch_secret "$KC_RENDER" "docker/secrets/render_secret" "Render screener API secret"
-
-[ "$DRY_RUN" = false ] && ok "Secret files written to docker/secrets/"
+ok "Secrets container ready"
 
 # ── Step 3: Restart container ──────────────────────────────────
 echo ""
@@ -287,33 +238,15 @@ else
     if [ -z "$FINAL_STATUS" ]; then
         printf "  ${RED}❌${NC}  %s did not become healthy within %ds\n" "$CONTAINER" "$TIMEOUT" >&2
         info "Check logs: docker compose --env-file .env.compose logs --tail=50 $CONTAINER"
-        # Wipe secrets even on failure to avoid leaving them on disk
-        if [ "$KEEP_SECRETS" = false ] && [ ${#WRITTEN_SECRET_FILES[@]} -gt 0 ]; then
-            for f in "${WRITTEN_SECRET_FILES[@]}"; do rm -f "$f"; done
-        fi
         exit 1
     elif [ "$FINAL_STATUS" = "unhealthy" ] || \
          [ "$FINAL_STATUS" = "exited" ]    || \
          [ "$FINAL_STATUS" = "dead" ]; then
         printf "  ${RED}❌${NC}  %s status is '%s'\n" "$CONTAINER" "$FINAL_STATUS" >&2
         info "Check logs: docker compose --env-file .env.compose logs --tail=50 $CONTAINER"
-        if [ "$KEEP_SECRETS" = false ] && [ ${#WRITTEN_SECRET_FILES[@]} -gt 0 ]; then
-            for f in "${WRITTEN_SECRET_FILES[@]}"; do rm -f "$f"; done
-        fi
         exit 1
     else
         ok "$CONTAINER is $FINAL_STATUS"
-    fi
-
-    # ── Wipe plaintext secret files ─────────────────────────────
-    if [ "$KEEP_SECRETS" = true ]; then
-        warn "--keep-secrets: secret files left on disk in docker/secrets/"
-        warn "Delete manually when done: rm docker/secrets/*"
-    else
-        if [ ${#WRITTEN_SECRET_FILES[@]} -gt 0 ]; then
-            for f in "${WRITTEN_SECRET_FILES[@]}"; do rm -f "$f"; done
-        fi
-        ok "Secret files wiped — passwords remain safely in macOS Keychain"
     fi
 fi
 

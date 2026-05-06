@@ -29,18 +29,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from secrets_client import get_secret
+
 load_dotenv()
 
 def _read_secret_or_env(secret_name: str, env_name: str) -> str:
-    path = f"/run/secrets/{secret_name}"
-    try:
-        with open(path) as f:
-            val = f.read().strip()
-            if val:
-                return val
-    except OSError:
-        pass
-    return os.environ.get(env_name, "")
+    return get_secret(secret_name, env_name)
 
 BASE_DIR = Path(__file__).parent
 STATE_FILE = BASE_DIR / "state.json"
@@ -60,6 +54,7 @@ ET  = ZoneInfo("America/New_York")
 ANNUAL_TARGET = 100_000
 CONTAINERIZED = os.environ.get("YRVI_CONTAINERIZED", "0") == "1"
 HEARTBEAT_FILE = BASE_DIR / "scheduler_heartbeat.json"
+SECRETS_SERVICE_URL = "http://secrets:8001"
 # clientId 100-999 used at runtime (random per call) — never conflicts with trader(1) wheel(2) risk(3)
 
 # ── Watchdog ───────────────────────────────────────────────────
@@ -856,6 +851,43 @@ def update_settings(body: SettingsUpdate):
     current.update(updates)
     save_settings(current)
     return current
+
+class SecretValueRequest(BaseModel):
+    value: str
+
+@app.get("/api/secrets/status")
+def secrets_status():
+    import requests as req
+    try:
+        r = req.get(f"{SECRETS_SERVICE_URL}/secrets/status", timeout=3)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return {"complete": False, "error": "secrets container unreachable", "secrets": {}}
+
+@app.get("/api/secrets/{name}")
+def get_secret_endpoint(name: str):
+    import requests as req
+    try:
+        r = req.get(f"{SECRETS_SERVICE_URL}/secret/{name}", timeout=3)
+    except Exception:
+        raise HTTPException(status_code=503, detail="secrets container unreachable")
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="secret not found")
+    r.raise_for_status()
+    return r.json()
+
+@app.post("/api/secrets/{name}")
+def set_secret_endpoint(name: str, body: SecretValueRequest):
+    import requests as req
+    try:
+        r = req.post(f"{SECRETS_SERVICE_URL}/secret/{name}", json={"value": body.value}, timeout=3)
+    except Exception:
+        raise HTTPException(status_code=503, detail="secrets container unreachable")
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="unknown secret")
+    r.raise_for_status()
+    return {"success": True}
 
 class TradingModeRequest(BaseModel):
     mode: str

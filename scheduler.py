@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from config import NUM_POSITIONS, TOTAL_FUND_BUDGET
+from secrets_client import get_secret
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,12 +37,7 @@ def _write_heartbeat():
 def _discord_alert(message: str) -> None:
     """Send a plain-text Discord alert. No-ops when webhook is not configured."""
     try:
-        path = "/run/secrets/discord_webhook_url"
-        try:
-            with open(path) as f:
-                webhook_url = f.read().strip()
-        except OSError:
-            webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+        webhook_url = get_secret("discord_webhook_url", "DISCORD_WEBHOOK_URL")
         if not webhook_url:
             return
         import requests

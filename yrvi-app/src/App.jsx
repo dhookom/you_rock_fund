@@ -1,11 +1,12 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, Calendar, History, Settings } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Calendar, History, Settings, Lock } from 'lucide-react'
 import StatusBar from './components/StatusBar.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Performance from './pages/Performance.jsx'
 import ThisWeek from './pages/ThisWeek.jsx'
 import TradeHistory from './pages/TradeHistory.jsx'
 import SettingsPage from './pages/Settings.jsx'
+import Secrets from './pages/Secrets.jsx'
 
 const NAV = [
   { path: '/',             label: 'Dashboard',     icon: LayoutDashboard, end: true },
@@ -13,6 +14,7 @@ const NAV = [
   { path: '/this-week',    label: 'This Week',     icon: Calendar },
   { path: '/trade-history',label: 'Trade History', icon: History },
   { path: '/settings',     label: 'Settings',      icon: Settings },
+  { path: '/secrets',      label: 'Secrets',       icon: Lock },
 ]
 
 export default function App() {
@@ -56,6 +58,7 @@ export default function App() {
               <Route path="/this-week"     element={<ThisWeek />} />
               <Route path="/trade-history" element={<TradeHistory />} />
               <Route path="/settings"      element={<SettingsPage />} />
+              <Route path="/secrets"       element={<Secrets />} />
             </Routes>
           </main>
         </div>

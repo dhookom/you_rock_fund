@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YRVI — Secrets Setup</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #2f81f7;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  .container {
+    width: 100%;
+    max-width: 640px;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  header .logo {
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  header h1 {
+    margin: 6px 0 4px 0;
+    font-size: 24px;
+    font-weight: 600;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .banner {
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .banner.complete {
+    border-color: var(--ok);
+    background: rgba(63, 185, 80, 0.08);
+    color: var(--ok);
+    font-weight: 600;
+  }
+  .field {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .field-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .field-label {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .field-required {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 6px;
+    font-weight: 400;
+  }
+  .field-status {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .field-status.ok { color: var(--ok); }
+  .field-status.warn { color: var(--warn); }
+  .input-row {
+    display: flex;
+    gap: 8px;
+  }
+  .input-wrap {
+    position: relative;
+    flex: 1;
+  }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    background: #0d1117;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 60px 8px 10px;
+    font-size: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .toggle {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+  .toggle:hover { color: var(--text); }
+  button.save {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.save:hover { background: #1f6feb; }
+  button.save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .save-msg {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+    min-height: 14px;
+  }
+  .save-msg.ok { color: var(--ok); }
+  .save-msg.err { color: var(--danger); }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">YRVI</div>
+      <h1>You Rock Volatility Income Fund</h1>
+      <div class="sub">Encrypted secrets setup</div>
+    </header>
+
+    <div id="banner" class="banner">
+      Loading status…
+    </div>
+
+    <div id="fields"></div>
+  </div>
+
+<script>
+const SECRETS = [
+  { name: "tws_password_paper",          label: "IBKR Paper Trading Password",   required: true },
+  { name: "tws_password_live",           label: "IBKR Live Trading Password",    required: true },
+  { name: "render_secret",               label: "Render Screener API Secret",    required: true },
+  { name: "discord_webhook_url",         label: "Discord Webhook URL",           required: false },
+  { name: "discord_webhook_weekly_plan", label: "Discord Weekly Plan Webhook",   required: false },
+];
+
+const fieldsEl = document.getElementById("fields");
+const bannerEl = document.getElementById("banner");
+
+function buildField(s) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  wrap.innerHTML = `
+    <div class="field-header">
+      <div>
+        <span class="field-label">${s.label}</span>
+        <span class="field-required">${s.required ? "(required)" : "(optional)"}</span>
+      </div>
+      <div class="field-status" id="status-${s.name}">—</div>
+    </div>
+    <div class="input-row">
+      <div class="input-wrap">
+        <input type="password" id="input-${s.name}" autocomplete="off" placeholder="Enter value" />
+        <button type="button" class="toggle" data-target="input-${s.name}">Show</button>
+      </div>
+      <button type="button" class="save" data-name="${s.name}">Save</button>
+    </div>
+    <div class="save-msg" id="msg-${s.name}"></div>
+  `;
+  return wrap;
+}
+
+SECRETS.forEach(s => fieldsEl.appendChild(buildField(s)));
+
+document.querySelectorAll(".toggle").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (input.type === "password") {
+      input.type = "text";
+      btn.textContent = "Hide";
+    } else {
+      input.type = "password";
+      btn.textContent = "Show";
+    }
+  });
+});
+
+document.querySelectorAll("button.save").forEach(btn => {
+  btn.addEventListener("click", () => saveSecret(btn.dataset.name));
+});
+
+async function saveSecret(name) {
+  const input = document.getElementById(`input-${name}`);
+  const msg = document.getElementById(`msg-${name}`);
+  const value = input.value;
+  msg.textContent = "Saving…";
+  msg.className = "save-msg";
+  try {
+    const res = await fetch(`/secret/${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    msg.textContent = "Saved";
+    msg.className = "save-msg ok";
+    input.value = "";
+    refreshStatus();
+    setTimeout(() => { msg.textContent = ""; }, 2000);
+  } catch (err) {
+    msg.textContent = `Error: ${err.message}`;
+    msg.className = "save-msg err";
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch("/secrets/status");
+    const data = await res.json();
+    SECRETS.forEach(s => {
+      const el = document.getElementById(`status-${s.name}`);
+      const state = data.secrets[s.name];
+      if (state === "set") {
+        el.textContent = "✅ saved";
+        el.className = "field-status ok";
+      } else if (s.required) {
+        el.textContent = "⚠️ required";
+        el.className = "field-status warn";
+      } else {
+        el.textContent = "— optional";
+        el.className = "field-status";
+      }
+    });
+    if (data.complete) {
+      bannerEl.className = "banner complete";
+      bannerEl.textContent = "✅ Setup complete — return to terminal to continue";
+    } else {
+      bannerEl.className = "banner";
+      bannerEl.textContent = "Required secrets must be set before the stack can start.";
+    }
+  } catch (err) {
+    bannerEl.className = "banner";
+    bannerEl.textContent = `Status unavailable: ${err.message}`;
+  }
+}
+
+refreshStatus();
+setInterval(refreshStatus, 3000);
+</script>
+</body>
+</html>
