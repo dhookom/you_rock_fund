@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+from secrets_client import get_secret
+
 load_dotenv()
 
 # ── You Rock Volatility Income Fund ──────────────────────────
@@ -21,7 +23,7 @@ EXECUTE_MINUTE   = 0
 
 # Screener API
 RENDER_URL    = os.environ["RENDER_URL"]
-RENDER_SECRET = os.environ["RENDER_SECRET"]
+RENDER_SECRET = get_secret("render_secret", "RENDER_SECRET")
 
 # ── Fund parameters (settings.json is source of truth) ───────
 
