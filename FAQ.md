@@ -19,6 +19,10 @@ docker compose --env-file .env.compose down
 ```
 
 > Use SSH for remote terminal access instead — Screen Sharing cannot run alongside YRVI.
+>
+> Enable SSH: **System Settings → General → Sharing → Remote Login → On**
+>
+> Then connect with: `ssh [your-user]@[MAC_MINI_IP]`
 
 ---
 
