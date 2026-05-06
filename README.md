@@ -100,6 +100,36 @@ git clone https://github.com/controllinghand/you_rock_fund.git you_rock_fund
 cd you_rock_fund
 ```
 
+#### Configure `.env.compose`
+
+```bash
+cp .env.compose.example .env.compose
+nano .env.compose
+```
+
+Fill in these values for your account (everything else can stay as the default for paper trading):
+
+| Variable | What to enter |
+|---|---|
+| `ACCOUNT_PAPER` | Your IBKR paper account ID (e.g. `DU1234567`) |
+| `TWS_USERID_PAPER` | Your IBKR paper username |
+| `ACCOUNT_LIVE` | Your IBKR live account ID |
+| `TWS_USERID_LIVE` | Your IBKR live username |
+| `IBKR_USERNAME_LIVE` | Same as `TWS_USERID_LIVE` |
+| `VNC_SERVER_PASSWORD` | Set a VNC password (required for 2FA via IB Gateway) |
+
+Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` — these are the safe defaults for a new setup.
+
+Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
+
+#### Disable macOS Screen Sharing
+
+IB Gateway uses port 5900 for VNC (required for 2FA). macOS Screen Sharing also uses port 5900 and will cause `docker compose up` to fail with a "address already in use" error.
+
+Before running setup, go to **System Settings → General → Sharing → Screen Sharing → toggle OFF**.
+
+> **Note:** Use SSH for remote terminal access to the Mac Mini instead — Screen Sharing cannot run alongside YRVI.
+
 #### macOS Setup (Paper)
 
 ```bash
