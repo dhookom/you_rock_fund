@@ -31,6 +31,17 @@ from pydantic import BaseModel
 
 load_dotenv()
 
+def _read_secret_or_env(secret_name: str, env_name: str) -> str:
+    path = f"/run/secrets/{secret_name}"
+    try:
+        with open(path) as f:
+            val = f.read().strip()
+            if val:
+                return val
+    except OSError:
+        pass
+    return os.environ.get(env_name, "")
+
 BASE_DIR = Path(__file__).parent
 STATE_FILE = BASE_DIR / "state.json"
 YTD_FILE = BASE_DIR / "ytd_tracker.json"
@@ -176,7 +187,7 @@ def _restart_ibgateway() -> None:
 def _send_discord_alert(message: str) -> None:
     """Post a plain-text message to the main Discord webhook. No-ops if not configured."""
     try:
-        webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+        webhook_url = _read_secret_or_env("discord_webhook_url", "DISCORD_WEBHOOK_URL")
         if not webhook_url:
             return
         import requests as req
@@ -887,7 +898,7 @@ def set_trading_mode(body: TradingModeRequest):
     _ibkr_cache["ts"]   = 0.0
 
     try:
-        webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+        webhook_url = _read_secret_or_env("discord_webhook_url", "DISCORD_WEBHOOK_URL")
         if webhook_url and current.get("discord_webhook_enabled", True):
             import requests as req
             req.post(webhook_url, json={
@@ -1030,9 +1041,9 @@ def health_check():
 
 @app.post("/api/discord-test")
 def test_discord():
-    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+    webhook_url = _read_secret_or_env("discord_webhook_url", "DISCORD_WEBHOOK_URL")
     if not webhook_url:
-        raise HTTPException(status_code=400, detail="DISCORD_WEBHOOK_URL not set in .env")
+        raise HTTPException(status_code=400, detail="Discord webhook not configured — add URL to docker/secrets/discord_webhook_url")
     try:
         import requests as req
         r = req.post(webhook_url, json={"content": "🔔 YRVI Dashboard — test notification"}, timeout=5)
