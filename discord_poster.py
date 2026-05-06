@@ -12,8 +12,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-WEBHOOK_URL            = os.getenv("DISCORD_WEBHOOK_URL")
-WEBHOOK_URL_WEEKLY_PLAN = os.getenv("DISCORD_WEBHOOK_WEEKLY_PLAN")
+def _read_secret_or_env(secret_name: str, env_name: str) -> str:
+    path = f"/run/secrets/{secret_name}"
+    try:
+        with open(path) as f:
+            val = f.read().strip()
+            if val:
+                return val
+    except OSError:
+        pass
+    return os.getenv(env_name, "")
+
+WEBHOOK_URL             = _read_secret_or_env("discord_webhook_url", "DISCORD_WEBHOOK_URL")
+WEBHOOK_URL_WEEKLY_PLAN = _read_secret_or_env("discord_webhook_weekly_plan", "DISCORD_WEBHOOK_WEEKLY_PLAN")
 YTD_FILE      = "ytd_tracker.json"
 PST           = ZoneInfo("America/Los_Angeles")
 ANNUAL_TARGET = 100_000

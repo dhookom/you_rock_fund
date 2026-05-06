@@ -122,6 +122,18 @@ Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` — these are the safe d
 
 Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
 
+#### Set Up Secret Files
+
+Passwords and API keys are stored as individual files in `docker/secrets/`. The setup script handles IBKR and Render secrets automatically from macOS Keychain, but Discord webhooks must be created manually if you want notifications:
+
+```bash
+# Optional — leave out if you don't want Discord alerts
+echo "https://discord.com/api/webhooks/xxx/yyy" > docker/secrets/discord_webhook_url
+echo "https://discord.com/api/webhooks/xxx/yyy" > docker/secrets/discord_webhook_weekly_plan
+```
+
+See [`docker/secrets/README.md`](docker/secrets/README.md) for the full list of secret files and how to get each value.
+
 #### Disable macOS Screen Sharing
 
 IB Gateway uses port 5900 for VNC (required for 2FA). macOS Screen Sharing also uses port 5900 and will cause `docker compose up` to fail with a "address already in use" error.

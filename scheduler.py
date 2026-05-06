@@ -36,7 +36,12 @@ def _write_heartbeat():
 def _discord_alert(message: str) -> None:
     """Send a plain-text Discord alert. No-ops when webhook is not configured."""
     try:
-        webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+        path = "/run/secrets/discord_webhook_url"
+        try:
+            with open(path) as f:
+                webhook_url = f.read().strip()
+        except OSError:
+            webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
         if not webhook_url:
             return
         import requests
