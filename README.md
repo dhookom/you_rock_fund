@@ -134,6 +134,8 @@ echo "https://discord.com/api/webhooks/xxx/yyy" > docker/secrets/discord_webhook
 
 See [`docker/secrets/README.md`](docker/secrets/README.md) for the full list of secret files and how to get each value.
 
+> **Note:** The `docker/secrets/` directory is git-ignored except for `README.md`. All secret files you create there will never be committed.
+
 #### Disable macOS Screen Sharing
 
 IB Gateway uses port 5900 for VNC (required for 2FA). macOS Screen Sharing also uses port 5900 and will cause `docker compose up` to fail with a "address already in use" error.
