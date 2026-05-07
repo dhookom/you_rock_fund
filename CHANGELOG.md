@@ -1,4 +1,4 @@
-## [1.3.0-beta] — unreleased
+## [1.3.0] — 2026-05-06
 ### Added
 - secrets container: AES-256-GCM encrypted secrets store (docker/secrets_service/)
 - secrets_client.py: 3-tier secret resolution (secrets container → /run/secrets/ file → env var)
