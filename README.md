@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.1-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -81,10 +81,10 @@ New to IBKR? See the **[IBKR Account Setup Guide](IBKR_SETUP_GUIDE.md)** for a c
 
 | Mode | Hardware | OS Required | Secrets Method |
 |------|----------|-------------|----------------|
-| Paper trading | Any Mac (Intel or Apple Silicon) | macOS | macOS Keychain |
-| Live trading | Mac Mini (recommended) | macOS only | macOS Keychain |
+| Paper trading | Any Mac (Intel or Apple Silicon) | macOS | Encrypted secrets container (AES-256-GCM) |
+| Live trading | Mac Mini (recommended) | macOS only | Encrypted secrets container (AES-256-GCM) |
 
-> **Windows** is supported for development and paper trading only (see `setup_windows.ps1`). Live trading requires macOS due to Keychain integration.
+> **Cross-platform**: v1.3.0 removed the macOS-only requirement that came with Keychain integration. The stack now runs on macOS, Linux, and Windows. Mac Mini is recommended for live trading purely for the always-on hardware profile and IB Gateway stability — see `setup_windows.ps1` for Windows-specific notes.
 
 ### IB Gateway port reference
 
@@ -124,19 +124,16 @@ Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` — these are the safe d
 
 Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
 
-#### Set Up Secret Files
+#### About Secrets
 
-Passwords and API keys are stored as individual files in `docker/secrets/`. The setup script handles IBKR and Render secrets automatically from macOS Keychain, but Discord webhooks must be created manually if you want notifications:
+Passwords and API keys are stored encrypted (AES-256-GCM) in a persistent volume managed by the `secrets` container. When you run `setup_docker.sh`, it starts the secrets container and opens `http://localhost:8001` in your browser to collect:
 
-```bash
-# Optional — leave out if you don't want Discord alerts
-echo "https://discord.com/api/webhooks/xxx/yyy" > docker/secrets/discord_webhook_url
-echo "https://discord.com/api/webhooks/xxx/yyy" > docker/secrets/discord_webhook_weekly_plan
-```
+- **Required:** IBKR paper password, IBKR live password, Render screener API secret
+- **Optional:** Discord webhook URL, Discord weekly-plan webhook URL
 
-See [`docker/secrets/README.md`](docker/secrets/README.md) for the full list of secret files and how to get each value.
+If the browser flow times out (5 minutes), the script falls back to terminal prompts. You can update any secret later by visiting `http://localhost:8001` directly or via the **Secrets** page in the dashboard.
 
-> **Note:** The `docker/secrets/` directory is git-ignored except for `README.md`. All secret files you create there will never be committed.
+> **Note:** The `docker/secrets/` directory holds empty placeholder files for the file-based fallback path; it's git-ignored and the real values never live there.
 
 #### Disable macOS Screen Sharing
 
@@ -152,11 +149,13 @@ Before running setup, go to **System Settings → General → Sharing → Screen
 ./setup_docker.sh --paper
 ```
 
-On first run, you will be prompted for:
-- Your IBKR paper account password (stored in macOS Keychain as `YRVI_TWS_PAPER`)
-- Your Render API secret (stored in macOS Keychain as `YRVI_RENDER`)
+On first run, the script opens `http://localhost:8001` in your browser where you'll enter:
+- Your IBKR paper account password
+- Your IBKR live account password (re-use the paper password if you don't trade live)
+- Your Render screener API secret
+- Discord webhooks (optional)
 
-On subsequent runs, secrets are pulled from Keychain silently — no re-entry needed.
+If the browser flow times out, you'll be prompted in the terminal. On subsequent runs, the script detects existing secrets and skips this step.
 
 #### macOS Setup (Live)
 
@@ -164,21 +163,22 @@ On subsequent runs, secrets are pulled from Keychain silently — no re-entry ne
 ./setup_docker.sh --live
 ```
 
-Requires a Mac Mini or equivalent always-on Mac. Live credentials are stored separately in Keychain (`YRVI_TWS_LIVE`) and never shared with paper mode.
+Requires a Mac Mini or equivalent always-on hardware. Live and paper credentials are stored separately in the secrets container under `tws_password_live` and `tws_password_paper` — they're never shared between modes.
 
-#### Verifying Keychain storage
+#### Verifying secrets
 
-Open **Keychain Access.app** and search for `YRVI` to confirm your secrets are stored. You should see entries for `YRVI_TWS_PAPER` (or `YRVI_TWS_LIVE`) and `YRVI_RENDER`.
+Open `http://localhost:8001` in your browser, or visit the **Secrets** page in the dashboard at `http://localhost:3000/secrets`. Each secret shows ✅ Configured or ⚠️ Missing.
 
 #### Rotating / updating a secret
 
-If you need to update a stored secret (e.g. changed your IBKR password):
-1. Open Keychain Access.app
-2. Search for the entry (e.g. `YRVI_TWS_PAPER`)
-3. Delete it
-4. Re-run `./setup_docker.sh --paper` — you will be prompted for the new value
+To change a stored secret (e.g. after rotating your IBKR password):
+1. Open `http://localhost:8001` (or visit **Secrets** in the dashboard)
+2. Click **Update** next to the secret
+3. Enter the new value and click **Save**
 
-`setup_docker.sh` validates your config, builds all four containers (`ib_gateway`, `api`, `scheduler`, `web`), starts the stack, and installs a login item so containers restart automatically after a reboot.
+The change takes effect immediately for new connections; restart `ib_gateway` to apply a new IBKR password.
+
+`setup_docker.sh` validates your config, builds all five containers (`secrets`, `ib_gateway`, `api`, `scheduler`, `web`), starts the stack, and installs a login item so containers restart automatically after a reboot.
 
 See **[CONTAINERIZATION.md](CONTAINERIZATION.md)** for the full setup guide — credentials, 2FA recovery, and troubleshooting.
 
@@ -186,10 +186,10 @@ See **[CONTAINERIZATION.md](CONTAINERIZATION.md)** for the full setup guide — 
 
 ### Secret Security
 
-- Secrets are stored in **macOS Keychain**, encrypted at rest and tied to your macOS login.
-- Files in `docker/secrets/` are ephemeral — written at launch time and deleted automatically after containers start.
+- Secrets are stored AES-256-GCM-encrypted in a persistent Docker volume managed by the `secrets` container. The encryption key is generated on first run and stored at `/data/secrets.key` inside the volume (chmod 600).
+- The secrets API (`http://localhost:8001`) is bound to `localhost` on the host and reachable inside the Docker network as `http://secrets:8001` — never exposed externally.
+- `docker/secrets/` files are empty placeholders kept for the `secrets_client` 3-tier fallback (HTTP → file → env). The real values live only in the encrypted volume.
 - `docker/secrets/` is in `.gitignore` and must never be committed.
-- **Windows users (paper only):** secrets remain as files in `docker/secrets/` — treat them as sensitive and do not commit them.
 
 ## Mac Startup (after any reboot)
 
@@ -215,7 +215,7 @@ docker compose --env-file .env.compose restart scheduler
 
 ### Restarting and Rebuilding Containers
 
-Both scripts re-inject secrets from macOS Keychain before operating, fixing the bind-mount error that occurs when secret files have been wiped.
+Both scripts verify the secrets container is reachable and configured before operating. They no longer write secrets to disk — that's handled by the `secrets` container.
 
 | Script | When to use |
 |--------|-------------|
@@ -230,7 +230,7 @@ Both scripts re-inject secrets from macOS Keychain before operating, fixing the 
 ./scripts/yrvi-restart.sh ib_gateway --live   # requires YRVI_ENV=live in environment
 ```
 
-Flags: `--dry-run`, `--keep-secrets`
+Flags: `--dry-run`
 
 **yrvi-build.sh** — rebuild image and restart:
 ```bash
@@ -242,10 +242,10 @@ Flags: `--dry-run`, `--keep-secrets`
 Flags: `--dry-run`
 
 **What both scripts do:**
-1. Fetch secrets from macOS Keychain (`YRVI_TWS_PAPER` / `YRVI_TWS_LIVE` and `YRVI_RENDER`)
-2. Write them to `docker/secrets/` (chmod 600)
+1. Verify the `secrets` container is reachable at `http://localhost:8001` (fail with a helpful message if not)
+2. Verify all required secrets are configured (fail with a link to enter them if not)
 3. `yrvi-restart.sh`: runs `docker restart <container>` — `yrvi-build.sh`: runs `docker compose up -d --build [container]`
-4. Poll health status every 3s (`ib_gateway` timeout: 180s; others: 60s), then wipe secret files
+4. Poll health status every 3s (`ib_gateway` timeout: 180s; others: 60s)
 
 ## Running Manually
 
@@ -467,6 +467,10 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.3.1 (May 2026)
+- README fully updated for v1.3.0 secrets container architecture (removed all stale macOS Keychain references from setup, security, and script-flow sections)
+- `docker/preflight.sh` orphan `secrets_dir` variable removed
 
 ### v1.3.0 (May 2026)
 - Secrets container — encrypted secrets manager, removes macOS Keychain dependency, cross-platform support

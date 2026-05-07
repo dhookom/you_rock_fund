@@ -2,7 +2,6 @@
 set -eu
 
 env_file="${1:-.env.compose}"
-secrets_dir="${YRVI_SECRETS_DIR:-./docker/secrets}"
 failed=0
 
 fail() {

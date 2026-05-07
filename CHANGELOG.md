@@ -1,3 +1,9 @@
+## [1.3.1] — 2026-05-06
+### Fixed
+- README fully updated for v1.3.0 secrets container architecture
+- Removed all stale macOS Keychain references from setup, security, and script-flow sections (11 references updated)
+- docker/preflight.sh orphan secrets_dir variable removed
+
 ## [1.3.0] — 2026-05-06
 ### Added
 - secrets container: AES-256-GCM encrypted secrets store (docker/secrets_service/)
