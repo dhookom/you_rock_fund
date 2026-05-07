@@ -38,16 +38,20 @@ services:
     restart: unless-stopped
 
   ib_gateway:
-    image: ghcr.io/gnzsnz/ib-gateway:${IB_GATEWAY_TAG:-latest}
+    build:
+      context: ./docker/ib-gateway
+      args:
+        IB_GATEWAY_TAG: ${IB_GATEWAY_TAG:-latest}
     container_name: ib_gateway
-    restart: unless-stopped
+    restart: "on-failure:3"
+    entrypoint: ["/usr/local/bin/yrvi-gw-entrypoint.sh"]
+    command: ["/home/ibgateway/scripts/run.sh"]
     depends_on:
       secrets:
         condition: service_healthy
     environment:
       # This stack currently starts the paper Gateway only.
       TWS_USERID: ${TWS_USERID_PAPER:?Set TWS_USERID_PAPER in .env.compose or your shell}
-      TWS_PASSWORD_FILE: /run/secrets/tws_password_paper
       TRADING_MODE: ${TRADING_MODE:-paper}
       TWS_ACCEPT_INCOMING: ${TWS_ACCEPT_INCOMING:-accept}
       READ_ONLY_API: ${READ_ONLY_API:-no}
@@ -61,8 +65,6 @@ services:
       ALLOW_BLIND_TRADING: ${ALLOW_BLIND_TRADING:-no}
       AUTO_RESTART_TIME: ${AUTO_RESTART_TIME:-11:59 PM}
       TWS_SETTINGS_PATH: /home/ibgateway/Jts
-    secrets:
-      - tws_password_paper
     volumes:
       - ib_gateway_settings:/home/ibgateway/Jts
     ports:
