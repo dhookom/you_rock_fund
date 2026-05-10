@@ -61,22 +61,17 @@ SECRETS_SERVICE_URL = "http://secrets:8001"
 # Tracks how long each subsystem has been in a failed state so we
 # can alert only after a persistent outage (not a transient hiccup).
 _watchdog_state: dict = {
-    "gateway_down_since":        None,
-    "ibkr_down_since":           None,
-    "scheduler_down_since":      None,
-    "last_gateway_alert":        None,
-    "last_ibkr_alert":           None,
-    "last_scheduler_alert":      None,
-    "gateway_restart_attempted":   False,  # reset on recovery; prevents retry loops
-    "ibkr_restart_attempted":      False,
-    "scheduler_restart_attempted": False,
+    "gateway_down_since":   None,
+    "ibkr_down_since":      None,
+    "scheduler_down_since": None,
+    "last_gateway_alert":   None,
+    "last_ibkr_alert":      None,
+    "last_scheduler_alert": None,
 }
 _gateway_login_status: str = "unknown"
 
-WATCHDOG_INTERVAL  = 300   # seconds between checks
-ALERT_THRESHOLD    = 600   # seconds a failure must persist before we alert
-ALERT_REPEAT       = 3600  # seconds between repeated alerts for the same issue
-RESTART_THRESHOLD  = 1800  # seconds of continuous failure before auto-restart attempt
+WATCHDOG_INTERVAL = 300   # seconds between checks
+ALERT_THRESHOLD   = 600   # seconds a failure must persist before we alert
 
 app = FastAPI(title="YRVI Dashboard API")
 app.add_middleware(
@@ -191,82 +186,6 @@ def _send_discord_alert(message: str) -> None:
         print(f"[api/watchdog] Discord alert failed: {e}")
 
 
-def _is_market_hours() -> bool:
-    """True if the current ET time falls within regular US market hours (9:30 AM – 4:00 PM ET, weekdays)."""
-    now_et = datetime.now(ET)
-    if now_et.weekday() >= 5:  # Saturday=5, Sunday=6
-        return False
-    h, m = now_et.hour, now_et.minute
-    after_open   = (h > 9) or (h == 9 and m >= 30)
-    before_close = h < 16
-    return after_open and before_close
-
-
-def _try_auto_restart_gateway(down_min: int) -> None:
-    """Attempt to restart ib_gateway, sending Discord alerts before and after. Called once per failure episode."""
-    _send_discord_alert(
-        f"⚠️ YRVI Gateway down {down_min} min — attempting auto-restart..."
-    )
-    try:
-        if CONTAINERIZED:
-            cmd = ["docker", "restart", "ib_gateway"]
-        else:
-            mode_flag = "--live" if os.environ.get("YRVI_ENV") == "live" else "--paper"
-            cmd = ["bash", str(BASE_DIR / "scripts" / "yrvi-restart.sh"), "ib_gateway", mode_flag]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode == 0:
-            _send_discord_alert("✅ YRVI Gateway auto-restart succeeded")
-        else:
-            detail = (result.stderr or result.stdout or "unknown error").strip()[:200]
-            _send_discord_alert(
-                f"❌ YRVI Gateway auto-restart FAILED — manual intervention required\n`{detail}`"
-            )
-    except Exception as e:
-        _send_discord_alert(
-            f"❌ YRVI Gateway auto-restart FAILED — manual intervention required\n`{e}`"
-        )
-
-
-def _try_auto_restart_scheduler(down_min: int) -> None:
-    """Attempt to restart the scheduler, sending Discord alerts before and after. Called once per failure episode."""
-    _send_discord_alert(
-        f"⚠️ YRVI Scheduler down {down_min} min — attempting auto-restart..."
-    )
-    try:
-        if CONTAINERIZED:
-            result = subprocess.run(
-                ["docker", "restart", "yrvi-scheduler-1"],
-                capture_output=True, text=True, timeout=120,
-            )
-            if result.returncode == 0:
-                _send_discord_alert("✅ YRVI Scheduler auto-restart succeeded")
-            else:
-                detail = (result.stderr or result.stdout or "unknown error").strip()[:200]
-                _send_discord_alert(
-                    f"❌ YRVI Scheduler auto-restart FAILED — manual fix: "
-                    f"`./scripts/yrvi-restart.sh scheduler --paper` (from repo root)\n`{detail}`"
-                )
-        else:
-            uid = os.getuid()
-            result = subprocess.run(
-                ["launchctl", "kickstart", "-k", f"gui/{uid}/com.yourockfund.scheduler"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                _send_discord_alert("✅ YRVI Scheduler auto-restart succeeded")
-            else:
-                detail = (result.stderr or result.stdout or "unknown error").strip()[:200]
-                _send_discord_alert(
-                    f"❌ YRVI Scheduler auto-restart FAILED — manual fix: "
-                    f"`./scripts/yrvi-restart.sh scheduler --paper` (from repo root)\n`{detail}`"
-                )
-    except Exception as e:
-        _send_discord_alert(
-            f"❌ YRVI Scheduler auto-restart FAILED — manual fix: "
-            f"`./scripts/yrvi-restart.sh scheduler --paper` (from repo root)\n`{e}`"
-        )
-
-
 def _watchdog_check() -> None:
     """Check gateway and scheduler health; send Discord alerts on persistent failures."""
     now = datetime.now(PST)
@@ -279,22 +198,17 @@ def _watchdog_check() -> None:
         if _watchdog_state["gateway_down_since"] is None:
             _watchdog_state["gateway_down_since"] = now
         down_sec = (now - _watchdog_state["gateway_down_since"]).total_seconds()
-        last = _watchdog_state["last_gateway_alert"]
-        if down_sec >= ALERT_THRESHOLD and (
-                last is None or (now - last).total_seconds() >= ALERT_REPEAT):
+        if (down_sec >= ALERT_THRESHOLD
+                and _watchdog_state["last_gateway_alert"] is None):
             _watchdog_state["last_gateway_alert"] = now
             host = os.environ.get("IBKR_HOST", "ib_gateway")
             _send_discord_alert(
                 f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
                 f"(`{host}:{port}`). Gateway may not have logged in or is stuck on a dialog. "
-                f"VNC available on host port 5900."
+                f"VNC available on host port 5900.\n"
+                f"🔴 Manual restart required: "
+                f"`docker compose --env-file .env.compose restart ib_gateway`"
             )
-        if (not _watchdog_state["gateway_restart_attempted"]
-                and down_sec >= RESTART_THRESHOLD
-                and settings.get("auto_restart_gateway", True)
-                and not _is_market_hours()):
-            _watchdog_state["gateway_restart_attempted"] = True
-            _try_auto_restart_gateway(int(down_sec / 60))
     else:
         if _watchdog_state["gateway_down_since"] is not None:
             down_sec = (now - _watchdog_state["gateway_down_since"]).total_seconds()
@@ -304,7 +218,6 @@ def _watchdog_check() -> None:
             )
         _watchdog_state["gateway_down_since"] = None
         _watchdog_state["last_gateway_alert"] = None
-        _watchdog_state["gateway_restart_attempted"] = False
 
     # ── IBKR API connection (only when gateway port is up) ────────
     # Port open but ib_insync failing → gateway logged in but API broken (Scenario 3)
@@ -315,23 +228,18 @@ def _watchdog_check() -> None:
             if _watchdog_state["ibkr_down_since"] is None:
                 _watchdog_state["ibkr_down_since"] = now
             down_sec = (now - _watchdog_state["ibkr_down_since"]).total_seconds()
-            last = _watchdog_state["last_ibkr_alert"]
-            if down_sec >= ALERT_THRESHOLD and (
-                    last is None or (now - last).total_seconds() >= ALERT_REPEAT):
+            if (down_sec >= ALERT_THRESHOLD
+                    and _watchdog_state["last_ibkr_alert"] is None):
                 _watchdog_state["last_ibkr_alert"] = now
                 err = ibkr.get("error") or "unknown error"
                 _send_discord_alert(
                     f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
                     f"for {int(down_sec / 60)} min. Error: `{err}`. "
                     f"Gateway may be frozen on a 2FA or confirmation dialog. "
-                    f"VNC available on host port 5900."
+                    f"VNC available on host port 5900.\n"
+                    f"🔴 Manual restart required: "
+                    f"`docker compose --env-file .env.compose restart ib_gateway`"
                 )
-            if (not _watchdog_state["ibkr_restart_attempted"]
-                    and down_sec >= RESTART_THRESHOLD
-                    and settings.get("auto_restart_gateway", True)
-                    and not _is_market_hours()):
-                _watchdog_state["ibkr_restart_attempted"] = True
-                _try_auto_restart_gateway(int(down_sec / 60))
         else:
             if _watchdog_state["ibkr_down_since"] is not None:
                 down_sec = (now - _watchdog_state["ibkr_down_since"]).total_seconds()
@@ -341,12 +249,10 @@ def _watchdog_check() -> None:
                 )
             _watchdog_state["ibkr_down_since"] = None
             _watchdog_state["last_ibkr_alert"] = None
-            _watchdog_state["ibkr_restart_attempted"] = False
     else:
         # Gateway port is down — clear IBKR state; its episode timer resets when port returns
         _watchdog_state["ibkr_down_since"] = None
         _watchdog_state["last_ibkr_alert"] = None
-        _watchdog_state["ibkr_restart_attempted"] = False
 
     # ── Scheduler heartbeat ───────────────────────────────────────
     sched_ok = _scheduler_pid() is not None
@@ -354,18 +260,14 @@ def _watchdog_check() -> None:
         if _watchdog_state["scheduler_down_since"] is None:
             _watchdog_state["scheduler_down_since"] = now
         down_sec = (now - _watchdog_state["scheduler_down_since"]).total_seconds()
-        last = _watchdog_state["last_scheduler_alert"]
-        if down_sec >= ALERT_THRESHOLD and (
-                last is None or (now - last).total_seconds() >= ALERT_REPEAT):
+        if (down_sec >= ALERT_THRESHOLD
+                and _watchdog_state["last_scheduler_alert"] is None):
             _watchdog_state["last_scheduler_alert"] = now
             _send_discord_alert(
-                f"🚨 **YRVI** Scheduler heartbeat stale for {int(down_sec / 60)} min — "
-                f"attempting auto-restart..."
+                f"🚨 **YRVI** Scheduler heartbeat stale for {int(down_sec / 60)} min.\n"
+                f"🔴 Manual restart required: "
+                f"`docker compose --env-file .env.compose restart scheduler`"
             )
-        if (not _watchdog_state["scheduler_restart_attempted"]
-                and down_sec >= RESTART_THRESHOLD):
-            _watchdog_state["scheduler_restart_attempted"] = True
-            _try_auto_restart_scheduler(int(down_sec / 60))
     else:
         if _watchdog_state["scheduler_down_since"] is not None:
             down_sec = (now - _watchdog_state["scheduler_down_since"]).total_seconds()
@@ -375,7 +277,6 @@ def _watchdog_check() -> None:
             )
         _watchdog_state["scheduler_down_since"] = None
         _watchdog_state["last_scheduler_alert"] = None
-        _watchdog_state["scheduler_restart_attempted"] = False
 
 
 def _run_watchdog() -> None:
@@ -842,7 +743,6 @@ class SettingsUpdate(BaseModel):
     discord_webhook_enabled:  Optional[bool]  = None
     trading_mode:             Optional[str]   = None
     execution_time:           Optional[str]   = None
-    auto_restart_gateway:     Optional[bool]  = None
 
 @app.post("/api/settings")
 def update_settings(body: SettingsUpdate):

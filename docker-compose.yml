@@ -43,7 +43,7 @@ services:
       args:
         IB_GATEWAY_TAG: ${IB_GATEWAY_TAG:-latest}
     container_name: ib_gateway
-    restart: "on-failure:3"
+    restart: "no"
     entrypoint: ["/usr/local/bin/yrvi-gw-entrypoint.sh"]
     command: ["/home/ibgateway/scripts/run.sh"]
     depends_on:
