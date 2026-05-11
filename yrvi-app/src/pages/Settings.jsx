@@ -540,7 +540,7 @@ export default function SettingsPage() {
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Shut Down YRVI</h3>
             </div>
             <p className="text-gray-600 dark:text-gray-300 text-sm mb-5">
-              This will stop all YRVI containers. Are you sure?
+              This will stop all YRVI containers. To restart, click the YRVI icon on your desktop.
             </p>
             <div className="flex gap-3">
               <button
