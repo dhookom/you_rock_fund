@@ -99,6 +99,15 @@ const THEME_OPTIONS = [
   { value: 'dark',   label: 'Dark',   icon: Moon },
 ]
 
+const TIMEZONES = [
+  { value: 'America/Los_Angeles', label: 'Pacific  — America/Los_Angeles' },
+  { value: 'America/Denver',      label: 'Mountain — America/Denver' },
+  { value: 'America/Chicago',     label: 'Central  — America/Chicago' },
+  { value: 'America/New_York',    label: 'Eastern  — America/New_York' },
+  { value: 'America/Anchorage',   label: 'Alaska   — America/Anchorage' },
+  { value: 'Pacific/Honolulu',    label: 'Hawaii   — Pacific/Honolulu' },
+]
+
 export default function SettingsPage() {
   const [settings, setSettings]           = useState(null)
   const [original, setOriginal]           = useState(null)
@@ -114,6 +123,9 @@ export default function SettingsPage() {
   const [accountMasked, setAccountMasked] = useState('')
   const [restarting, setRestarting]       = useState(false)
   const [restartResult, setRestartResult] = useState(null)
+  const [timezone, setTimezone]                 = useState('')
+  const [timezoneOriginal, setTimezoneOriginal] = useState('')
+  const [tzSaving, setTzSaving]                 = useState(false)
 
   const { theme, setTheme } = useThemeContext()
 
@@ -121,6 +133,9 @@ export default function SettingsPage() {
     axios.get('/api/settings').then(r => {
       setSettings(r.data)
       setOriginal(r.data)
+      const tz = r.data?.timezone || 'America/Los_Angeles'
+      setTimezone(tz)
+      setTimezoneOriginal(tz)
     })
   }, [])
 
@@ -156,6 +171,20 @@ export default function SettingsPage() {
       showMsg('error', err.response?.data?.detail ?? err.message)
     } finally {
       setTesting(false)
+    }
+  }
+
+  const saveTimezone = async () => {
+    setTzSaving(true)
+    try {
+      const res = await axios.post('/api/settings/timezone', { timezone })
+      setTimezone(res.data.timezone)
+      setTimezoneOriginal(res.data.timezone)
+      showMsg('success', 'Timezone saved — restart the scheduler for changes to take effect')
+    } catch (err) {
+      showMsg('error', err.response?.data?.detail ?? err.message)
+    } finally {
+      setTzSaving(false)
     }
   }
 
@@ -331,6 +360,50 @@ export default function SettingsPage() {
 
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
           <Toggle label="Dry Run" sub="Simulate orders — no real trades placed" checked={settings.dry_run} onChange={v => set('dry_run', v)} />
+        </div>
+      </Section>
+
+      {/* Timezone */}
+      <Section title="Timezone" emoji="🌐">
+        <div>
+          <div className="text-gray-700 dark:text-gray-300 text-sm mb-2">Scheduler timezone</div>
+          <select
+            value={timezone}
+            onChange={e => setTimezone(e.target.value)}
+            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          >
+            {TIMEZONES.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
+            Cron jobs (Monday execution, weekly preview, daily monitor) fire at the local wall-clock time in this zone.
+          </div>
+
+          <div className="mt-3 flex items-center gap-3 flex-wrap">
+            <button
+              onClick={saveTimezone}
+              disabled={tzSaving || timezone === timezoneOriginal}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Save size={11} />
+              {tzSaving ? 'Saving…' : 'Save Timezone'}
+            </button>
+            {timezone !== timezoneOriginal && (
+              <span className="text-xs text-amber-600 dark:text-amber-500">
+                ⚠ Save and then restart scheduler for change to take effect.
+              </span>
+            )}
+            <button
+              onClick={restartScheduler}
+              disabled={restarting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-600 text-amber-600 dark:text-amber-500 dark:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-wait transition-colors"
+            >
+              <RefreshCw size={11} className={restarting ? 'animate-spin' : ''} />
+              {restarting ? 'Restarting…' : 'Restart Scheduler'}
+            </button>
+          </div>
         </div>
       </Section>
 

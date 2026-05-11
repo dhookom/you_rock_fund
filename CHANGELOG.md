@@ -1,3 +1,10 @@
+## [1.4.4] — 2026-05-11
+### Added
+- Timezone dropdown on Settings page (6 US timezones)
+- POST /api/settings/timezone validates the IANA name and persists to settings.json
+- Scheduler reads timezone from settings.json at startup (falls back to TIME_ZONE env, then America/Los_Angeles)
+- Closes #3
+
 ## [1.4.3] — 2026-05-11
 ### Changed
 - tws_password_live moved to optional — paper-only members no longer blocked at setup

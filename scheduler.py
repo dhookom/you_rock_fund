@@ -20,10 +20,27 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-PST             = ZoneInfo("America/Los_Angeles")
 STATE_FILE      = "state.json"
 SETTINGS_FILE   = "settings.json"
 HEARTBEAT_FILE  = "scheduler_heartbeat.json"
+
+DEFAULT_TIMEZONE = "America/Los_Angeles"
+
+
+def _resolve_timezone() -> ZoneInfo:
+    try:
+        with open(SETTINGS_FILE) as f:
+            tz_name = (json.load(f) or {}).get("timezone")
+    except (FileNotFoundError, json.JSONDecodeError):
+        tz_name = None
+    tz_name = tz_name or os.environ.get("TIME_ZONE") or DEFAULT_TIMEZONE
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo(DEFAULT_TIMEZONE)
+
+
+PST = _resolve_timezone()  # variable name kept for compatibility; reflects configured timezone
 
 
 def _write_heartbeat():

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:
     import nest_asyncio
@@ -757,6 +757,27 @@ def update_settings(body: SettingsUpdate):
     current.update(updates)
     save_settings(current)
     return current
+
+@app.get("/api/settings/timezone")
+def get_timezone():
+    return {"timezone": load_settings().get("timezone") or "America/Los_Angeles"}
+
+class TimezoneUpdate(BaseModel):
+    timezone: str
+
+@app.post("/api/settings/timezone")
+def set_timezone(body: TimezoneUpdate):
+    tz = (body.timezone or "").strip()
+    if not tz:
+        raise HTTPException(status_code=400, detail="timezone is required")
+    try:
+        ZoneInfo(tz)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail=f"Invalid IANA timezone: {tz}")
+    current = load_settings()
+    current["timezone"] = tz
+    save_settings(current)
+    return {"timezone": tz}
 
 class SecretValueRequest(BaseModel):
     value: str
