@@ -386,10 +386,20 @@ async def _startup() -> None:
 @app.post("/api/restart-scheduler")
 def restart_scheduler():
     if CONTAINERIZED:
-        raise HTTPException(
-            status_code=501,
-            detail="In Docker mode use: ./scripts/yrvi-restart.sh scheduler --paper  (from repo root)",
-        )
+        try:
+            r = subprocess.run(
+                ["docker", "restart", "yrvi-scheduler-1"],
+                capture_output=True, text=True, timeout=30,
+            )
+        except FileNotFoundError:
+            raise HTTPException(status_code=503, detail="docker CLI not installed in api container")
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="docker restart timed out after 30s")
+        if r.returncode != 0:
+            msg = (r.stderr or r.stdout or "").strip() or "unknown docker error"
+            raise HTTPException(status_code=500, detail=f"docker restart failed: {msg}")
+        return {"success": True, "container": "yrvi-scheduler-1"}
+
     uid = os.getuid()
     service = "com.yourockfund.scheduler"
     errors: list[str] = []
@@ -418,6 +428,45 @@ def restart_scheduler():
         detail = "Scheduler did not start. " + " | ".join(errors) if errors else "Scheduler did not start — check scheduler_log.txt"
         raise HTTPException(status_code=500, detail=detail)
     return {"success": True, "pid": pid, "errors": errors}
+
+
+class ShutdownRequest(BaseModel):
+    confirm: str
+
+
+# Stop order: api is last so the HTTP response can return before this
+# container kills itself.
+SHUTDOWN_CONTAINERS = [
+    "yrvi-scheduler-1",
+    "yrvi-web-1",
+    "ib_gateway",
+    "yrvi-secrets-1",
+    "yrvi-api-1",
+]
+
+
+@app.post("/api/shutdown")
+def shutdown_stack(body: ShutdownRequest):
+    if body.confirm != "shutdown":
+        raise HTTPException(status_code=400, detail='Confirmation token required: send {"confirm":"shutdown"}')
+    if not CONTAINERIZED:
+        raise HTTPException(status_code=501, detail="Shutdown is only available in Docker mode")
+
+    def do_shutdown():
+        time.sleep(1)  # let the HTTP response flush before we start stopping containers
+        for name in SHUTDOWN_CONTAINERS:
+            try:
+                subprocess.run(
+                    ["docker", "stop", name],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except Exception:
+                # best-effort — keep going so api (last) still gets stopped
+                pass
+
+    threading.Thread(target=do_shutdown, daemon=True).start()
+    return {"success": True, "message": "Shutdown initiated"}
+
 
 _IBKR_EMPTY: dict = {
     "connected": False, "account_value": None, "buying_power": None,

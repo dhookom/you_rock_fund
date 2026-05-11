@@ -86,6 +86,10 @@ services:
     secrets: *python-secrets
     volumes:
       - yrvi_data:/data
+      # docker.sock lets the api restart/stop sibling containers.
+      # ":ro" marks the socket file read-only but does NOT restrict
+      # Docker API commands — the api has effectively root on the host.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:${YRVI_API_PORT:-8000}:8000"
     healthcheck:

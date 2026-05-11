@@ -1,3 +1,14 @@
+## [1.4.5] — 2026-05-11
+### Added
+- Shutdown button on Settings page with confirmation dialog
+- `POST /api/shutdown` stops all YRVI containers (scheduler, web, ib_gateway, secrets, api last)
+### Fixed
+- Restart Scheduler now works in Docker mode (docker.sock mount)
+- `POST /api/restart-scheduler` no longer returns HTTP 501 — runs `docker restart yrvi-scheduler-1`
+### Changed
+- `Dockerfile.api` installs static Docker CLI from download.docker.com (arch-aware, ~70MB)
+- `docker-compose.yml` api service mounts `/var/run/docker.sock:ro` (note: read-only flag doesn't restrict Docker API commands)
+
 ## [1.4.4] — 2026-05-11
 ### Added
 - Timezone dropdown on Settings page (6 US timezones)

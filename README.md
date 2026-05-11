@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.4.4-blue)
+![Version](https://img.shields.io/badge/version-1.4.5-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -465,6 +465,13 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.4.5 (May 2026)
+- Shutdown button on Settings page with confirmation dialog — stops all YRVI containers (scheduler, web, ib_gateway, secrets, api) in order, api last
+- `POST /api/shutdown` accepts `{"confirm": "shutdown"}` and runs `docker stop` against each container
+- `POST /api/restart-scheduler` now works in Docker mode (was returning HTTP 501) — runs `docker restart yrvi-scheduler-1`
+- `Dockerfile.api` installs the static Docker CLI (~70MB) from download.docker.com (arch-aware: x86_64 / aarch64)
+- `docker-compose.yml` mounts `/var/run/docker.sock` into the api container with `:ro` (note: read-only does not restrict Docker API commands — the api effectively has root on the host)
 
 ### v1.4.4 (May 2026)
 - Timezone dropdown on Settings page (6 US timezones — Pacific, Mountain, Central, Eastern, Alaska, Hawaii)
