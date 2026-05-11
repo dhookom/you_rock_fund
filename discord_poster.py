@@ -178,7 +178,9 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
                 slip_deltas.append(fill_price - screener_px)
 
         else:
-            label      = SKIP_LABEL.get(status, status)
+            label = SKIP_LABEL.get(status, status)
+            if status == "skipped_liquidity" and ex.get("spread_pct") is not None:
+                label = f"skipped — spread too wide ({ex['spread_pct']*100:.1f}%)"
             strike_str = f"{_fmt_strike(strike)} strike  |  " if strike is not None else ""
             lines.append(f"{emoji} **{ticker}**  |  {strike_str}{label}")
 

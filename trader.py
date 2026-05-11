@@ -231,16 +231,17 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     }
 
 
-def check_liquidity(mkt: dict, ticker: str) -> bool:
+def check_liquidity(mkt: dict, ticker: str) -> dict | None:
+    """Returns None if liquidity is OK, else a skip-info dict with reason details."""
     if mkt.get("simulated"):
-        return True  # skip liquidity check on simulated data
+        return None
     if mkt["spread_pct"] > MAX_SPREAD_PCT:
         log.warning(f"⚠️  {ticker} spread too wide: {mkt['spread_pct']*100:.1f}% — skipping")
-        return False
+        return {"reason": "spread", "spread_pct": mkt["spread_pct"]}
     if mkt["open_interest"] < MIN_OPEN_INTEREST:
         log.warning(f"⚠️  {ticker} OI too low: {mkt['open_interest']} — skipping")
-        return False
-    return True
+        return {"reason": "oi", "open_interest": mkt["open_interest"]}
+    return None
 
 
 def place_order_with_escalation(ib: IB, contract, contracts: int,
@@ -433,9 +434,10 @@ def execute_positions(sized_positions: list, extra_targets: list = None) -> list
                 results.append({"ticker": ticker, "status": "failed_market_data"})
                 continue
 
-            if not check_liquidity(mkt, ticker):
+            skip_info = check_liquidity(mkt, ticker)
+            if skip_info:
                 log.info(f"  🔄 {ticker} — failed liquidity, trying next candidate")
-                results.append({"ticker": ticker, "status": "skipped_liquidity"})
+                results.append({"ticker": ticker, "status": "skipped_liquidity", **skip_info})
                 continue
 
             result = place_order_with_escalation(ib, contract, contracts, mkt, ticker)
