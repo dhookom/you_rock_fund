@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
+from config import MAX_PER_POSITION
+
 load_dotenv()
 
 def _read_secret_or_env(secret_name: str, env_name: str) -> str:
@@ -193,7 +195,7 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
     if "skipped_liquidity" in statuses:
         footnotes.append("* Spread too wide = bid/ask gap > 20% of mid price (low liquidity — protects against bad fills)")
     if "skipped_contract_size" in statuses:
-        footnotes.append("* Contract too large = single contract exceeds $70,000 max position size")
+        footnotes.append(f"* Contract too large = single contract exceeds ${MAX_PER_POSITION:,.0f} max position size")
     footnote_block = "\n" + "\n".join(footnotes) if footnotes else ""
 
     # Discord field value cap is 1024 chars
