@@ -1,3 +1,7 @@
+## [1.4.3] — 2026-05-11
+### Changed
+- tws_password_live moved to optional — paper-only members no longer blocked at setup
+
 ## [1.4.2] — 2026-05-11
 ### Fixed
 - Secrets page now dynamically renders all secrets from API (was hardcoded to 5, now shows all 10)

@@ -16,7 +16,7 @@ const LABELS = {
   account_paper:               { label: 'IBKR Paper Account ID',        required: true  },
   tws_userid_paper:            { label: 'IBKR Paper Username',          required: true  },
   tws_password_paper:          { label: 'IBKR Paper Trading Password',  required: true  },
-  tws_password_live:           { label: 'IBKR Live Trading Password',   required: true  },
+  tws_password_live:           { label: 'IBKR Live Trading Password',   required: false },
   render_secret:               { label: 'Render Screener API Secret',   required: true  },
   account_live:                { label: 'IBKR Live Account ID',         required: false },
   tws_userid_live:             { label: 'IBKR Live Username',           required: false },

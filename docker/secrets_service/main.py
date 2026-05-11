@@ -16,12 +16,12 @@ REQUIRED_SECRETS = [
     "account_paper",
     "tws_userid_paper",
     "tws_password_paper",
-    "tws_password_live",
     "render_secret",
 ]
 OPTIONAL_SECRETS = [
     "account_live",
     "tws_userid_live",
+    "tws_password_live",
     "vnc_server_password",
     "discord_webhook_url",
     "discord_webhook_weekly_plan",

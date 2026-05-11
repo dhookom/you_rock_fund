@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.4.2-blue)
+![Version](https://img.shields.io/badge/version-1.4.3-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -465,6 +465,10 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.4.3 (May 2026)
+- `tws_password_live` moved to optional — paper-only members no longer blocked at setup
+- Secrets page `Required` section now lists 4 keys (was 5); `tws_password_live` moves to `Optional`
 
 ### v1.4.2 (May 2026)
 - Secrets page now dynamically renders all secrets from the API (was hardcoded to 5, now shows all 10)
