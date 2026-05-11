@@ -12,15 +12,28 @@ import {
   X as XIcon,
 } from 'lucide-react'
 
-const SECRETS = [
-  { name: 'tws_password_paper',          label: 'IBKR Paper Trading Password',  required: true  },
-  { name: 'tws_password_live',           label: 'IBKR Live Trading Password',   required: true  },
-  { name: 'render_secret',               label: 'Render Screener API Secret',   required: true  },
-  { name: 'discord_webhook_url',         label: 'Discord Webhook URL',          required: false },
-  { name: 'discord_webhook_weekly_plan', label: 'Discord Weekly Plan Webhook',  required: false },
-]
+const LABELS = {
+  account_paper:               { label: 'IBKR Paper Account ID',        required: true  },
+  tws_userid_paper:            { label: 'IBKR Paper Username',          required: true  },
+  tws_password_paper:          { label: 'IBKR Paper Trading Password',  required: true  },
+  tws_password_live:           { label: 'IBKR Live Trading Password',   required: true  },
+  render_secret:               { label: 'Render Screener API Secret',   required: true  },
+  account_live:                { label: 'IBKR Live Account ID',         required: false },
+  tws_userid_live:             { label: 'IBKR Live Username',           required: false },
+  vnc_server_password:         { label: 'VNC Password',                 required: false },
+  discord_webhook_url:         { label: 'Discord Webhook URL',          required: false },
+  discord_webhook_weekly_plan: { label: 'Discord Weekly Plan Webhook',  required: false },
+}
 
-function StatusBanner({ status, loading }) {
+function deriveSecrets(statusSecrets) {
+  if (!statusSecrets) return []
+  return Object.keys(statusSecrets).map(name => {
+    const meta = LABELS[name] || { label: name, required: false }
+    return { name, label: meta.label, required: meta.required }
+  })
+}
+
+function StatusBanner({ status, loading, secrets }) {
   if (loading && !status) {
     return (
       <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 text-sm text-gray-500">
@@ -39,7 +52,7 @@ function StatusBanner({ status, loading }) {
     )
   }
   if (status?.complete) {
-    const anyOptionalMissing = SECRETS.some(
+    const anyOptionalMissing = secrets.some(
       s => !s.required && status.secrets?.[s.name] !== 'set',
     )
     const text = anyOptionalMissing
@@ -200,6 +213,27 @@ function SecretRow({ secret, state, onSaved }) {
   )
 }
 
+function SecretGroup({ title, secrets, status, onSaved }) {
+  if (secrets.length === 0) return null
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+      <div className="text-gray-900 dark:text-white font-semibold text-sm mb-2">
+        {title}
+      </div>
+      <div>
+        {secrets.map(secret => (
+          <SecretRow
+            key={secret.name}
+            secret={secret}
+            state={status?.secrets?.[secret.name]}
+            onSaved={onSaved}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Secrets() {
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -221,6 +255,10 @@ export default function Secrets() {
     return () => clearInterval(id)
   }, [load])
 
+  const secrets  = deriveSecrets(status?.secrets)
+  const required = secrets.filter(s => s.required)
+  const optional = secrets.filter(s => !s.required)
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
@@ -240,23 +278,10 @@ export default function Secrets() {
         </button>
       </div>
 
-      <StatusBanner status={status} loading={loading} />
+      <StatusBanner status={status} loading={loading} secrets={secrets} />
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
-        <div className="text-gray-900 dark:text-white font-semibold text-sm mb-2">
-          Secrets
-        </div>
-        <div>
-          {SECRETS.map(secret => (
-            <SecretRow
-              key={secret.name}
-              secret={secret}
-              state={status?.secrets?.[secret.name]}
-              onSaved={load}
-            />
-          ))}
-        </div>
-      </div>
+      <SecretGroup title="Required secrets" secrets={required} status={status} onSaved={load} />
+      <SecretGroup title="Optional secrets" secrets={optional} status={status} onSaved={load} />
     </div>
   )
 }

@@ -1,3 +1,8 @@
+## [1.4.2] — 2026-05-11
+### Fixed
+- Secrets page now dynamically renders all secrets from API (was hardcoded to 5, now shows all 10)
+- New Account Info section showing IBKR account ID and username fields
+
 ## [1.4.1] — 2026-05-11
 ### Fixed
 - IB Gateway: stop retrying login on failure to prevent IBKR account lockout (`LoginFailed=terminate` patched into IBC config at startup, searches common paths and logs which one was patched)

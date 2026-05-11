@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.4.1-blue)
+![Version](https://img.shields.io/badge/version-1.4.2-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -465,6 +465,11 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.4.2 (May 2026)
+- Secrets page now dynamically renders all secrets from the API (was hardcoded to 5, now shows all 10)
+- New Account Info section showing IBKR account ID and username fields
+- Unknown future secrets surfaced from the backend automatically render with their raw key as the label (no frontend change needed)
 
 ### v1.4.1 (May 2026)
 - IB Gateway: stop retrying login on failure to prevent IBKR account lockout (`LoginFailed=terminate` patched into IBC config at startup)
