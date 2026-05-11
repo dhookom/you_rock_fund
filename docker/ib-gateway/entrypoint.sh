@@ -16,6 +16,8 @@ else
     USERID_KEY="tws_userid_paper"
 fi
 
+# ── Helpers ──────────────────────────────────────────────────────
+
 # Fetch a secret value by name. Echoes the value on stdout, empty string on failure.
 # Always returns 0 so callers can decide whether empty is fatal.
 fetch_secret() {
@@ -36,29 +38,87 @@ fetch_secret() {
     return 0
 }
 
+# Fetch a secret without retrying — for optional helpers like the webhook URL.
+fetch_secret_once() {
+    name="$1"
+    body=$(curl -sf --max-time 3 "${SECRETS_BASE}/${name}" 2>/dev/null || true)
+    if [ -n "$body" ]; then
+        printf '%s' "$body" | sed -n 's/.*"value"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p'
+    fi
+}
+
+# Best-effort Discord notification. Never fails or blocks startup.
+send_discord_alert() {
+    msg="$1"
+    webhook=$(fetch_secret_once "discord_webhook_url" 2>/dev/null || true)
+    if [ -z "$webhook" ]; then
+        echo "yrvi-gw-entrypoint: discord webhook not configured — skipping alert" >&2
+        return 0
+    fi
+    # Escape backslashes and double quotes for the JSON body.
+    escaped=$(printf '%s' "$msg" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    payload=$(printf '{"content":"%s"}' "$escaped")
+    curl -sf --max-time 5 -X POST \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$webhook" >/dev/null 2>&1 || true
+    return 0
+}
+
+# Patch the IBC config.ini to add LoginFailed=terminate so IBC exits on a
+# failed login instead of retrying (which can trigger IBKR account lockout).
+# Searches known paths; logs a warning and continues if none is writable.
+patch_ibc_login_failed() {
+    for path in \
+        /opt/ibc/config.ini \
+        /home/ibgateway/ibc/config.ini \
+        /root/ibc/config.ini
+    do
+        if [ -f "$path" ] && [ -w "$path" ]; then
+            if grep -q "^LoginFailed=" "$path" 2>/dev/null; then
+                sed -i 's/^LoginFailed=.*/LoginFailed=terminate/' "$path"
+                echo "yrvi-gw-entrypoint: patched IBC config at $path (LoginFailed=terminate, replaced existing)"
+            else
+                printf '\nLoginFailed=terminate\n' >> "$path"
+                echo "yrvi-gw-entrypoint: patched IBC config at $path (LoginFailed=terminate, appended)"
+            fi
+            return 0
+        fi
+    done
+    echo "yrvi-gw-entrypoint: WARNING — IBC config.ini not found in known paths; LoginFailed=terminate not applied" >&2
+    return 0
+}
+
+# ── Credentials preflight ────────────────────────────────────────
+
 echo "yrvi-gw-entrypoint: fetching ${PASSWORD_KEY} from secrets container..."
 password=$(fetch_secret "$PASSWORD_KEY")
 if [ -z "$password" ]; then
-    echo "yrvi-gw-entrypoint: ERROR — could not fetch ${PASSWORD_KEY} after $MAX_RETRIES attempts" >&2
-    echo "yrvi-gw-entrypoint: secrets container unreachable, or password not configured" >&2
-    echo "yrvi-gw-entrypoint: open http://localhost:8001 to enter the password, then restart this container" >&2
+    echo "yrvi-gw-entrypoint: FATAL: IBKR credentials not found in secrets container — aborting to prevent account lockout" >&2
+    echo "yrvi-gw-entrypoint: missing ${PASSWORD_KEY}" >&2
+    send_discord_alert "🔴 YRVI: IB Gateway refused to start — credentials missing in secrets container. Login NOT attempted. Re-run setup_docker.sh to enter credentials."
     exit 1
 fi
 
 echo "yrvi-gw-entrypoint: fetching ${USERID_KEY} from secrets container..."
 userid=$(fetch_secret "$USERID_KEY")
 if [ -z "$userid" ]; then
-    echo "yrvi-gw-entrypoint: ERROR — could not fetch ${USERID_KEY} after $MAX_RETRIES attempts" >&2
-    echo "yrvi-gw-entrypoint: open http://localhost:8001 to enter the IBKR username, then restart this container" >&2
+    echo "yrvi-gw-entrypoint: FATAL: IBKR credentials not found in secrets container — aborting to prevent account lockout" >&2
+    echo "yrvi-gw-entrypoint: missing ${USERID_KEY}" >&2
+    send_discord_alert "🔴 YRVI: IB Gateway refused to start — credentials missing in secrets container. Login NOT attempted. Re-run setup_docker.sh to enter credentials."
     exit 1
 fi
 
 echo "yrvi-gw-entrypoint: fetching vnc_server_password from secrets container (optional)..."
-vnc_password=$(fetch_secret "vnc_server_password")
+vnc_password=$(fetch_secret_once "vnc_server_password" || true)
 if [ -z "$vnc_password" ]; then
     vnc_password="$VNC_DEFAULT"
     echo "yrvi-gw-entrypoint: vnc_server_password not set — using default"
 fi
+
+# ── Patch IBC config and prepare env ─────────────────────────────
+
+patch_ibc_login_failed
 
 # The image's common.sh errors if both TWS_PASSWORD and TWS_PASSWORD_FILE are set.
 # Pass the password as TWS_PASSWORD and clear the file path.
@@ -69,4 +129,55 @@ export VNC_SERVER_PASSWORD="$vnc_password"
 
 echo "yrvi-gw-entrypoint: secrets loaded (mode=${TRADING_MODE}, userid set, password ${#password} chars), starting IB Gateway..."
 
-exec "$@"
+# ── Run IB Gateway with lockout monitoring ───────────────────────
+#
+# Case-insensitive match against any of:
+#   - "locked out"
+#   - "excessive number of failed login attempts"
+#   - "PASSWORD NOTICE"
+#   - "Login failed"
+# On match: send Discord alert, kill the gateway, exit 1.
+
+LOG_FILE="/tmp/yrvi-gw.log"
+LOCKOUT_FLAG="/tmp/yrvi-gw.lockout"
+rm -f "$LOG_FILE" "$LOCKOUT_FLAG"
+: > "$LOG_FILE"
+
+# Start IB Gateway in the background; tee its stdout+stderr to the log file
+# while continuing to write to container stdout.
+"$@" > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE" >&2) &
+GW_PID=$!
+
+# Watcher: tails the log, matches the lockout patterns case-insensitively,
+# and on hit sends an alert and signals the gateway to exit.
+(
+    tail -n 0 -F "$LOG_FILE" 2>/dev/null | while IFS= read -r line; do
+        lower=$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')
+        case "$lower" in
+            *"locked out"*|*"excessive number of failed login attempts"*|*"password notice"*|*"login failed"*)
+                echo "yrvi-gw-entrypoint: lockout pattern matched — halting gateway" >&2
+                touch "$LOCKOUT_FLAG"
+                send_discord_alert "🔴 YRVI: IBKR account locked out — too many failed login attempts. Contact IBKR support to unlock: 1-877-442-2757 or ibkr.com/support. Stack has been stopped to prevent further attempts."
+                kill -TERM "$GW_PID" 2>/dev/null || true
+                sleep 3
+                kill -KILL "$GW_PID" 2>/dev/null || true
+                exit 0
+                ;;
+        esac
+    done
+) &
+WATCHER_PID=$!
+
+# Wait for the gateway to exit, capture its exit code.
+EXIT=0
+wait "$GW_PID" 2>/dev/null || EXIT=$?
+
+# Tear down the watcher.
+kill "$WATCHER_PID" 2>/dev/null || true
+wait "$WATCHER_PID" 2>/dev/null || true
+
+if [ -f "$LOCKOUT_FLAG" ]; then
+    exit 1
+fi
+
+exit "$EXIT"

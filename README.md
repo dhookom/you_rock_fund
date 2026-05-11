@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.1-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -465,6 +465,12 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.4.1 (May 2026)
+- IB Gateway: stop retrying login on failure to prevent IBKR account lockout (`LoginFailed=terminate` patched into IBC config at startup)
+- IB Gateway: credential preflight check before IBC starts — exits cleanly with Discord alert if `tws_userid_*` or `tws_password_*` is missing from the secrets container
+- IB Gateway: lockout dialog detection (case-insensitive match on "locked out", "excessive number of failed login attempts", "PASSWORD NOTICE", "Login failed") sends a Discord alert and halts the container
+- IB Gateway entrypoint now wraps the gateway process in a monitored runner instead of `exec` so log patterns can be observed
 
 ### v1.4.0 (May 2026)
 - Account credentials moved into the secrets container UI — IBKR account ID, IBKR username, and VNC password are now entered once at `http://localhost:8001` instead of by editing `.env.compose`
