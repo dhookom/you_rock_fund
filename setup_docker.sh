@@ -243,13 +243,24 @@ else
         }
 
         echo ""
+        info "Required account info:"
+        prompt_required "account_paper"      "IBKR paper account ID (e.g. DU123456)"
+        prompt_required "tws_userid_paper"   "IBKR paper username"
+
+        echo ""
         info "Required secrets:"
         prompt_required "tws_password_paper" "IBKR paper trading password"
         prompt_required "tws_password_live"  "IBKR live trading password"
         prompt_required "render_secret"      "Render screener API secret"
 
         echo ""
+        info "Optional (for live trading):"
+        prompt_optional "account_live"     "IBKR live account ID"
+        prompt_optional "tws_userid_live"  "IBKR live username"
+
+        echo ""
         info "Optional secrets:"
+        prompt_optional "vnc_server_password"          "VNC password (default: ibgateway123!test)"
         prompt_optional "discord_webhook_url"          "Discord webhook URL"
         prompt_optional "discord_webhook_weekly_plan"  "Discord weekly plan webhook"
     fi
@@ -264,48 +275,18 @@ if [ ! -f ".env.compose" ]; then
     fail ".env.compose not found — copy .env.compose.example to .env.compose and fill in credentials"
 fi
 
-# Read a value from .env.compose (strips inline comments and CR)
-env_value() {
-    grep -E "^${1}=" .env.compose 2>/dev/null \
-        | head -1 \
-        | cut -d'=' -f2- \
-        | sed 's/#.*//' \
-        | tr -d '\r ' \
-        || true
-}
-
-is_placeholder() {
-    case "$1" in
-        ""|your_*|YOUR_*|DUP_*|replace-*|get_from*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Mode-specific required vars in .env.compose
-if [ "$TRADING_MODE" = "paper" ]; then
-    REQUIRED_VARS="ACCOUNT_PAPER TWS_USERID_PAPER"
-else
-    REQUIRED_VARS="ACCOUNT_LIVE TWS_USERID_LIVE"
-fi
-
-MISSING=""
-for var in $REQUIRED_VARS; do
-    val=$(env_value "$var")
-    if is_placeholder "$val"; then
-        MISSING="${MISSING}    - ${var}\n"
+# Account credentials are now managed by the secrets container — preflight
+# verifies the required secrets are populated there.
+if [ "$TRADING_MODE" = "live" ]; then
+    LIVE_ACCT=$(curl -sf "$SECRETS_URL/secret/account_live" 2>/dev/null \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null || echo "")
+    LIVE_USER=$(curl -sf "$SECRETS_URL/secret/tws_userid_live" 2>/dev/null \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null || echo "")
+    if [ -z "$LIVE_ACCT" ] || [ -z "$LIVE_USER" ]; then
+        fail "Live mode requires account_live and tws_userid_live in the secrets UI ($SECRETS_URL)"
     fi
-done
-
-if [ -n "$MISSING" ]; then
-    printf "  ${RED}❌${NC}  Missing or placeholder values in .env.compose:\n"
-    printf "$MISSING"
-    echo ""
-    echo "  Edit .env.compose, fill in the values above, and retry."
-    exit 1
 fi
-ok ".env.compose has required $TRADING_MODE credentials"
 
-# Run the full preflight for paper mode (preflight.sh is paper-centric)
 if [ "$TRADING_MODE" = "paper" ]; then
     sh docker/preflight.sh || fail "Preflight check failed — fix the issues above and retry"
 fi
@@ -420,7 +401,7 @@ echo "  Wait for IB Gateway to log in (watch for 'Login has completed'):"
 echo "    docker compose --env-file .env.compose logs -f ib_gateway"
 echo ""
 echo "  VNC (if IBKR shows a dialog at first login):"
-echo "    1. Set VNC_SERVER_PASSWORD in .env.compose"
+echo "    1. Set the VNC password at http://localhost:8001 (or use default)"
 echo "    2. docker compose --env-file .env.compose up -d --force-recreate ib_gateway"
 echo "    3. Connect a VNC client to localhost:5900"
 echo "    macOS: open vnc://localhost:5900 in Finder → Go → Connect to Server"

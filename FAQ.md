@@ -26,27 +26,27 @@ docker compose --env-file .env.compose down
 
 ---
 
-### Q: setup_docker.sh fails or containers won't start — I forgot to configure .env.compose
+### Q: setup_docker.sh fails or containers won't start — I forgot to configure secrets
 
-**A:** You need to copy the example file and fill in your IBKR account details before running setup:
+**A:** Since v1.4.0, account credentials are entered via the secrets container UI, not `.env.compose`. Re-run `setup_docker.sh --paper` — it will open `http://localhost:8001` in your browser. Enter at minimum:
 
-```bash
-cp .env.compose.example .env.compose
-nano .env.compose
-```
-
-Fill in at minimum:
-
-| Variable | What to enter |
+| Field | What to enter |
 |---|---|
-| `ACCOUNT_PAPER` | Your IBKR paper account ID (e.g. `DU1234567`) |
-| `TWS_USERID_PAPER` | Your IBKR paper username |
-| `ACCOUNT_LIVE` | Your IBKR live account ID |
-| `TWS_USERID_LIVE` | Your IBKR live username |
-| `IBKR_USERNAME_LIVE` | Same as `TWS_USERID_LIVE` |
-| `VNC_SERVER_PASSWORD` | A VNC password for IB Gateway 2FA access |
+| IBKR Paper Account ID | Your IBKR paper account ID (e.g. `DU1234567`) |
+| IBKR Paper Username | Your IBKR paper username |
+| IBKR Paper Trading Password | Your IBKR paper password |
+| IBKR Live Trading Password | Your IBKR live password |
+| Render Screener API Secret | Provided in onboarding |
 
-Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
+Optional fields (only needed if you flip the stack to live mode or want a custom VNC password):
+
+| Field | What to enter |
+|---|---|
+| IBKR Live Account ID | Your IBKR live account ID |
+| IBKR Live Username | Your IBKR live username |
+| VNC Password | Defaults to `ibgateway123!test` if unset |
+
+If your browser doesn't open, paste `http://localhost:8001` into it directly. If the browser flow times out, the script falls back to terminal prompts.
 
 ---
 

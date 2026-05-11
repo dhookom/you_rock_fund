@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.3.1-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -106,27 +106,25 @@ cd you_rock_fund
 
 ```bash
 cp .env.compose.example .env.compose
-nano .env.compose
 ```
 
-Fill in these values for your account (everything else can stay as the default for paper trading):
-
-| Variable | What to enter |
-|---|---|
-| `ACCOUNT_PAPER` | Your IBKR paper account ID (e.g. `DU1234567`) |
-| `TWS_USERID_PAPER` | Your IBKR paper username |
-| `ACCOUNT_LIVE` | Your IBKR live account ID |
-| `TWS_USERID_LIVE` | Your IBKR live username |
-| `IBKR_USERNAME_LIVE` | Same as `TWS_USERID_LIVE` |
-| `VNC_SERVER_PASSWORD` | Set a VNC password (required for 2FA via IB Gateway) |
-
-Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` — these are the safe defaults for a new setup.
-
-Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
+`.env.compose` only contains non-secret settings (ports, trading mode, timezone) — no editing required for a default paper-trading setup. Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` for the safe defaults.
 
 #### About Secrets
 
-Passwords and API keys are stored encrypted (AES-256-GCM) in a persistent volume managed by the `secrets` container. When you run `setup_docker.sh`, it starts the secrets container and opens `http://localhost:8001` in your browser to collect:
+Account credentials and passwords are stored encrypted (AES-256-GCM) in a persistent volume managed by the `secrets` container. When you run `setup_docker.sh`, it starts the secrets container and opens `http://localhost:8001` in your browser to collect:
+
+**Account Info (required for paper, optional fields for live)**
+
+| Field | What to enter |
+|---|---|
+| IBKR Paper Account ID | Your IBKR paper account ID (e.g. `DU1234567`) |
+| IBKR Paper Username | Your IBKR paper username |
+| IBKR Live Account ID | (optional) Your IBKR live account ID — only needed for live trading |
+| IBKR Live Username | (optional) Your IBKR live username |
+| VNC Password | (optional) defaults to `ibgateway123!test` if not set |
+
+**Passwords & API keys**
 
 - **Required:** IBKR paper password, IBKR live password, Render screener API secret
 - **Optional:** Discord webhook URL, Discord weekly-plan webhook URL
@@ -467,6 +465,15 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.4.0 (May 2026)
+- Account credentials moved into the secrets container UI — IBKR account ID, IBKR username, and VNC password are now entered once at `http://localhost:8001` instead of by editing `.env.compose`
+- `account_paper`, `tws_userid_paper`, `account_live`, `tws_userid_live`, `vnc_server_password` added to the secrets store (AES-256-GCM)
+- `setup.html` reorganized: new "Account Info" section above the existing passwords section
+- IB Gateway entrypoint fetches `TWS_USERID` + `VNC_SERVER_PASSWORD` from the secrets container at startup (falls back to `ibgateway123!test` for VNC when unset)
+- `config.py` reads `ACCOUNT` via `secrets_client.get_secret`, keyed by `TRADING_MODE`
+- Removed `ACCOUNT_PAPER`, `TWS_USERID_PAPER`, `ACCOUNT_LIVE`, `TWS_USERID_LIVE`, `VNC_SERVER_PASSWORD`, `IBKR_USERNAME_LIVE`, `IBKR_PASSWORD_LIVE_FILE` from `.env.compose`
+- Closes #1
 
 ### v1.3.1 (May 2026)
 - README fully updated for v1.3.0 secrets container architecture (removed all stale macOS Keychain references from setup, security, and script-flow sections)

@@ -174,21 +174,11 @@ This registers `yrvi://upgrade` so the dashboard Upgrade button can open Termina
 ### Configure `.env.compose`
 ```bash
 cp .env.compose.example .env.compose
-nano .env.compose
 ```
 
-Fill in these values for your account (everything else can stay as the default for paper trading):
+`.env.compose` only contains non-secret settings (ports, trading mode, timezone) — no editing required for a default paper-trading setup. Account credentials are entered later via the secrets container UI at `http://localhost:8001` when `setup_docker.sh` runs.
 
-| Variable | What to enter |
-|---|---|
-| `ACCOUNT_PAPER` | Your IBKR paper account ID (e.g. `DU1234567`) |
-| `TWS_USERID_PAPER` | Your IBKR paper username |
-| `ACCOUNT_LIVE` | Your IBKR live account ID |
-| `TWS_USERID_LIVE` | Your IBKR live username |
-| `IBKR_USERNAME_LIVE` | Same as `TWS_USERID_LIVE` |
-| `VNC_SERVER_PASSWORD` | A VNC password for IB Gateway 2FA access |
-
-Save and exit: `Ctrl+O` → `Enter` → `Ctrl+X`
+Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` — these are the safe defaults for a new setup.
 
 ### Run Paper Trading Setup
 ```bash
@@ -303,7 +293,7 @@ Secrets are pulled from Keychain automatically — no passwords needed.
 | Containers don't start after reboot | Open Docker Desktop manually and wait for "Engine running", then run `./setup_docker.sh --paper` |
 | Dashboard shows Gateway red | Run `docker compose --env-file .env.compose logs -f ib_gateway` and check for errors |
 | Secret files missing error | Run `./setup_docker.sh --paper` — it will re-pull secrets from Keychain |
-| IB Gateway needs 2FA | Set `VNC_SERVER_PASSWORD` in `.env.compose`, recreate gateway, connect via Finder → Go → Connect to Server → `vnc://localhost:5900` |
+| IB Gateway needs 2FA | Set the VNC password at `http://localhost:8001`, recreate gateway, connect via Finder → Go → Connect to Server → `vnc://localhost:5900` |
 
 ---
 

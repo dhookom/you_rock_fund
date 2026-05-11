@@ -38,19 +38,6 @@ is_placeholder() {
 if [ ! -f "$env_file" ]; then
     fail "$env_file is missing. Copy .env.compose.example to .env.compose first."
 else
-    for key in ACCOUNT_PAPER TWS_USERID_PAPER; do
-        value="$(value_for "$key")"
-        if is_placeholder "$value"; then
-            fail "$key in $env_file is blank or still a placeholder."
-        fi
-    done
-
-    account_paper="$(value_for ACCOUNT_PAPER)"
-    tws_userid_paper="$(value_for TWS_USERID_PAPER)"
-    if [ -n "$account_paper" ] && [ "$account_paper" = "$tws_userid_paper" ]; then
-        fail "TWS_USERID_PAPER must be the paper login username, not the paper account id."
-    fi
-
     mode="$(value_for TRADING_MODE)"
     if [ "$mode" = "live" ]; then
         fail "This Compose stack is currently wired for paper Gateway login. Keep TRADING_MODE=paper until live Compose wiring is intentionally enabled."
@@ -65,6 +52,13 @@ else
     complete="$(printf '%s' "$status_body" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")"
     if [ "$complete" != "true" ]; then
         fail "Required secrets not configured — open http://localhost:8001 to enter missing secrets"
+    fi
+
+    # Sanity check: account and username must not be identical (common copy/paste mistake)
+    paper_acct="$(curl -sf http://localhost:8001/secret/account_paper 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null || true)"
+    paper_user="$(curl -sf http://localhost:8001/secret/tws_userid_paper 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null || true)"
+    if [ -n "$paper_acct" ] && [ "$paper_acct" = "$paper_user" ]; then
+        fail "tws_userid_paper must be the paper login username, not the paper account id (open http://localhost:8001 to fix)."
     fi
 fi
 

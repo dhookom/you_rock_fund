@@ -67,6 +67,21 @@
     color: var(--ok);
     font-weight: 600;
   }
+  .section-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 24px 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-title:first-child { margin-top: 8px; }
+  .field-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
   .field {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -173,13 +188,30 @@
   </div>
 
 <script>
-const SECRETS = [
-  { name: "tws_password_paper",          label: "IBKR Paper Trading Password",   required: true },
-  { name: "tws_password_live",           label: "IBKR Live Trading Password",    required: true },
-  { name: "render_secret",               label: "Render Screener API Secret",    required: true },
-  { name: "discord_webhook_url",         label: "Discord Webhook URL",           required: false },
-  { name: "discord_webhook_weekly_plan", label: "Discord Weekly Plan Webhook",   required: false },
+const SECTIONS = [
+  {
+    title: "Account Info",
+    secrets: [
+      { name: "account_paper",      label: "IBKR Paper Account ID",       required: true,  hint: "e.g. DU123456" },
+      { name: "tws_userid_paper",   label: "IBKR Paper Username",         required: true },
+      { name: "account_live",       label: "IBKR Live Account ID",        required: false, hint: "Optional — needed for live trading" },
+      { name: "tws_userid_live",    label: "IBKR Live Username",          required: false, hint: "Optional — needed for live trading" },
+      { name: "vnc_server_password", label: "VNC Password",               required: false, hint: "Optional — default: ibgateway123!test" },
+    ],
+  },
+  {
+    title: "Passwords & API Keys",
+    secrets: [
+      { name: "tws_password_paper",          label: "IBKR Paper Trading Password",   required: true },
+      { name: "tws_password_live",           label: "IBKR Live Trading Password",    required: true },
+      { name: "render_secret",               label: "Render Screener API Secret",    required: true },
+      { name: "discord_webhook_url",         label: "Discord Webhook URL",           required: false },
+      { name: "discord_webhook_weekly_plan", label: "Discord Weekly Plan Webhook",   required: false },
+    ],
+  },
 ];
+
+const SECRETS = SECTIONS.flatMap(s => s.secrets);
 
 const fieldsEl = document.getElementById("fields");
 const bannerEl = document.getElementById("banner");
@@ -202,12 +234,19 @@ function buildField(s) {
       </div>
       <button type="button" class="save" data-name="${s.name}">Save</button>
     </div>
+    ${s.hint ? `<div class="field-hint">${s.hint}</div>` : ""}
     <div class="save-msg" id="msg-${s.name}"></div>
   `;
   return wrap;
 }
 
-SECRETS.forEach(s => fieldsEl.appendChild(buildField(s)));
+SECTIONS.forEach(sec => {
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = sec.title;
+  fieldsEl.appendChild(title);
+  sec.secrets.forEach(s => fieldsEl.appendChild(buildField(s)));
+});
 
 document.querySelectorAll(".toggle").forEach(btn => {
   btn.addEventListener("click", () => {

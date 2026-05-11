@@ -44,9 +44,11 @@ SETTINGS_DEFAULT_FILE = BASE_DIR / "settings_default.json"
 IBC_CONFIG_FILE = BASE_DIR / "ibc_config.ini"
 
 LIVE_PLACEHOLDERS = {
-    "IBKR_USERNAME_LIVE": "your_live_ibkr_username",
     "IBKR_PASSWORD_LIVE": "your_live_ibkr_password",
-    "ACCOUNT_LIVE": "your_live_account_number (starts with U)",
+}
+LIVE_REQUIRED_SECRETS = {
+    "account_live":    "your_live_account_number (starts with U)",
+    "tws_userid_live": "your_live_ibkr_username",
 }
 
 PST = ZoneInfo("America/Los_Angeles")
@@ -150,8 +152,12 @@ def _live_ready() -> dict:
         val = os.environ.get(var, "")
         if not val or val == placeholder:
             missing.append(var)
-    account_live = os.environ.get("ACCOUNT_LIVE", "")
-    placeholder_account = LIVE_PLACEHOLDERS["ACCOUNT_LIVE"]
+    for secret_name, placeholder in LIVE_REQUIRED_SECRETS.items():
+        val = get_secret(secret_name)
+        if not val or val == placeholder:
+            missing.append(secret_name)
+    account_live = get_secret("account_live")
+    placeholder_account = LIVE_REQUIRED_SECRETS["account_live"]
     masked = (account_live[0] + "****") if (account_live and account_live != placeholder_account) else ""
     return {"ready": len(missing) == 0, "missing": missing, "account_masked": masked}
 
@@ -814,9 +820,9 @@ def set_trading_mode(body: TradingModeRequest):
     current["ibkr_port"]    = 4001 if body.mode == "live" else 4002
 
     if body.mode == "live":
-        current["account"] = os.environ.get("ACCOUNT_LIVE", "")
+        current["account"] = get_secret("account_live")
         _update_ibc_config(
-            username=os.environ.get("IBKR_USERNAME_LIVE", ""),
+            username=get_secret("tws_userid_live"),
             password=os.environ.get("IBKR_PASSWORD_LIVE", ""),
             mode="live",
             port=4001,

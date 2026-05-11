@@ -11,7 +11,6 @@ x-python-env: &python-env
   # gnzsnz/ib-gateway exposes paper on 4004 and live on 4003 inside the Docker network.
   IBKR_PORT: ${IBKR_PORT:-4004}
   IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1}
-  ACCOUNT: ${ACCOUNT_PAPER:?Set ACCOUNT_PAPER in .env.compose or your shell}
   RENDER_URL: ${RENDER_URL:-https://yourockclub-ledger-sync.onrender.com/api/targets/csp}
 
 x-python-secrets: &python-secrets
@@ -50,14 +49,13 @@ services:
       secrets:
         condition: service_healthy
     environment:
-      # This stack currently starts the paper Gateway only.
-      TWS_USERID: ${TWS_USERID_PAPER:?Set TWS_USERID_PAPER in .env.compose or your shell}
+      # TWS_USERID and VNC_SERVER_PASSWORD are fetched from the secrets container
+      # at startup by yrvi-gw-entrypoint.sh — not injected here.
       TRADING_MODE: ${TRADING_MODE:-paper}
       TWS_ACCEPT_INCOMING: ${TWS_ACCEPT_INCOMING:-accept}
       READ_ONLY_API: ${READ_ONLY_API:-no}
       TIME_ZONE: ${TIME_ZONE:-America/Los_Angeles}
       TZ: ${TIME_ZONE:-America/Los_Angeles}
-      VNC_SERVER_PASSWORD: ${VNC_SERVER_PASSWORD:-}
       TWOFA_TIMEOUT_ACTION: ${TWOFA_TIMEOUT_ACTION:-exit}
       RELOGIN_AFTER_TWOFA_TIMEOUT: ${RELOGIN_AFTER_TWOFA_TIMEOUT:-no}
       TWOFA_EXIT_INTERVAL: ${TWOFA_EXIT_INTERVAL:-60}
@@ -85,8 +83,6 @@ services:
         condition: service_healthy
     environment:
       <<: *python-env
-      ACCOUNT_LIVE: ${ACCOUNT_LIVE:-}
-      IBKR_USERNAME_LIVE: ${IBKR_USERNAME_LIVE:-}
     secrets: *python-secrets
     volumes:
       - yrvi_data:/data
@@ -112,8 +108,6 @@ services:
         condition: service_healthy
     environment:
       <<: *python-env
-      ACCOUNT_LIVE: ${ACCOUNT_LIVE:-}
-      IBKR_USERNAME_LIVE: ${IBKR_USERNAME_LIVE:-}
     secrets: *python-secrets
     volumes:
       - yrvi_data:/data

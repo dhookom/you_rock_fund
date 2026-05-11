@@ -11,7 +11,15 @@ load_dotenv()
 IBKR_HOST      = os.environ["IBKR_HOST"]
 IBKR_PORT      = int(os.environ["IBKR_PORT"])   # IB Gateway: 4002 = paper, 4001 = live
 IBKR_CLIENT_ID = int(os.environ["IBKR_CLIENT_ID"])
-ACCOUNT        = os.environ["ACCOUNT"]
+
+TRADING_MODE   = os.environ.get("TRADING_MODE", "paper").lower()
+_ACCOUNT_KEY   = "account_live" if TRADING_MODE == "live" else "account_paper"
+ACCOUNT        = get_secret(_ACCOUNT_KEY, "ACCOUNT")
+if not ACCOUNT:
+    raise RuntimeError(
+        f"ACCOUNT not set — configure '{_ACCOUNT_KEY}' in the secrets container "
+        f"(http://localhost:8001) or set ACCOUNT in the environment."
+    )
 
 # IBKR client IDs — each module gets its own to allow concurrent connections
 IBKR_CLIENT_ID_WHEEL = 2        # wheel_manager.py
