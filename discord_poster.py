@@ -201,11 +201,20 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
     statuses = {ex.get("status") for ex in executions}
     footnotes = []
     if "skipped_liquidity" in statuses:
-        reasons = {ex.get("reason") for ex in executions if ex.get("status") == "skipped_liquidity"}
+        skip_exs = [ex for ex in executions if ex.get("status") == "skipped_liquidity"]
+        reasons  = {ex.get("reason") for ex in skip_exs}
+        sample   = next((ex for ex in skip_exs if ex.get("max_spread_pct") is not None), {})
+        max_spread    = sample.get("max_spread_pct",       0.20)
+        min_bid_yield = sample.get("min_bid_yield_pct",    0.01)
+        hard_cap      = sample.get("max_spread_hard_cap",  0.50)
         if "spread_illiquid" in reasons:
-            footnotes.append("* Spread too wide (illiquid) = bid/ask gap > 50% of mid price (skipped regardless of yield)")
+            footnotes.append(
+                f"* Spread too wide (illiquid) = spread > {hard_cap*100:.0f}% of mid price (skipped regardless of yield)"
+            )
         if "spread_low_yield" in reasons:
-            footnotes.append("* Spread too wide, low yield = bid/ask gap > 20% of mid AND bid yield < 1% of strike")
+            footnotes.append(
+                f"* Spread too wide, low yield = spread > {max_spread*100:.0f}% AND bid yield < {min_bid_yield*100:.2f}% of strike"
+            )
     if "skipped_contract_size" in statuses:
         footnotes.append(f"* Contract too large = single contract exceeds ${MAX_PER_POSITION:,.0f} max position size")
     footnote_block = "\n" + "\n".join(footnotes) if footnotes else ""

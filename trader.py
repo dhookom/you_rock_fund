@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from ib_insync import IB, Option, Stock, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, NUM_POSITIONS, TOTAL_FUND_BUDGET, MAX_PER_POSITION, DRY_RUN
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, NUM_POSITIONS, TOTAL_FUND_BUDGET, MAX_PER_POSITION, DRY_RUN, get_settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,9 +17,9 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MAX_SPREAD_PCT      = 0.20
-MIN_BID_YIELD_PCT   = 0.01  # bid yield (bid/strike) threshold to proceed despite wide spread
-MAX_SPREAD_HARD_CAP = 0.50  # spread above this is always skipped regardless of yield
+MAX_SPREAD_PCT      = 0.20  # fallback default — settings.json overrides via check_liquidity
+MIN_BID_YIELD_PCT   = 0.01  # fallback default — bid yield threshold to proceed despite wide spread
+MAX_SPREAD_HARD_CAP = 0.50  # fallback default — spread above this is always skipped
 MIN_OPEN_INTEREST   = 100
 MAX_DELTA           = 0.21  # hard ceiling — never sell a CSP with abs(delta) above this
 MID_WAIT_SECS       = 120
@@ -242,31 +242,44 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
 def check_liquidity(mkt: dict, ticker: str) -> dict | None:
     """Returns None if liquidity is OK, else a skip-info dict with reason details.
 
-    Wide-spread handling: if spread > MAX_SPREAD_PCT but the bid alone yields
-    >= MIN_BID_YIELD_PCT against the strike, we proceed (selling at bid still
-    meets our income target). Above MAX_SPREAD_HARD_CAP we always skip.
+    Wide-spread handling: if spread > max_spread_pct but the bid alone yields
+    >= min_bid_yield_pct against the strike, we proceed (selling at bid still
+    meets our income target). Above max_spread_hard_cap we always skip.
+
+    Thresholds hot-reload from settings.json on every call; the module-level
+    constants are fallbacks if a setting is missing.
     """
     if mkt.get("simulated"):
         return None
+
+    s              = get_settings()
+    max_spread     = s.get("max_spread_pct",       MAX_SPREAD_PCT)
+    min_bid_yield  = s.get("min_bid_yield_pct",    MIN_BID_YIELD_PCT)
+    hard_cap       = s.get("max_spread_hard_cap",  MAX_SPREAD_HARD_CAP)
+
     spread_pct = mkt["spread_pct"]
     bid_yield  = mkt.get("bid_yield", 0)
 
-    if spread_pct > MAX_SPREAD_PCT:
-        if bid_yield >= MIN_BID_YIELD_PCT:
+    if spread_pct > max_spread:
+        if bid_yield >= min_bid_yield:
             log.info(f"⚠️  {ticker} spread wide ({spread_pct*100:.1f}%) "
-                     f"but bid yield {bid_yield*100:.2f}% ≥ {MIN_BID_YIELD_PCT*100:.0f}% — proceeding")
+                     f"but bid yield {bid_yield*100:.2f}% ≥ {min_bid_yield*100:.2f}% — proceeding")
             # Use bid as limit price downstream — mid likely won't fill on wide spreads
             mkt["use_bid_as_limit"] = True
-        elif spread_pct > MAX_SPREAD_HARD_CAP:
+        elif spread_pct > hard_cap:
             log.warning(f"⚠️  {ticker} spread too wide: {spread_pct*100:.1f}% "
-                        f"AND bid yield {bid_yield*100:.2f}% < {MIN_BID_YIELD_PCT*100:.0f}% — skipping")
+                        f"AND bid yield {bid_yield*100:.2f}% < {min_bid_yield*100:.2f}% — skipping")
             return {"reason": "spread_illiquid",
-                    "spread_pct": spread_pct, "bid_yield": bid_yield}
+                    "spread_pct": spread_pct, "bid_yield": bid_yield,
+                    "max_spread_pct": max_spread, "min_bid_yield_pct": min_bid_yield,
+                    "max_spread_hard_cap": hard_cap}
         else:
             log.warning(f"⚠️  {ticker} spread too wide: {spread_pct*100:.1f}% "
-                        f"and bid yield {bid_yield*100:.2f}% < {MIN_BID_YIELD_PCT*100:.0f}% — skipping")
+                        f"and bid yield {bid_yield*100:.2f}% < {min_bid_yield*100:.2f}% — skipping")
             return {"reason": "spread_low_yield",
-                    "spread_pct": spread_pct, "bid_yield": bid_yield}
+                    "spread_pct": spread_pct, "bid_yield": bid_yield,
+                    "max_spread_pct": max_spread, "min_bid_yield_pct": min_bid_yield,
+                    "max_spread_hard_cap": hard_cap}
 
     if mkt["open_interest"] < MIN_OPEN_INTEREST:
         log.warning(f"⚠️  {ticker} OI too low: {mkt['open_interest']} — skipping")

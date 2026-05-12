@@ -32,27 +32,34 @@ function isPreset(val) {
   return PRESET_TIMES.some(p => p.value === val)
 }
 
-function SliderRow({ label, value, min, max, step = 1, format = v => v, onChange }) {
+function SliderRow({ label, value, min, max, step = 1, format = v => v, onChange, description }) {
   return (
-    <div className="flex items-center gap-4">
-      <div className="w-40 shrink-0">
-        <div className="text-gray-700 dark:text-gray-300 text-sm">{label}</div>
-        <div className="text-blue-500 dark:text-blue-400 font-medium text-sm">{format(value)}</div>
+    <div>
+      <div className="flex items-center gap-4">
+        <div className="w-40 shrink-0">
+          <div className="text-gray-700 dark:text-gray-300 text-sm">{label}</div>
+          <div className="text-blue-500 dark:text-blue-400 font-medium text-sm">{format(value)}</div>
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={e => onChange(Number(e.target.value))}
+          className="flex-1 accent-blue-500 h-1.5"
+        />
+        <div className="flex gap-1 text-xs text-gray-400 dark:text-gray-600 w-28 shrink-0 justify-end">
+          <span>{format(min)}</span>
+          <span>–</span>
+          <span>{format(max)}</span>
+        </div>
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        className="flex-1 accent-blue-500 h-1.5"
-      />
-      <div className="flex gap-1 text-xs text-gray-400 dark:text-gray-600 w-28 shrink-0 justify-end">
-        <span>{format(min)}</span>
-        <span>–</span>
-        <span>{format(max)}</span>
-      </div>
+      {description && (
+        <div className="ml-40 mt-1 text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
+          {description}
+        </div>
+      )}
     </div>
   )
 }
@@ -313,6 +320,34 @@ export default function SettingsPage() {
         <SliderRow label="Max Delta"      value={settings.max_delta}            min={0.10} max={0.30} step={0.01} format={v => v.toFixed(2)}                onChange={v => set('max_delta', v)} />
         <SliderRow label="Min Buffer %"   value={settings.min_buffer_pct}       min={0.03} max={0.20} step={0.01} format={v => `${(v * 100).toFixed(0)}%`} onChange={v => set('min_buffer_pct', v)} />
         <SliderRow label="Earnings Filter" value={settings.earnings_filter_days} min={0}    max={30}              format={v => `${v} days`}                  onChange={v => set('earnings_filter_days', v)} />
+      </Section>
+
+      {/* Liquidity Filters */}
+      <Section title="Liquidity Filters" emoji="💧">
+        <SliderRow
+          label="Max Spread %"
+          value={settings.max_spread_pct ?? 0.20}
+          min={0.05} max={0.50} step={0.05}
+          format={v => `${(v * 100).toFixed(0)}%`}
+          onChange={v => set('max_spread_pct', v)}
+          description="Skip if bid/ask spread exceeds this % of mid price"
+        />
+        <SliderRow
+          label="Min Bid Yield %"
+          value={settings.min_bid_yield_pct ?? 0.01}
+          min={0.005} max={0.03} step={0.0025}
+          format={v => `${(v * 100).toFixed(2)}%`}
+          onChange={v => set('min_bid_yield_pct', v)}
+          description="Override spread filter if bid yield meets this threshold"
+        />
+        <SliderRow
+          label="Max Spread Hard Cap %"
+          value={settings.max_spread_hard_cap ?? 0.50}
+          min={0.25} max={1.00} step={0.05}
+          format={v => `${(v * 100).toFixed(0)}%`}
+          onChange={v => set('max_spread_hard_cap', v)}
+          description="Always skip regardless of yield if spread exceeds this %"
+        />
       </Section>
 
       {/* Execution */}

@@ -793,6 +793,9 @@ class SettingsUpdate(BaseModel):
     max_delta:                Optional[float] = None
     min_buffer_pct:           Optional[float] = None
     earnings_filter_days:     Optional[int]   = None
+    max_spread_pct:           Optional[float] = None
+    min_bid_yield_pct:        Optional[float] = None
+    max_spread_hard_cap:      Optional[float] = None
     dry_run:                  Optional[bool]  = None
     ibkr_port:                Optional[int]   = None
     discord_webhook_enabled:  Optional[bool]  = None
