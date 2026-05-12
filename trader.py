@@ -204,10 +204,11 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     if is_nan(bid) or is_nan(ask) or bid <= 0 or ask <= 0:
         log.warning(f"  ⏰ No market data for {contract.symbol} — market likely closed")
         if DRY_RUN:
-            simulated_bid   = round(screener_premium * 0.90, 2)
-            simulated_ask   = round(screener_premium * 1.10, 2)
-            simulated_mid   = screener_premium
-            simulated_yield = simulated_bid / strike if strike > 0 else 0
+            simulated_bid       = round(screener_premium * 0.90, 2)
+            simulated_ask       = round(screener_premium * 1.10, 2)
+            simulated_mid       = screener_premium
+            simulated_bid_yield = simulated_bid / strike if strike > 0 else 0
+            simulated_mid_yield = simulated_mid / strike if strike > 0 else 0
             log.info(f"  🧪 Simulating: Bid ${simulated_bid}  Ask ${simulated_ask}  "
                      f"Mid ${simulated_mid}  (from screener)")
             return {
@@ -215,7 +216,8 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
                 "ask": simulated_ask,
                 "mid": simulated_mid,
                 "spread_pct": 0.20,
-                "bid_yield": simulated_yield,
+                "bid_yield": simulated_bid_yield,
+                "mid_yield": simulated_mid_yield,
                 "open_interest": 999,
                 "simulated": True
             }
@@ -225,15 +227,17 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     spread     = ask - bid
     spread_pct = spread / mid if mid > 0 else 999
     bid_yield  = bid / strike if strike > 0 else 0
+    mid_yield  = mid / strike if strike > 0 else 0
 
     log.info(f"  {contract.symbol} — Bid: ${bid:.2f}  Ask: ${ask:.2f}  "
              f"Mid: ${mid:.2f}  Spread: {spread_pct*100:.1f}%  "
-             f"Bid yield: {bid_yield*100:.2f}%  OI: {oi}")
+             f"Bid yield: {bid_yield*100:.2f}%  Mid yield: {mid_yield*100:.2f}%  OI: {oi}")
 
     return {
         "bid": bid, "ask": ask, "mid": mid,
         "spread_pct": spread_pct,
         "bid_yield": bid_yield,
+        "mid_yield": mid_yield,
         "open_interest": oi,
         "simulated": False
     }
@@ -242,9 +246,12 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
 def check_liquidity(mkt: dict, ticker: str) -> dict | None:
     """Returns None if liquidity is OK, else a skip-info dict with reason details.
 
-    Wide-spread handling: if spread > max_spread_pct but the bid alone yields
-    >= min_bid_yield_pct against the strike, we proceed (selling at bid still
-    meets our income target). Above max_spread_hard_cap we always skip.
+    Wide-spread handling (spread > max_spread_pct):
+      - bid_yield ≥ min_bid_yield_pct → proceed using bid as the limit price
+      - else if spread > max_spread_hard_cap → skip as spread_illiquid
+      - else if mid_yield ≥ min_bid_yield_pct → try_limit_only (FOK mid → FOK bid,
+        no market fallback; see place_order_with_escalation)
+      - else → skip as spread_low_yield
 
     Thresholds hot-reload from settings.json on every call; the module-level
     constants are fallbacks if a setting is missing.
@@ -259,6 +266,7 @@ def check_liquidity(mkt: dict, ticker: str) -> dict | None:
 
     spread_pct = mkt["spread_pct"]
     bid_yield  = mkt.get("bid_yield", 0)
+    mid_yield  = mkt.get("mid_yield", 0)
 
     if spread_pct > max_spread:
         if bid_yield >= min_bid_yield:
@@ -270,14 +278,22 @@ def check_liquidity(mkt: dict, ticker: str) -> dict | None:
             log.warning(f"⚠️  {ticker} spread too wide: {spread_pct*100:.1f}% "
                         f"AND bid yield {bid_yield*100:.2f}% < {min_bid_yield*100:.2f}% — skipping")
             return {"reason": "spread_illiquid",
-                    "spread_pct": spread_pct, "bid_yield": bid_yield,
+                    "spread_pct": spread_pct, "bid_yield": bid_yield, "mid_yield": mid_yield,
                     "max_spread_pct": max_spread, "min_bid_yield_pct": min_bid_yield,
                     "max_spread_hard_cap": hard_cap}
+        elif mid_yield >= min_bid_yield:
+            log.info(f"⚠️  {ticker} bid yield {bid_yield*100:.2f}% < {min_bid_yield*100:.2f}% "
+                     f"but mid yield {mid_yield*100:.2f}% qualifies — trying limit only")
+            # FOK mid → FOK bid; no market fallback (see place_order_with_escalation)
+            mkt["try_limit_only"]       = True
+            mkt["max_spread_pct"]       = max_spread
+            mkt["min_bid_yield_pct"]    = min_bid_yield
+            mkt["max_spread_hard_cap"]  = hard_cap
         else:
             log.warning(f"⚠️  {ticker} spread too wide: {spread_pct*100:.1f}% "
-                        f"and bid yield {bid_yield*100:.2f}% < {min_bid_yield*100:.2f}% — skipping")
+                        f"and mid yield {mid_yield*100:.2f}% < {min_bid_yield*100:.2f}% — skipping")
             return {"reason": "spread_low_yield",
-                    "spread_pct": spread_pct, "bid_yield": bid_yield,
+                    "spread_pct": spread_pct, "bid_yield": bid_yield, "mid_yield": mid_yield,
                     "max_spread_pct": max_spread, "min_bid_yield_pct": min_bid_yield,
                     "max_spread_hard_cap": hard_cap}
 
@@ -327,6 +343,48 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
         ib.cancelOrder(trade.order)
         ib.sleep(1)
         return False
+
+    def try_limit_fok(price: float, label: str) -> bool:
+        """FOK limit attempt — fills the full quantity at the limit price or cancels.
+        Used for the try_limit_only path so partial fills are avoided."""
+        log.info(f"  📤 {label} (FOK): SELL {contracts}x {ticker} PUT @ ${price:.2f}")
+        order = LimitOrder("SELL", contracts, price, account=ACCOUNT, tif="FOK")
+        trade = ib.placeOrder(contract, order)
+        # FOK resolves immediately at IBKR — poll briefly for the final state
+        for _ in range(15):
+            ib.sleep(1)
+            if trade.orderStatus.status in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
+                break
+        final_status = trade.orderStatus.status
+        if final_status == "Filled":
+            fill = trade.orderStatus.avgFillPrice
+            filled_qty = trade.orderStatus.filled
+            log.info(f"  ✅ {label} (FOK) filled {ticker} @ ${fill:.2f} — limit-only path succeeded")
+            result.update({
+                "status": "filled", "fill_price": fill,
+                "order_type": f"{label}_fok",
+                "premium_collected": round(filled_qty * fill * 100, 2)
+            })
+            return True
+        log.info(f"  ⏳ {label} (FOK) did not fill (status: {final_status})")
+        return False
+
+    if mkt.get("try_limit_only"):
+        # Limit-only path: FOK at mid, then FOK at bid. No market fallback.
+        if try_limit_fok(mkt["mid"], "limit_mid"): return result
+        if try_limit_fok(mkt["bid"], "limit_bid"): return result
+        log.warning(f"  ⚠️  {ticker} — limit-only path failed (mid yield qualified but no fill) — skipping")
+        result.update({
+            "status":              "skipped_liquidity",
+            "reason":              "spread_low_yield_unfilled",
+            "spread_pct":          mkt.get("spread_pct"),
+            "bid_yield":           mkt.get("bid_yield"),
+            "mid_yield":           mkt.get("mid_yield"),
+            "max_spread_pct":      mkt.get("max_spread_pct"),
+            "min_bid_yield_pct":   mkt.get("min_bid_yield_pct"),
+            "max_spread_hard_cap": mkt.get("max_spread_hard_cap"),
+        })
+        return result
 
     if not mkt.get("use_bid_as_limit"):
         if try_limit(mkt["mid"], "limit_mid", MID_WAIT_SECS): return result

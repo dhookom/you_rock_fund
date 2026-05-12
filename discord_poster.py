@@ -185,6 +185,8 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
                     label = f"skipped — spread too wide (illiquid) ({ex['spread_pct']*100:.1f}%)"
                 elif reason == "spread_low_yield":
                     label = f"skipped — spread too wide, low yield ({ex['spread_pct']*100:.1f}%)"
+                elif reason == "spread_low_yield_unfilled":
+                    label = f"skipped — spread too wide, limit unfilled ({ex['spread_pct']*100:.1f}%)"
                 else:
                     label = f"skipped — spread too wide ({ex['spread_pct']*100:.1f}%)"
             strike_str = f"{_fmt_strike(strike)} strike  |  " if strike is not None else ""
@@ -213,7 +215,11 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
             )
         if "spread_low_yield" in reasons:
             footnotes.append(
-                f"* Spread too wide, low yield = spread > {max_spread*100:.0f}% AND bid yield < {min_bid_yield*100:.2f}% of strike"
+                f"* Spread too wide, low yield = spread > {max_spread*100:.0f}% AND mid yield < {min_bid_yield*100:.2f}% of strike"
+            )
+        if "spread_low_yield_unfilled" in reasons:
+            footnotes.append(
+                "* Spread too wide, limit unfilled = mid yield qualified but no fill at limit price"
             )
     if "skipped_contract_size" in statuses:
         footnotes.append(f"* Contract too large = single contract exceeds ${MAX_PER_POSITION:,.0f} max position size")
