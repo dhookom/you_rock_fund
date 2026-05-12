@@ -180,7 +180,13 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
         else:
             label = SKIP_LABEL.get(status, status)
             if status == "skipped_liquidity" and ex.get("spread_pct") is not None:
-                label = f"skipped — spread too wide ({ex['spread_pct']*100:.1f}%)"
+                reason = ex.get("reason")
+                if reason == "spread_illiquid":
+                    label = f"skipped — spread too wide (illiquid) ({ex['spread_pct']*100:.1f}%)"
+                elif reason == "spread_low_yield":
+                    label = f"skipped — spread too wide, low yield ({ex['spread_pct']*100:.1f}%)"
+                else:
+                    label = f"skipped — spread too wide ({ex['spread_pct']*100:.1f}%)"
             strike_str = f"{_fmt_strike(strike)} strike  |  " if strike is not None else ""
             lines.append(f"{emoji} **{ticker}**  |  {strike_str}{label}")
 
@@ -195,7 +201,11 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
     statuses = {ex.get("status") for ex in executions}
     footnotes = []
     if "skipped_liquidity" in statuses:
-        footnotes.append("* Spread too wide = bid/ask gap > 20% of mid price (low liquidity — protects against bad fills)")
+        reasons = {ex.get("reason") for ex in executions if ex.get("status") == "skipped_liquidity"}
+        if "spread_illiquid" in reasons:
+            footnotes.append("* Spread too wide (illiquid) = bid/ask gap > 50% of mid price (skipped regardless of yield)")
+        if "spread_low_yield" in reasons:
+            footnotes.append("* Spread too wide, low yield = bid/ask gap > 20% of mid AND bid yield < 1% of strike")
     if "skipped_contract_size" in statuses:
         footnotes.append(f"* Contract too large = single contract exceeds ${MAX_PER_POSITION:,.0f} max position size")
     footnote_block = "\n" + "\n".join(footnotes) if footnotes else ""

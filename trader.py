@@ -18,6 +18,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 MAX_SPREAD_PCT      = 0.20
+MIN_BID_YIELD_PCT   = 0.01  # bid yield (bid/strike) threshold to proceed despite wide spread
+MAX_SPREAD_HARD_CAP = 0.50  # spread above this is always skipped regardless of yield
 MIN_OPEN_INTEREST   = 100
 MAX_DELTA           = 0.21  # hard ceiling — never sell a CSP with abs(delta) above this
 MID_WAIT_SECS       = 120
@@ -190,9 +192,10 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     ticker = ib.reqMktData(contract, genericTickList="101", snapshot=False)
     ib.sleep(4)
 
-    bid = ticker.bid
-    ask = ticker.ask
-    oi  = ticker.putOpenInterest or ticker.callOpenInterest or 0
+    bid    = ticker.bid
+    ask    = ticker.ask
+    oi     = ticker.putOpenInterest or ticker.callOpenInterest or 0
+    strike = contract.strike
 
     ib.cancelMktData(contract)
     ib.sleep(0.5)
@@ -201,9 +204,10 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     if is_nan(bid) or is_nan(ask) or bid <= 0 or ask <= 0:
         log.warning(f"  ⏰ No market data for {contract.symbol} — market likely closed")
         if DRY_RUN:
-            simulated_bid = round(screener_premium * 0.90, 2)
-            simulated_ask = round(screener_premium * 1.10, 2)
-            simulated_mid = screener_premium
+            simulated_bid   = round(screener_premium * 0.90, 2)
+            simulated_ask   = round(screener_premium * 1.10, 2)
+            simulated_mid   = screener_premium
+            simulated_yield = simulated_bid / strike if strike > 0 else 0
             log.info(f"  🧪 Simulating: Bid ${simulated_bid}  Ask ${simulated_ask}  "
                      f"Mid ${simulated_mid}  (from screener)")
             return {
@@ -211,6 +215,7 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
                 "ask": simulated_ask,
                 "mid": simulated_mid,
                 "spread_pct": 0.20,
+                "bid_yield": simulated_yield,
                 "open_interest": 999,
                 "simulated": True
             }
@@ -219,25 +224,50 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     mid        = round((bid + ask) / 2, 2)
     spread     = ask - bid
     spread_pct = spread / mid if mid > 0 else 999
+    bid_yield  = bid / strike if strike > 0 else 0
 
     log.info(f"  {contract.symbol} — Bid: ${bid:.2f}  Ask: ${ask:.2f}  "
-             f"Mid: ${mid:.2f}  Spread: {spread_pct*100:.1f}%  OI: {oi}")
+             f"Mid: ${mid:.2f}  Spread: {spread_pct*100:.1f}%  "
+             f"Bid yield: {bid_yield*100:.2f}%  OI: {oi}")
 
     return {
         "bid": bid, "ask": ask, "mid": mid,
         "spread_pct": spread_pct,
+        "bid_yield": bid_yield,
         "open_interest": oi,
         "simulated": False
     }
 
 
 def check_liquidity(mkt: dict, ticker: str) -> dict | None:
-    """Returns None if liquidity is OK, else a skip-info dict with reason details."""
+    """Returns None if liquidity is OK, else a skip-info dict with reason details.
+
+    Wide-spread handling: if spread > MAX_SPREAD_PCT but the bid alone yields
+    >= MIN_BID_YIELD_PCT against the strike, we proceed (selling at bid still
+    meets our income target). Above MAX_SPREAD_HARD_CAP we always skip.
+    """
     if mkt.get("simulated"):
         return None
-    if mkt["spread_pct"] > MAX_SPREAD_PCT:
-        log.warning(f"⚠️  {ticker} spread too wide: {mkt['spread_pct']*100:.1f}% — skipping")
-        return {"reason": "spread", "spread_pct": mkt["spread_pct"]}
+    spread_pct = mkt["spread_pct"]
+    bid_yield  = mkt.get("bid_yield", 0)
+
+    if spread_pct > MAX_SPREAD_PCT:
+        if bid_yield >= MIN_BID_YIELD_PCT:
+            log.info(f"⚠️  {ticker} spread wide ({spread_pct*100:.1f}%) "
+                     f"but bid yield {bid_yield*100:.2f}% ≥ {MIN_BID_YIELD_PCT*100:.0f}% — proceeding")
+            # Use bid as limit price downstream — mid likely won't fill on wide spreads
+            mkt["use_bid_as_limit"] = True
+        elif spread_pct > MAX_SPREAD_HARD_CAP:
+            log.warning(f"⚠️  {ticker} spread too wide: {spread_pct*100:.1f}% "
+                        f"AND bid yield {bid_yield*100:.2f}% < {MIN_BID_YIELD_PCT*100:.0f}% — skipping")
+            return {"reason": "spread_illiquid",
+                    "spread_pct": spread_pct, "bid_yield": bid_yield}
+        else:
+            log.warning(f"⚠️  {ticker} spread too wide: {spread_pct*100:.1f}% "
+                        f"and bid yield {bid_yield*100:.2f}% < {MIN_BID_YIELD_PCT*100:.0f}% — skipping")
+            return {"reason": "spread_low_yield",
+                    "spread_pct": spread_pct, "bid_yield": bid_yield}
+
     if mkt["open_interest"] < MIN_OPEN_INTEREST:
         log.warning(f"⚠️  {ticker} OI too low: {mkt['open_interest']} — skipping")
         return {"reason": "oi", "open_interest": mkt["open_interest"]}
@@ -285,7 +315,8 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
         ib.sleep(1)
         return False
 
-    if try_limit(mkt["mid"], "limit_mid", MID_WAIT_SECS): return result
+    if not mkt.get("use_bid_as_limit"):
+        if try_limit(mkt["mid"], "limit_mid", MID_WAIT_SECS): return result
     if try_limit(mkt["bid"], "limit_bid", BID_WAIT_SECS): return result
 
     # Market order with polling loop — options can partially fill across multiple exchanges
