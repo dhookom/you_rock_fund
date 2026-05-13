@@ -219,11 +219,14 @@ While waiting for live account approval, set up paper trading to test the full Y
 
 ## Step 9 — Find Your Credentials for YRVI
 
-After your account is set up, you'll need two things from IBKR before running the setup script:
+Before running the setup script, have these three things ready:
 
 **Your IBKR Username**
 - This is the login username you created in Step 1
 - It's typically your email address or a short username you chose
+
+**Your IBKR Password**
+- The password you use to log into IBKR
 
 **Your Account Number**
 - Log into the IBKR portal → **Account → Account Summary**
@@ -231,7 +234,7 @@ After your account is set up, you'll need two things from IBKR before running th
 - Live accounts start with **`U`** (e.g., `U12345678`)
 - Paper accounts start with **`DU`** (e.g., `DU12345678`)
 
-> 💡 **That's all you need here.** Your IBKR password and all other credentials are entered securely during the initial setup script — they are stored in your system's secret store and never written to a config file. See the Secrets section of the setup guide for details.
+> 💡 The setup script will prompt you for these values and store them securely in your system's secret store. They are never written to a config file or committed to git.
 
 ---
 
