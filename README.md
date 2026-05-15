@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.4.5-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -465,6 +465,12 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.5.0 (May 2026)
+- Dashboard IBKR Holdings table now shows Delta, Buffer %, Prem/Contract, and Total Premium for each option position
+- `trade_log.json` written to the `yrvi_data` volume at fill time for every CSP and CC order, capturing delta, buffer %, and premium at entry
+- `/api/positions` joins live IBKR portfolio items with `trade_log.json` on `(symbol, expiry, strike, right)`; missing fields return null and display as `—`
+- One-time backfill reconstructs current-week CSP records from `state.json` on first run (only where fill price is confirmed — no guessing)
 
 ### v1.4.5 (May 2026)
 - Shutdown button on Settings page with confirmation dialog — stops all YRVI containers (scheduler, web, ib_gateway, secrets, api) in order, api last

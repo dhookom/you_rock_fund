@@ -1,3 +1,10 @@
+## [1.5.0] — 2026-05-15
+### Added
+- feat: enrich IBKR Holdings table with execution metadata (delta, buffer %, premium/contract, total premium)
+- feat: capture trade_log.json at fill time for CSPs and CCs
+- feat: backfill current positions from state.json where recoverable
+- feat: /api/positions enriched with trade_log join
+
 ## [1.4.5] — 2026-05-11
 ### Added
 - Shutdown button on Settings page with confirmation dialog
