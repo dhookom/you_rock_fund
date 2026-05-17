@@ -1075,7 +1075,9 @@ def version_check():
     current = version_file.read_text().strip() if version_file.exists() else "unknown"
     try:
         import requests as req
-        r = req.get(_GITHUB_VERSION_URL, timeout=5)
+        pat = get_secret("github_pat", "GITHUB_PAT")
+        headers = {"Authorization": f"token {pat}"} if pat else {}
+        r = req.get(_GITHUB_VERSION_URL, headers=headers, timeout=5)
         r.raise_for_status()
         latest = r.text.strip()
         return {"current": current, "latest": latest, "up_to_date": current == latest}
@@ -1091,7 +1093,9 @@ def version_upgrade():
     # Confirm there is actually an update to apply
     try:
         import requests as req
-        r = req.get(_GITHUB_VERSION_URL, timeout=5)
+        pat = get_secret("github_pat", "GITHUB_PAT")
+        headers = {"Authorization": f"token {pat}"} if pat else {}
+        r = req.get(_GITHUB_VERSION_URL, headers=headers, timeout=5)
         r.raise_for_status()
         latest = r.text.strip()
     except Exception:
