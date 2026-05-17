@@ -846,11 +846,11 @@ def run_screener():
         active_wheel_count = len(active_holdings)
         adjusted_budget    = budget - reserved_capital
         target_fills       = n
+        held_map           = {h["ticker"]: h for h in active_holdings}
 
         all_targets = get_top_targets(n * 2, always_include=set(held_map.keys()))
 
         # Split: tickers we already hold → CC; everything else → CSP
-        held_map    = {h["ticker"]: h for h in active_holdings}
         cc_targets  = []
         csp_targets = []
         for t in all_targets:
