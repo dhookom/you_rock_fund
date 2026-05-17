@@ -176,7 +176,12 @@ To change a stored secret (e.g. after rotating your IBKR password):
 
 The change takes effect immediately for new connections; restart `ib_gateway` to apply a new IBKR password.
 
-`setup_docker.sh` validates your config, builds all five containers (`secrets`, `ib_gateway`, `api`, `scheduler`, `web`), starts the stack, and installs a login item so containers restart automatically after a reboot.
+`setup_docker.sh` validates your config, builds all five containers (`secrets`, `ib_gateway`, `api`, `scheduler`, `web`), starts the stack, and installs a login item so containers restart automatically after a reboot. It also registers the `yrvi://` URL scheme so the **Upgrade** button in the dashboard can open Terminal and rebuild automatically.
+
+> **Existing installs (pre-v1.6.0):** If you ran setup before v1.6.0, register the upgrade URL scheme once manually:
+> ```bash
+> bash scripts/yrvi-register-url-scheme.sh
+> ```
 
 See **[CONTAINERIZATION.md](CONTAINERIZATION.md)** for the full setup guide — credentials, 2FA recovery, and troubleshooting.
 
