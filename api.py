@@ -869,7 +869,7 @@ def run_screener():
 
         return {
             "positions":          positions,
-            "raw_targets":        targets,
+            "raw_targets":        all_targets,
             "total_premium":      total_premium,
             "total_capital":      total_capital,
             "blended_yield":      round(total_premium / total_capital * 100 if total_capital else 0, 3),
