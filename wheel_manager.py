@@ -8,8 +8,8 @@ detect_assignments() — Friday 4:15PM PST
 run_wheel_check() — Monday 9:55AM PST (runs before CSP pipeline)
     For each held stock, four-step evaluation:
       Step 1  Screener check: if ticker dropped from screener → sell at market
-      Step 2  Option chain: find highest call strike >= assigned_strike
-              where abs(delta) >= 0.20 (the "20-delta CC")
+      Step 2  Option chain: prefer assigned_strike call if delta >= 0.20;
+              otherwise fall back to highest strike with delta >= 0.20
       Step 3  Decision: sell CC if viable strike found; else sell at market
       Step 4  Persist monday_context + wheel_activity to state.json
 
@@ -107,18 +107,18 @@ def _next_friday_expiry() -> str:
 def _find_cc_strike(ib: IB, ticker: str, expiry: str,
                     assigned_strike: float) -> tuple | None:
     """
-    Scan the IBKR call option chain for the highest strike >= assigned_strike
-    on expiry where abs(delta) >= CC_DELTA_MIN.
+    Find the best call strike to sell as a covered call.
 
-    Call delta decreases monotonically as strike increases (more OTM → lower
-    delta), so the highest qualifying strike is the closest to CC_DELTA_MIN
-    from above — the "20-delta covered call."
+    Priority 1: assigned_strike — if its delta >= CC_DELTA_MIN, sell there.
+                Higher premium, smaller buffer, but getting called away at
+                cost basis is acceptable.
+    Priority 2: Highest strike with delta >= CC_DELTA_MIN (20-delta CC).
+                Used when the stock has rallied well above assigned_strike.
 
-    All market data streams are opened simultaneously and read after a single
-    sleep, making this O(1) in wall-clock time regardless of how many strikes
-    are checked.
+    The assigned_strike is always included in the scan even if below the
+    effective price floor, so its delta can be evaluated.
 
-    Returns (strike, delta, mid_price) or None if no viable strike found.
+    Returns (strike, delta, mid_price, stock_price) or None if no viable strike.
     """
     stock = Stock(ticker, "SMART", "USD")
     q_stock = ib.qualifyContracts(stock)
@@ -145,9 +145,14 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
         log.warning(f"  ⚠️  {ticker}: expiry {expiry} not listed in option chain")
         return None
 
-    price_floor    = current_price * 0.95 if current_price > 0 else assigned_strike
+    price_floor     = current_price * 0.95 if current_price > 0 else assigned_strike
     effective_floor = max(assigned_strike, price_floor) if assigned_strike > 0 else price_floor
-    candidates = sorted(s for s in all_strikes if s >= effective_floor)
+    candidates_set  = {s for s in all_strikes if s >= effective_floor}
+    # Always include assigned_strike so we can check its delta regardless of
+    # where the stock is trading now.
+    if assigned_strike > 0 and assigned_strike in all_strikes:
+        candidates_set.add(assigned_strike)
+    candidates = sorted(candidates_set)
     log.info(f"  📍 {ticker}: current=${current_price:.2f}  "
              f"assigned_strike=${assigned_strike:.2f}  "
              f"scan_floor=${effective_floor:.2f}")
@@ -220,13 +225,25 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
         mid_str = f"${mid:.2f}" if mid else "?"
         log.info(f"  ${strike:>7.2f}  {delta:>6.3f}  {mid_str:>8}  {flag}")
 
-    # Highest qualifying strike (delta closest to CC_DELTA_MIN from above)
     viable = [(s, d, m) for s, d, m in results if d >= CC_DELTA_MIN]
     if not viable:
         log.info(f"  ❌ No call strike with delta ≥ {CC_DELTA_MIN:.2f} available")
         return None
 
-    return (*viable[-1], current_price)   # (strike, delta, mid, stock_price)
+    # Prefer assigned_strike: selling at cost basis captures higher premium
+    # and a clean exit if called away.
+    assigned_result = next(
+        ((s, d, m) for s, d, m in viable if s == assigned_strike), None
+    )
+    if assigned_result:
+        s, d, m = assigned_result
+        log.info(f"  🎯 Assigned strike ${s:.2f} has delta={d:.3f} — selling CC there")
+        return (*assigned_result, current_price)
+
+    # Fallback: highest qualifying strike (closest to CC_DELTA_MIN from above)
+    s, d, m = viable[-1]
+    log.info(f"  🎯 Assigned strike below delta threshold — using ${s:.2f} (delta={d:.3f})")
+    return (*viable[-1], current_price)
 
 
 # ── Orders ─────────────────────────────────────────────────────
@@ -445,8 +462,8 @@ def run_wheel_check() -> tuple[float, list]:
               this week), sell all shares to avoid earnings risk.
       Step 3  Option chain — query IBKR for call strikes >= assigned_strike
               on the nearest Friday; collect delta for each.
-      Step 4  Decision — sell the highest-delta (≥ 0.20) call as a covered
-              call. If no such strike exists, sell shares at market.
+      Step 4  Decision — sell CC at assigned_strike if its delta ≥ 0.20;
+              else sell the highest-delta (≥ 0.20) strike. If none, sell shares.
       Step 5  Persist monday_context and wheel_activity to state.json.
 
     Returns (freed_capital, skip_tickers, reserved_capital) consumed by run_pipeline.
