@@ -60,13 +60,6 @@ def get_top_targets(n=5, always_include: set = None):
     rows = data.get("rows", [])
     print(f"✅ {len(rows)} candidates returned")
 
-    # DEBUG: dump all raw keys for one row (INTC preferred) to confirm field names
-    _debug_row = next((r for r in rows if r.get("ticker") == "INTC"), rows[0] if rows else None)
-    if _debug_row:
-        import json as _json
-        print(f"🔍 DEBUG all keys for {_debug_row.get('ticker')}: {_json.dumps(list(_debug_row.keys()), indent=2)}")
-        print(f"🔍 DEBUG full row: {_json.dumps(_debug_row, indent=2)}")
-
     # ── Filter 1: wheel-ready ─────────────────────────────────
     rows = [r for r in rows if r.get("wheel_fit") == "Wheel-ready"]
     print(f"🔧 {len(rows)} wheel-ready candidates")
