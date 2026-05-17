@@ -1,3 +1,17 @@
+## [1.6.0] — 2026-05-17
+### Added
+- Wheel holdings with active stock positions now appear as covered call (CC) entries in the weekly plan — screener switches from CSP to CC for held tickers, using `call_20d_strike` / `call_20d_premium` from the Render API
+- Render API (`/api/targets/csp`) now returns `call_20d_strike`, `call_20d_premium`, `call_20d_premium_pct`, `call_20d_delta`, `call_20d_iv` for every ticker (data was in `iv_summary` but not selected)
+- `get_top_targets()` accepts `always_include` set — held tickers are guaranteed in the screener results even if they score below the top-N cutoff
+- This Week page shows INTC-style CC rows with $0 capital, contracts fixed by shares held, and CC strike/premium
+### Fixed
+- Weekly plan position sizer now sizes the top (remainder) position first, iterating past ineligible tickers like SNDK (too expensive per contract), so the best viable target (e.g. BE) gets the max allocation instead of a normal-sized slot
+- CC positions no longer consume CSP slot count — `num_positions` for CSP sizing is no longer reduced by active wheel holding count; budget deduction already handles the capital constraint
+- `discord_poster.py` webhook URLs now read via `secrets_client.get_secret()` instead of `/run/secrets/` file mounts, which no longer exist after the compose cleanup in v1.5.0
+- `docker-compose.yml` file-based Docker secret declarations removed — all secrets served by the `yrvi-secrets` HTTP service; eliminates bind-mount errors on hosts without local secret files
+- `held_map` definition moved before `get_top_targets()` call in `api.py` (was referenced before assignment, causing `NameError` on This Week screener runs)
+- Stale `targets` variable reference in `api.py` screener return renamed to `all_targets`
+
 ## [1.5.0] — 2026-05-15
 ### Added
 - feat: enrich IBKR Holdings table with execution metadata (delta, buffer %, premium/contract, total premium)
