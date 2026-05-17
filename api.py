@@ -1064,22 +1064,22 @@ def get_version():
     version = version_file.read_text().strip() if version_file.exists() else "unknown"
     return {"version": version, "branch": "main"}
 
-_GITHUB_VERSION_URL = (
-    "https://raw.githubusercontent.com/controllinghand/"
-    "you_rock_fund/main/VERSION"
-)
+def _render_version_url() -> str:
+    render_url = os.environ.get("RENDER_URL", "").rstrip("/")
+    return f"{render_url}/version" if render_url else ""
 
 @app.get("/api/version/check")
 def version_check():
     version_file = BASE_DIR / "VERSION"
     current = version_file.read_text().strip() if version_file.exists() else "unknown"
+    url = _render_version_url()
+    if not url:
+        return {"current": current, "latest": None, "up_to_date": None, "error": "unavailable"}
     try:
         import requests as req
-        pat = get_secret("github_pat", "GITHUB_PAT")
-        headers = {"Authorization": f"token {pat}"} if pat else {}
-        r = req.get(_GITHUB_VERSION_URL, headers=headers, timeout=5)
+        r = req.get(url, timeout=5)
         r.raise_for_status()
-        latest = r.text.strip()
+        latest = r.json().get("version", "").strip()
         return {"current": current, "latest": latest, "up_to_date": current == latest}
     except Exception:
         return {"current": current, "latest": None, "up_to_date": None, "error": "unavailable"}
@@ -1091,13 +1091,12 @@ def version_upgrade():
     current = version_file.read_text().strip() if version_file.exists() else "unknown"
 
     # Confirm there is actually an update to apply
+    url = _render_version_url()
     try:
         import requests as req
-        pat = get_secret("github_pat", "GITHUB_PAT")
-        headers = {"Authorization": f"token {pat}"} if pat else {}
-        r = req.get(_GITHUB_VERSION_URL, headers=headers, timeout=5)
+        r = req.get(url, timeout=5)
         r.raise_for_status()
-        latest = r.text.strip()
+        latest = r.json().get("version", "").strip()
     except Exception:
         return {"success": False,
                 "output": "Could not fetch latest version from GitHub — upgrade aborted"}

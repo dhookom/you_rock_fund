@@ -383,6 +383,10 @@ if [ "$OS" = "Darwin" ]; then
 
         ok "YRVI Startup app installed"
     fi
+
+    # Register yrvi:// URL scheme (idempotent — skips if already registered)
+    bash "$PROJ/scripts/yrvi-register-url-scheme.sh"
+    ok "yrvi:// upgrade URL scheme registered"
 else
     info "Desktop app is macOS only"
     info "  Access dashboard at http://localhost:3000"
