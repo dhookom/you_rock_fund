@@ -123,15 +123,29 @@ def run_screener_preview():
 
         state        = _load_state()
         holdings     = state.get("wheel_holdings", [])
+        active       = [h for h in holdings if h.get("shares", 0) > 0]
+        held_map     = {h["ticker"]: h for h in active}
         reserved     = round(sum(
-            h.get("shares", 0) * h.get("assigned_strike", 0.0)
-            for h in holdings if h.get("shares", 0) > 0
+            h.get("shares", 0) * h.get("assigned_strike", 0.0) for h in active
         ), 2)
-        active_count = sum(1 for h in holdings if h.get("shares", 0) > 0)
-        targets      = get_top_targets(10)
+        active_count = len(active)
+        all_targets  = get_top_targets(10)
+
+        # Split: tickers we already hold → CC; everything else → CSP
+        cc_targets  = []
+        csp_targets = []
+        for t in all_targets:
+            if t["ticker"] in held_map:
+                t["action_type"] = "CC"
+                t["shares"]      = held_map[t["ticker"]]["shares"]
+                cc_targets.append(t)
+            else:
+                csp_targets.append(t)
+
         budget       = TOTAL_FUND_BUDGET - reserved
         target_n     = max(1, NUM_POSITIONS - active_count)
-        positions    = size_all(targets, budget=budget, num_positions=target_n)
+        positions    = size_all(csp_targets, budget=budget, num_positions=target_n,
+                                cc_targets=cc_targets)
         exec_time    = _load_settings().get("execution_time", "10:00")
         log.info(f"\n📋 {len(positions)} positions queued for Monday {exec_time} PST")
 

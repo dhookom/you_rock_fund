@@ -270,6 +270,7 @@ def post_weekly_plan(positions: list):
     total_capital = 0.0
     total_premium = 0.0
     for i, p in enumerate(positions[:5], 1):
+        atype         = p.get("action_type", "CSP")
         strike        = p["strike"]
         contracts     = p["contracts"]
         capital_used  = p["capital_used"]
@@ -279,11 +280,17 @@ def post_weekly_plan(positions: list):
         dte           = p.get("days_to_earnings")
 
         earn_str = f" | Earnings: {dte} days" if dte is not None and dte > 0 else ""
+        if atype == "CC":
+            capital_str  = "held"
+            detail_str   = f"　　CC on {contracts * 100} shares | Premium: ${premium_total:,.0f} ({yield_pct:.2f}%){earn_str}"
+        else:
+            capital_str  = f"${capital_used:,.0f}"
+            detail_str   = (f"　　Buffer: {buffer_pct:.1f}% | Premium: ${premium_total:,.0f} "
+                            f"({yield_pct:.2f}%){earn_str}")
         lines.append(
-            f"✅ **#{i} {p['ticker']}** | Strike {_fmt_strike(strike)} | "
-            f"{contracts} contracts | ${capital_used:,.0f}\n"
-            f"　　Buffer: {buffer_pct:.1f}% | Premium: ${premium_total:,.0f} "
-            f"({yield_pct:.2f}%){earn_str}"
+            f"✅ **#{i} {p['ticker']}** | {atype} Strike {_fmt_strike(strike)} | "
+            f"{contracts} contracts | {capital_str}\n"
+            + detail_str
         )
         total_capital += capital_used
         total_premium += premium_total

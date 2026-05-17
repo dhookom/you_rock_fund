@@ -60,6 +60,13 @@ def get_top_targets(n=5):
     rows = data.get("rows", [])
     print(f"✅ {len(rows)} candidates returned")
 
+    # DEBUG: log raw field names + call values for one row (INTC preferred)
+    _debug_row = next((r for r in rows if r.get("ticker") == "INTC"), rows[0] if rows else None)
+    if _debug_row:
+        import json as _json
+        _call_keys = {k: v for k, v in _debug_row.items() if "call" in k.lower()}
+        print(f"🔍 DEBUG raw call fields for {_debug_row.get('ticker')}: {_json.dumps(_call_keys, indent=2)}")
+
     # ── Filter 1: wheel-ready ─────────────────────────────────
     rows = [r for r in rows if r.get("wheel_fit") == "Wheel-ready"]
     print(f"🔧 {len(rows)} wheel-ready candidates")

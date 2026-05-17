@@ -7,6 +7,35 @@ from config import (
 )
 
 def size_position(target: dict, available_capital: float, is_last: bool = False) -> dict | None:
+    # CC: contracts fixed by shares owned; no new capital consumed
+    if target.get("action_type") == "CC":
+        contracts = target.get("shares", 0) // 100
+        if contracts < 1:
+            print(f"  ⚠️  {target['ticker']} CC skipped — fewer than 100 shares")
+            return None
+        strike        = target["call_20d_strike"]
+        premium       = target["call_20d_premium"]
+        premium_pct   = target.get("call_20d_premium_pct", 0)
+        return {
+            "ticker":           target["ticker"],
+            "action_type":      "CC",
+            "strike":           strike,
+            "premium":          premium,
+            "expiry":           target["expiry"],
+            "contracts":        contracts,
+            "capital_used":     0.0,
+            "premium_total":    contracts * premium * 100,
+            "yield_pct":        premium_pct * 100,
+            "delta":            target.get("call_20d_delta", 0),
+            "iv_atm":           target.get("iv_atm", 0),
+            "sector":           target.get("sector", ""),
+            "latest_price":     target["latest_price"],
+            "buffer_pct":       0.0,
+            "buyzone":          target.get("buyzone_flag", False),
+            "days_to_earnings": target.get("days_to_earnings"),
+        }
+
+    # CSP
     strike            = target["put_20d_strike"]
     cash_per_contract = strike * 100
 
@@ -34,6 +63,7 @@ def size_position(target: dict, available_capital: float, is_last: bool = False)
 
     return {
         "ticker":           target["ticker"],
+        "action_type":      "CSP",
         "strike":           strike,
         "premium":          target["put_20d_premium"],
         "expiry":           target["expiry"],
@@ -50,10 +80,18 @@ def size_position(target: dict, available_capital: float, is_last: bool = False)
         "days_to_earnings": target.get("days_to_earnings"),
     }
 
-def size_all(targets: list, budget: float = None, num_positions: int = None) -> list:
+def size_all(targets: list, budget: float = None, num_positions: int = None,
+             cc_targets: list = None) -> list:
     num              = num_positions if num_positions is not None else NUM_POSITIONS
     remaining_budget = budget if budget is not None else TOTAL_FUND_BUDGET
     effective_budget = remaining_budget
+
+    # CC positions: fixed by shares held, consume no new capital
+    cc_sized = []
+    for t in (cc_targets or []):
+        result = size_position(t, 0)
+        if result:
+            cc_sized.append(result)
 
     # Pass 1: size positions #2–#N at TARGET from targets[1:]
     rest_sized   = []
@@ -73,7 +111,7 @@ def size_all(targets: list, budget: float = None, num_positions: int = None) -> 
             top_sized.append(result)
             remaining_budget -= result["capital_used"]
 
-    sized = top_sized + rest_sized
+    sized = cc_sized + top_sized + rest_sized
 
     print("\n💼 Position Sizing Summary")
     print(f"   Fund Budget: ${effective_budget:,.0f}  |  Target: ${TARGET_PER_POSITION:,.0f}/pos (#2–{num})  |  Max #1: ${MAX_PER_POSITION:,.0f}")
@@ -83,15 +121,18 @@ def size_all(targets: list, budget: float = None, num_positions: int = None) -> 
     total_premium = 0
 
     for i, p in enumerate(sized, 1):
-        bz       = "✅" if p["buyzone"] else "❌"
-        last_tag = " ← remainder (max $70K)" if i == 1 else ""
-        over     = " ⚡" if p["capital_used"] > TARGET_PER_POSITION else ""
-        print(f"\n  #{i} {p['ticker']}  (Buyzone: {bz}){last_tag}")
+        bz          = "✅" if p["buyzone"] else "❌"
+        atype       = p.get("action_type", "CSP")
+        last_tag    = " ← remainder (max $70K)" if (atype == "CSP" and i == len(cc_sized or []) + 1) else ""
+        over        = " ⚡" if p["capital_used"] > TARGET_PER_POSITION else ""
+        capital_str = "held (no new capital)" if atype == "CC" else f"${p['capital_used']:,.0f}{over}"
+        print(f"\n  #{i} {p['ticker']} [{atype}]  (Buyzone: {bz}){last_tag}")
         print(f"    Strike:      ${p['strike']:.2f}")
         print(f"    Contracts:   {p['contracts']}")
-        print(f"    Capital:     ${p['capital_used']:,.0f}{over}")
+        print(f"    Capital:     {capital_str}")
         print(f"    Premium:     ${p['premium_total']:,.0f}  ({p['yield_pct']:.2f}%)")
-        print(f"    Buffer:      {p['buffer_pct']:.2f}%")
+        if atype == "CSP":
+            print(f"    Buffer:      {p['buffer_pct']:.2f}%")
         total_capital += p["capital_used"]
         total_premium += p["premium_total"]
 

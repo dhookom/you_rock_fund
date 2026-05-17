@@ -847,8 +847,22 @@ def run_screener():
         adjusted_budget    = budget - reserved_capital
         target_fills       = max(1, n - active_wheel_count)
 
-        targets   = get_top_targets(n * 2)
-        positions = size_all(targets, budget=adjusted_budget, num_positions=target_fills)
+        all_targets = get_top_targets(n * 2)
+
+        # Split: tickers we already hold → CC; everything else → CSP
+        held_map    = {h["ticker"]: h for h in active_holdings}
+        cc_targets  = []
+        csp_targets = []
+        for t in all_targets:
+            if t["ticker"] in held_map:
+                t["action_type"] = "CC"
+                t["shares"]      = held_map[t["ticker"]]["shares"]
+                cc_targets.append(t)
+            else:
+                csp_targets.append(t)
+
+        positions = size_all(csp_targets, budget=adjusted_budget, num_positions=target_fills,
+                             cc_targets=cc_targets)
 
         total_premium = sum(p.get("premium_total", 0) for p in positions)
         total_capital = sum(p.get("capital_used", 0) for p in positions)
