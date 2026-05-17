@@ -129,7 +129,7 @@ def run_screener_preview():
             h.get("shares", 0) * h.get("assigned_strike", 0.0) for h in active
         ), 2)
         active_count = len(active)
-        all_targets  = get_top_targets(10)
+        all_targets  = get_top_targets(10, always_include=set(held_map.keys()))
 
         # Split: tickers we already hold → CC; everything else → CSP
         cc_targets  = []

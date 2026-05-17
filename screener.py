@@ -51,7 +51,7 @@ def score_target(row: dict) -> float:
         (0.15 * (iv_atm / 10))
     )
 
-def get_top_targets(n=5):
+def get_top_targets(n=5, always_include: set = None):
     print(f"\n📡 Fetching CSP targets from Render API...")
     response = requests.get(URL, params=PARAMS, timeout=60)
     response.raise_for_status()
@@ -60,12 +60,12 @@ def get_top_targets(n=5):
     rows = data.get("rows", [])
     print(f"✅ {len(rows)} candidates returned")
 
-    # DEBUG: log raw field names + call values for one row (INTC preferred)
+    # DEBUG: dump all raw keys for one row (INTC preferred) to confirm field names
     _debug_row = next((r for r in rows if r.get("ticker") == "INTC"), rows[0] if rows else None)
     if _debug_row:
         import json as _json
-        _call_keys = {k: v for k, v in _debug_row.items() if "call" in k.lower()}
-        print(f"🔍 DEBUG raw call fields for {_debug_row.get('ticker')}: {_json.dumps(_call_keys, indent=2)}")
+        print(f"🔍 DEBUG all keys for {_debug_row.get('ticker')}: {_json.dumps(list(_debug_row.keys()), indent=2)}")
+        print(f"🔍 DEBUG full row: {_json.dumps(_debug_row, indent=2)}")
 
     # ── Filter 1: wheel-ready ─────────────────────────────────
     rows = [r for r in rows if r.get("wheel_fit") == "Wheel-ready"]
@@ -114,7 +114,14 @@ def get_top_targets(n=5):
         r["_score"] = score_target(r)
 
     rows.sort(key=lambda r: r["_score"], reverse=True)
-    top = rows[:n]
+
+    # Always include held tickers (for CC sizing) even if below the top-N cutoff
+    if always_include:
+        top_tickers = {r["ticker"] for r in rows[:n]}
+        extras = [r for r in rows[n:] if r["ticker"] in always_include and r["ticker"] not in top_tickers]
+        top = rows[:n] + extras
+    else:
+        top = rows[:n]
 
     print(f"\n🎯 Top {n} CSP Targets — {datetime.today().strftime('%Y-%m-%d')}")
     print(f"   Scoring: 50% Buffer (1.5x ≥10%) | 35% Premium (1.1x buyzone) | 15% IV")
