@@ -258,6 +258,12 @@ export default function ThisWeek() {
             </div>
           )}
 
+          <div className="bg-blue-950/30 border border-blue-900/40 rounded-xl px-5 py-3.5 text-xs text-blue-300/80 leading-relaxed">
+            <span className="font-semibold text-blue-300">These are screener estimates, not final results.</span>
+            {' '}Strikes, premiums, and deltas are calculated Saturday using delayed data and will differ from Monday&apos;s execution against the live IBKR option chain.
+            {' '}For wheel holdings, covered calls will target the assigned strike if its delta is ≥ 0.20 — not the strike shown above.
+          </div>
+
           {runAt && (
             <div className="text-gray-400 dark:text-gray-700 text-xs text-right">
               Screener run at {runAt.toLocaleTimeString()}
