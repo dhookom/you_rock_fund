@@ -182,7 +182,7 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     # Open all market data streams simultaneously — one sleep covers all
     streams: dict[float, tuple[object, object]] = {}
     for strike, contract in q_pairs:
-        data = ib.reqMktData(contract, genericTickList="13", snapshot=False)
+        data = ib.reqMktData(contract, genericTickList="", snapshot=False)
         streams[strike] = (contract, data)
 
     ib.sleep(5)
@@ -771,5 +771,5 @@ if __name__ == "__main__":
     if cmd == "detect":
         detect_assignments()
     else:
-        freed, skip = run_wheel_check()
-        print(f"\nFreed: ${freed:,.0f}  Skip: {skip}")
+        freed, skip, reserved = run_wheel_check()
+        print(f"\nFreed: ${freed:,.0f}  Skip: {skip}  Reserved: ${reserved:,.0f}")
