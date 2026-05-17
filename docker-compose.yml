@@ -13,13 +13,6 @@ x-python-env: &python-env
   IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1}
   RENDER_URL: ${RENDER_URL:-https://yourockclub-ledger-sync.onrender.com/api/targets/csp}
 
-x-python-secrets: &python-secrets
-  - render_secret
-  - anthropic_api_key
-  - discord_webhook_url
-  - discord_webhook_weekly_plan
-  - ibkr_password_live
-
 services:
   secrets:
     build: ./docker/secrets_service
@@ -83,7 +76,6 @@ services:
         condition: service_healthy
     environment:
       <<: *python-env
-    secrets: *python-secrets
     volumes:
       - yrvi_data:/data
       # docker.sock lets the api restart/stop sibling containers.
@@ -112,7 +104,6 @@ services:
         condition: service_healthy
     environment:
       <<: *python-env
-    secrets: *python-secrets
     volumes:
       - yrvi_data:/data
     healthcheck:
@@ -132,22 +123,6 @@ services:
       - api
     ports:
       - "127.0.0.1:${YRVI_WEB_PORT:-3000}:80"
-
-secrets:
-  tws_password_paper:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/tws_password_paper
-  tws_password_live:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/tws_password_live
-  render_secret:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/render_secret
-  anthropic_api_key:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/anthropic_api_key
-  discord_webhook_url:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/discord_webhook_url
-  discord_webhook_weekly_plan:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/discord_webhook_weekly_plan
-  ibkr_password_live:
-    file: ${YRVI_SECRETS_DIR:-./docker/secrets}/ibkr_password_live
 
 volumes:
   ib_gateway_settings:
