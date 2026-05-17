@@ -845,7 +845,7 @@ def run_screener():
         ), 2)
         active_wheel_count = len(active_holdings)
         adjusted_budget    = budget - reserved_capital
-        target_fills       = max(1, n - active_wheel_count)
+        target_fills       = n
 
         all_targets = get_top_targets(n * 2, always_include=set(held_map.keys()))
 

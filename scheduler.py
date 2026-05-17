@@ -143,8 +143,7 @@ def run_screener_preview():
                 csp_targets.append(t)
 
         budget       = TOTAL_FUND_BUDGET - reserved
-        target_n     = max(1, NUM_POSITIONS - active_count)
-        positions    = size_all(csp_targets, budget=budget, num_positions=target_n,
+        positions    = size_all(csp_targets, budget=budget, num_positions=NUM_POSITIONS,
                                 cc_targets=cc_targets)
         exec_time    = _load_settings().get("execution_time", "10:00")
         log.info(f"\n📋 {len(positions)} positions queued for Monday {exec_time} PST")
