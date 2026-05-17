@@ -93,23 +93,32 @@ def size_all(targets: list, budget: float = None, num_positions: int = None,
         if result:
             cc_sized.append(result)
 
-    # Pass 1: size positions #2–#N at TARGET from targets[1:]
-    rest_sized   = []
-    target_index = 1
-    while len(rest_sized) < num - 1 and target_index < len(targets):
-        result = size_position(targets[target_index], remaining_budget, is_last=False)
-        if result:
-            rest_sized.append(result)
-            remaining_budget -= result["capital_used"]
-        target_index += 1
-
-    # Pass 2: allocate remainder to #1 (highest-scored), capped at MAX_PER_POSITION
-    top_sized = []
-    if targets:
-        result = size_position(targets[0], remaining_budget, is_last=True)
+    # Pass 1: find and allocate the remainder/top position first so the best
+    # viable target gets priority capital before other slots consume the budget.
+    # Iterate in score order until one fits (skips oversized tickers like SNDK).
+    top_sized    = []
+    used_tickers = set()
+    for t in targets:
+        result = size_position(t, remaining_budget, is_last=True)
         if result:
             top_sized.append(result)
             remaining_budget -= result["capital_used"]
+            used_tickers.add(t["ticker"])
+            break
+
+    # Pass 2: fill remaining positions at TARGET, skipping the top pick
+    rest_sized   = []
+    target_index = 0
+    while len(rest_sized) < num - 1 and target_index < len(targets):
+        t = targets[target_index]
+        target_index += 1
+        if t["ticker"] in used_tickers:
+            continue
+        result = size_position(t, remaining_budget, is_last=False)
+        if result:
+            rest_sized.append(result)
+            remaining_budget -= result["capital_used"]
+            used_tickers.add(t["ticker"])
 
     sized = cc_sized + top_sized + rest_sized
 
