@@ -300,7 +300,8 @@ def run_pipeline():
         if not positions:
             log.error("❌ No positions sized — aborting"); return
 
-        results = execute_positions(positions, extra_targets=filtered_targets)
+        results = execute_positions(positions, extra_targets=filtered_targets,
+                                    target_fills=target_fills)
 
         # ── Build weekly P&L ──────────────────────────────────
         filled          = [r for r in results if r.get("status") in ("filled", "dry_run", "partial_fill")]
