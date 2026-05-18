@@ -264,7 +264,22 @@ Before running the setup script, have these three things ready. You'll start wit
 
 ---
 
-## Step 12 — Install and Configure YRVI
+## Step 12 — Configure IB Gateway API Precautions ⭐ CRITICAL
+
+Without this, YRVI will connect, get market data, size positions — and then silently fail every order. IB Gateway pops up a confirmation dialog before submitting API orders, and since the system runs headlessly, nothing dismisses it and every trade times out.
+
+1. Open IB Gateway (connect via RealVNC Viewer at `127.0.0.1:5900` if running in Docker — see FAQ)
+2. Click **Configure → API → Precautions**
+3. Check **✅ Bypass Order Precautions for API Orders**
+4. Click **Apply → OK**
+
+This setting persists across restarts. You only need to do it once per machine.
+
+> This cannot be set through config files — it must be done manually in the IB Gateway GUI.
+
+---
+
+## Step 13 — Install and Configure YRVI
 
 > **Docker (recommended):** `setup_docker.sh` handles everything — IB Gateway runs inside a container automatically. Manual IB Gateway installation is not needed.
 
