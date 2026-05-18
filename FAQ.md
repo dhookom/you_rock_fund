@@ -168,9 +168,10 @@ docker compose --env-file .env.compose <command>
 
 **The fix:**
 
-In IB Gateway → **Configure → API → Precautions** → check **✅ Bypass Order Precautions for API Orders** → click **Apply** → **OK**
+- **Docker setup (v1.7.0+):** Handled automatically via `ibc_config.ini` — no action needed.
+- **Legacy/manual setup:** In IB Gateway → **Configure → API → Precautions** → check **✅ Bypass Order Precautions for API Orders** → click **Apply** → **OK**
 
-This must be set on each machine running YRVI. Without it, the scheduler will connect, get market data, size positions, submit orders — and then silently fail every fill.
+Without this, the scheduler will connect, get market data, size positions, submit orders — and then silently fail every fill.
 
 ---
 
