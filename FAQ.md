@@ -151,7 +151,10 @@ docker compose --env-file .env.compose <command>
    - **Market Data API Acknowledgement** — sign the Terms and Conditions (required to enable API market data)
    - **Market Data Subscriber Status** — set yourself as **Non-Professional** (personal account, not redistributing data commercially — keeps fees at $0)
    - **Non-Commercial Form** — confirm personal/non-commercial use
-4. Allow a few minutes for the changes to take effect, then re-run the test
+4. Allow overnight for the acknowledgement to fully propagate — changes made today will be active by the next morning
+5. Re-run the test the **following morning between 10–10:30 AM ET** — the market needs to have been open at least 15–30 minutes for delayed quotes to be populated
+
+> **You do not need a separate OPRA subscription.** IBKR's free delayed market data (type 3) is sufficient for YRVI to execute. The API Acknowledgement is the key unlock — once signed and propagated, delayed options bid/ask will flow through automatically.
 
 > **Important:** You cannot fix this through the IBKR mobile app or TWS — IBKR explicitly disables Market Data management for paper accounts in those interfaces ("When logging in through TWS or Mobile Apps, all Market Data and Trading functionality is disabled"). The web Client Portal on your live account is the only path.
 

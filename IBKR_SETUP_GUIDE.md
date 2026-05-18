@@ -231,6 +231,10 @@ Without this step, YRVI will connect to IBKR successfully but fail to retrieve o
    | **Market Data Subscriber Status** | Select **Non-Professional** — you're trading your own account, not redistributing data commercially. Keeps fees at $0. |
    | **Non-Commercial Form** | Confirm personal/non-commercial use |
 
+> **You do not need a separate OPRA subscription.** IBKR's free delayed market data (type 3) is sufficient for YRVI to execute options trades. The API Acknowledgement is the key unlock — once signed, delayed options bid/ask will flow through automatically.
+
+> **Propagation time:** Changes made today may take overnight to fully activate. Run your first test the following morning between 10–10:30 AM ET — the market needs to have been open at least 15–30 minutes for delayed quotes to be populated.
+
 > **Why the live account?** IBKR paper accounts inherit market data subscriptions from your live account. The IBKR mobile app and TWS explicitly disable Market Data management for paper accounts — the web Client Portal on your live account is the only place to configure this.
 
 > **Tip:** If the portal warns about an existing session (IB Gateway is already running), open the portal in a different browser or browser profile to avoid disconnecting your Gateway.
