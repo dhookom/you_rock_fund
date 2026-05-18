@@ -217,7 +217,27 @@ While waiting for live account approval, set up paper trading to test the full Y
 
 ---
 
-## Step 9 — Find Your Credentials for YRVI
+## Step 9 — Configure Market Data Subscriptions ⭐ CRITICAL
+
+Without this step, YRVI will connect to IBKR successfully but fail to retrieve option prices — every trade will show **"Failed Market Data"** even when the market is open.
+
+1. Log into the IBKR **Client Portal** on your **live account** in a browser
+2. Click the **person icon (top right) → Settings → Trading Platform → Market Data Subscriptions**
+3. Complete all three items by clicking the ⚙️ gear icon on each:
+
+   | Item | What to do |
+   |------|-----------|
+   | **Market Data API Acknowledgement** | Sign the Terms and Conditions — required to enable API market data access |
+   | **Market Data Subscriber Status** | Select **Non-Professional** — you're trading your own account, not redistributing data commercially. Keeps fees at $0. |
+   | **Non-Commercial Form** | Confirm personal/non-commercial use |
+
+> **Why the live account?** IBKR paper accounts inherit market data subscriptions from your live account. The IBKR mobile app and TWS explicitly disable Market Data management for paper accounts — the web Client Portal on your live account is the only place to configure this.
+
+> **Tip:** If the portal warns about an existing session (IB Gateway is already running), open the portal in a different browser or browser profile to avoid disconnecting your Gateway.
+
+---
+
+## Step 11 — Find Your Credentials for YRVI
 
 Before running the setup script, have these three things ready. You'll start with your **paper trading credentials** — live account info can be added later from the dashboard.
 
@@ -240,7 +260,7 @@ Before running the setup script, have these three things ready. You'll start wit
 
 ---
 
-## Step 10 — Install and Configure YRVI
+## Step 12 — Install and Configure YRVI
 
 > **Docker (recommended):** `setup_docker.sh` handles everything — IB Gateway runs inside a container automatically. Manual IB Gateway installation is not needed.
 

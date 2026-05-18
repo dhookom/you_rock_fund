@@ -143,14 +143,17 @@ docker compose --env-file .env.compose <command>
 
 **How to confirm:** Run a manual test with `docker exec yrvi-scheduler-1 python trader.py`. If the log shows `Market data type: DELAYED (type 3)` and every ticker returns `⏰ No market data — market likely closed` during market hours, this is your issue.
 
-**The fix — enable US Options market data on your live account:**
+**The fix — complete market data setup on your live account:**
 
 1. Open a browser and log into the IBKR **Client Portal** on your **live account** (not paper)
-2. Navigate to **Trade → Market Data Subscriptions**
-3. Find and enable **US Options (OPRA)**
-4. Allow up to an hour for the subscription to activate
+2. Click the **person icon (top right) → Settings → Trading Platform → Market Data Subscriptions**
+3. On that page, complete all three items by clicking the ⚙️ gear icon on each:
+   - **Market Data API Acknowledgement** — sign the Terms and Conditions (required to enable API market data)
+   - **Market Data Subscriber Status** — set yourself as **Non-Professional** (personal account, not redistributing data commercially — keeps fees at $0)
+   - **Non-Commercial Form** — confirm personal/non-commercial use
+4. Allow a few minutes for the changes to take effect, then re-run the test
 
-> **Important:** You cannot fix this through the IBKR mobile app or TWS — IBKR explicitly disables Market Data management for paper accounts in those interfaces. The web Client Portal on your live account is the only path.
+> **Important:** You cannot fix this through the IBKR mobile app or TWS — IBKR explicitly disables Market Data management for paper accounts in those interfaces ("When logging in through TWS or Mobile Apps, all Market Data and Trading functionality is disabled"). The web Client Portal on your live account is the only path.
 
 > **Note:** If the Client Portal warns about an existing session (IB Gateway is running), use a different browser or browser profile to avoid disconnecting your Gateway session.
 
