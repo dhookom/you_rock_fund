@@ -303,6 +303,15 @@ def run_pipeline():
         results = execute_positions(positions, extra_targets=filtered_targets,
                                     target_fills=target_fills)
 
+        # ── Systemic market data failure alert ────────────────
+        actionable = [r for r in results if r.get("status") not in
+                      ("skipped_contract_size", "skipped_delta")]
+        if actionable and all(r.get("status") == "failed_market_data" for r in actionable):
+            _discord_alert(
+                "⚠️ **YRVI** All candidates failed market data — no trades placed.\n"
+                "Check IB Gateway → data farm connections and paper account market data subscriptions."
+            )
+
         # ── Build weekly P&L ──────────────────────────────────
         filled          = [r for r in results if r.get("status") in ("filled", "dry_run", "partial_fill")]
         csp_premium     = sum(r.get("premium_collected", 0) for r in results)
