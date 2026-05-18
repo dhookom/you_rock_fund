@@ -137,4 +137,35 @@ docker compose --env-file .env.compose <command>
 
 ---
 
+### Q: All trades show "Failed Market Data" / "market likely closed" even though the market is open
+
+**A:** The IB Gateway connection is working but your paper account doesn't have options market data subscriptions enabled. The IBKR paper account inherits market data subscriptions from your live account — if options data isn't subscribed on the live account, the paper account won't see it either.
+
+**How to confirm:** Run a manual test with `docker exec yrvi-scheduler-1 python trader.py`. If the log shows `Market data type: DELAYED (type 3)` and every ticker returns `⏰ No market data — market likely closed` during market hours, this is your issue.
+
+**The fix — enable US Options market data on your live account:**
+
+1. Open a browser and log into the IBKR **Client Portal** on your **live account** (not paper)
+2. Navigate to **Trade → Market Data Subscriptions**
+3. Find and enable **US Options (OPRA)**
+4. Allow up to an hour for the subscription to activate
+
+> **Important:** You cannot fix this through the IBKR mobile app or TWS — IBKR explicitly disables Market Data management for paper accounts in those interfaces. The web Client Portal on your live account is the only path.
+
+> **Note:** If the Client Portal warns about an existing session (IB Gateway is running), use a different browser or browser profile to avoid disconnecting your Gateway session.
+
+---
+
+### Q: Orders never fill — stuck on "failed" or "order unfilled" even when market data works
+
+**A:** IB Gateway is blocking API orders behind a confirmation dialog that no one is clicking. When **Bypass Order Precautions for API Orders** is not enabled, IBKR pops up a warning dialog before submitting each order. Since the system runs headlessly, nothing dismisses it and the order times out.
+
+**The fix:**
+
+In IB Gateway → **Configure → API → Precautions** → check **✅ Bypass Order Precautions for API Orders** → click **Apply** → **OK**
+
+This must be set on each machine running YRVI. Without it, the scheduler will connect, get market data, size positions, submit orders — and then silently fail every fill.
+
+---
+
 *Have a question not covered here? Post in the You Rock Club Discord and we'll add it.*
