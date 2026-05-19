@@ -25,3 +25,5 @@ yrvi-app/preview_stdout.log
 yrvi-app/preview_stderr.log
 docker/secrets/*
 !docker/secrets/README.md
+.claude/
+AGENTS.md
