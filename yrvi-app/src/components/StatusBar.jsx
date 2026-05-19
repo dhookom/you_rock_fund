@@ -237,7 +237,7 @@ export default function StatusBar() {
         <div className="flex items-center gap-4 text-xs">
           <span className="text-gray-500">Account</span>
           <span className="text-gray-900 dark:text-white font-medium font-mono">{fmt(status?.account_value)}</span>
-          {status?.unrealized_pnl != null && (
+          {status?.unrealized_pnl != null && status.unrealized_pnl !== 0 && (
             <>
               <span className="text-gray-500">Unrealized</span>
               <span className={`font-medium font-mono ${status.unrealized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
