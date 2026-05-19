@@ -163,16 +163,20 @@ export default function Dashboard() {
             {[
               { label: '💰 Net Liq',      value: positions.account_summary.net_liquidation },
               { label: '💵 Cash',          value: positions.account_summary.settled_cash },
-              { label: '📈 Unrealized',    value: positions.account_summary.unrealized_pnl,   pnl: true },
-              { label: '✅ Realized',      value: positions.account_summary.realized_pnl,     pnl: true },
+              { label: '📈 Unrealized',    value: positions.account_summary.unrealized_pnl,   pnl: true, liveOnly: true },
+              { label: '✅ Realized',      value: positions.account_summary.realized_pnl,     pnl: true, liveOnly: true },
               { label: '🛡️ Margin',        value: positions.account_summary.maintenance_margin },
               { label: '⚡ Buying Power',  value: positions.account_summary.buying_power },
-            ].map(({ label, value, pnl }) => (
+            ].map(({ label, value, pnl, liveOnly }) => (
               <div key={label} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
                 <div className="text-gray-500 text-xs mb-1.5">{label}</div>
-                <div className={`text-lg font-bold font-mono ${pnl ? pnlColor(value) : 'text-gray-900 dark:text-white'}`}>
-                  {pnl ? fmtPnl(value) : (value != null ? `$${Math.round(value).toLocaleString()}` : '—')}
-                </div>
+                {liveOnly && !value ? (
+                  <div className="text-xs text-gray-400 dark:text-gray-600 italic leading-tight">Live account only</div>
+                ) : (
+                  <div className={`text-lg font-bold font-mono ${pnl ? pnlColor(value) : 'text-gray-900 dark:text-white'}`}>
+                    {pnl ? fmtPnl(value) : (value != null ? `$${Math.round(value).toLocaleString()}` : '—')}
+                  </div>
+                )}
               </div>
             ))}
           </div>
