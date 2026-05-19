@@ -28,7 +28,7 @@ export default function YTDChart({ weeks = [] }) {
     )
   }
 
-  const max = Math.max(...weeks.map(w => w.realized ?? 0))
+  const max = Math.max(...weeks.map(w => w.premium_collected ?? 0))
 
   function CustomTooltip({ active, payload, label }) {
     if (!active || !payload?.length) return null
@@ -37,7 +37,7 @@ export default function YTDChart({ weeks = [] }) {
       <div style={{ background: tooltipBg, border: `1px solid ${tooltipBdr}` }}
         className="rounded-lg p-3 text-sm shadow-xl">
         <div style={{ color: tooltipSub }} className="mb-1">Week of {fmtDate(label)}</div>
-        <div style={{ color: tooltipText }} className="font-bold">${d.realized?.toLocaleString()}</div>
+        <div style={{ color: tooltipText }} className="font-bold">${d.premium_collected?.toLocaleString()}</div>
         <div className="text-green-400">{d.yield_pct?.toFixed(3)}% yield</div>
       </div>
     )
@@ -64,9 +64,9 @@ export default function YTDChart({ weeks = [] }) {
           width={44}
         />
         <Tooltip content={<CustomTooltip />} cursor={{ fill: isDark ? '#ffffff08' : '#00000006' }} />
-        <Bar dataKey="realized" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="premium_collected" radius={[4, 4, 0, 0]}>
           {weeks.map((w, i) => (
-            <Cell key={i} fill={w.realized === max ? '#3b82f6' : '#1d4ed8'} />
+            <Cell key={i} fill={w.premium_collected === max ? '#3b82f6' : '#1d4ed8'} />
           ))}
         </Bar>
       </BarChart>
