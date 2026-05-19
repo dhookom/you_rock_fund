@@ -634,6 +634,15 @@ def _get_ibkr_data(settings: dict) -> dict:
                     })
                 portfolio.sort(key=lambda x: (0 if x["secType"] == "STK" else 1, x["symbol"]))
                 result["portfolio"] = portfolio
+
+                # IB paper trading omits UnrealizedPnL/RealizedPnL from accountSummary;
+                # fall back to summing per-position values when account-level tag is zero.
+                if result["unrealized_pnl"] == 0 and portfolio:
+                    result["unrealized_pnl"] = round(
+                        sum(p["unrealizedPNL"] for p in portfolio if p["unrealizedPNL"] is not None), 2
+                    )
+                    if result.get("account_summary"):
+                        result["account_summary"]["unrealized_pnl"] = result["unrealized_pnl"]
             except Exception as pe:
                 print(f"[api] Positions fetch failed (account_summary preserved): {pe}")
 
