@@ -1,3 +1,9 @@
+## [1.11.0] — 2026-05-20
+### Added
+- Help page feedback form — Bug Report / Feature Request selector + textarea posts directly to `#yrvi-app-feedback` Discord channel via `/api/feedback`; no Discord account needed, never leaves the dashboard
+- `/api/feedback` endpoint reads `discord_feedback_webhook_url` secret and posts formatted message with version, mode, and timestamp
+- `FeedbackRequest` Pydantic model
+
 ## [1.10.0] — 2026-05-20
 ### Added
 - Help page (sidebar, pinned below a divider) with three sections: System Diagnostics, FAQ & Troubleshooting, Report a Bug / Feature Request

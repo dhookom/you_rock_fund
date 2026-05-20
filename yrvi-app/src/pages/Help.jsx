@@ -1,9 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { Activity, BookOpen, MessageSquare, CheckCircle, AlertTriangle, XCircle, RefreshCw, ExternalLink } from 'lucide-react'
-
-// Set this to your YRVI bug/feature Discord channel invite link
-const DISCORD_COMMUNITY_URL = 'https://discord.gg/PLACEHOLDER'
+import { Activity, BookOpen, MessageSquare, CheckCircle, AlertTriangle, XCircle, RefreshCw, ExternalLink, Send } from 'lucide-react'
 
 const FAQ_URL = 'https://github.com/controllinghand/you_rock_fund/blob/main/FAQ.md'
 
@@ -42,9 +39,29 @@ function OverallBadge({ overall }) {
 }
 
 export default function Help() {
-  const [running, setRunning]   = useState(false)
-  const [results, setResults]   = useState(null)
-  const [error, setError]       = useState(null)
+  const [running, setRunning]     = useState(false)
+  const [results, setResults]     = useState(null)
+  const [error, setError]         = useState(null)
+
+  const [fbType, setFbType]       = useState('bug')
+  const [fbMessage, setFbMessage] = useState('')
+  const [fbSending, setFbSending] = useState(false)
+  const [fbResult, setFbResult]   = useState(null)  // {ok, text}
+
+  const submitFeedback = async () => {
+    if (!fbMessage.trim()) return
+    setFbSending(true)
+    setFbResult(null)
+    try {
+      await axios.post('/api/feedback', { type: fbType, message: fbMessage.trim() })
+      setFbResult({ ok: true, text: 'Sent — thanks for the feedback!' })
+      setFbMessage('')
+    } catch (err) {
+      setFbResult({ ok: false, text: err.response?.data?.detail ?? 'Failed to send — try again' })
+    } finally {
+      setFbSending(false)
+    }
+  }
 
   const runDiag = async () => {
     setRunning(true)
@@ -135,19 +152,61 @@ export default function Help() {
       {/* ── Report a Bug / Feature Request ──────────────────── */}
       <Section icon={MessageSquare} title="Report a Bug or Request a Feature">
         <div className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-          Found something broken or have an idea? Post in the YRVI Discord channel.
-          Include what you were doing, what you expected, and what happened instead.
-          Screenshots of the dashboard or log output are especially helpful.
+          Describe what happened or what you'd like to see — this goes straight to the
+          YRVI team on Discord. No account needed.
         </div>
-        <a
-          href={DISCORD_COMMUNITY_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <MessageSquare size={13} />
-          Open Discord
-        </a>
+
+        <div className="space-y-3">
+          {/* Type selector */}
+          <div className="flex gap-2">
+            {[
+              { value: 'bug',     label: '🐛 Bug Report' },
+              { value: 'feature', label: '💡 Feature Request' },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setFbType(value)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                  fbType === value
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Message */}
+          <textarea
+            rows={4}
+            placeholder={fbType === 'bug'
+              ? 'What happened? What did you expect? Which page or feature?'
+              : 'What would you like to see? What problem would it solve?'}
+            value={fbMessage}
+            onChange={e => { setFbMessage(e.target.value); setFbResult(null) }}
+            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+          />
+
+          {/* Submit */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={submitFeedback}
+              disabled={fbSending || !fbMessage.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Send size={13} />
+              {fbSending ? 'Sending…' : 'Send'}
+            </button>
+
+            {fbResult && (
+              <span className={`text-sm font-medium flex items-center gap-1.5 ${fbResult.ok ? 'text-green-500' : 'text-red-400'}`}>
+                {fbResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                {fbResult.text}
+              </span>
+            )}
+          </div>
+        </div>
       </Section>
     </div>
   )

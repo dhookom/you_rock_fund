@@ -505,6 +505,10 @@ def restart_scheduler():
 class ShutdownRequest(BaseModel):
     confirm: str
 
+class FeedbackRequest(BaseModel):
+    type: str    # "bug" | "feature"
+    message: str
+
 
 # Stop order: api is last so the HTTP response can return before this
 # container kills itself.
@@ -1271,3 +1275,35 @@ def test_discord():
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/feedback")
+def submit_feedback(body: FeedbackRequest):
+    webhook_url = _read_secret_or_env("discord_feedback_webhook_url", "DISCORD_FEEDBACK_WEBHOOK_URL")
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="Feedback webhook not configured — add discord_feedback_webhook_url in Secrets")
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    settings = load_settings()
+    version_file = BASE_DIR / "VERSION"
+    version = version_file.read_text().strip() if version_file.exists() else "unknown"
+    mode = settings.get("trading_mode", "paper").capitalize()
+    now_str = datetime.now(PST).strftime("%Y-%m-%d %-I:%M %p %Z")
+
+    emoji = "🐛" if body.type == "bug" else "💡"
+    label = "Bug Report" if body.type == "bug" else "Feature Request"
+
+    content = (
+        f"{emoji} **{label}** — YRVI Dashboard\n"
+        f"```\n{body.message.strip()}\n```\n"
+        f"v{version} · {mode} mode · {now_str}"
+    )
+
+    try:
+        import requests as req
+        r = req.post(webhook_url, json={"content": content}, timeout=5)
+        r.raise_for_status()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Discord post failed: {e}")
