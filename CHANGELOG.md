@@ -1,3 +1,10 @@
+## [1.9.0] — 2026-05-20
+### Added
+- `market_calendar.py` — NYSE holiday calendar computed dynamically from rules (no external dependencies); covers all 10 federal/NYSE holidays including Saturday/Sunday observation shifts
+- Scheduler now skips all Monday trading jobs (wheel check, CSP pipeline, Discord preview) on market holidays and automatically shifts execution to Tuesday — handles Memorial Day, Labor Day, MLK Day, Presidents' Day, etc.
+- Friday assignment detection skips on Good Friday; daily risk monitor skips on any market holiday (e.g. Thanksgiving Thursday)
+- Startup log updated to reflect Mon/Tue firing window with holiday-shift note
+
 ## [1.6.0] — 2026-05-17
 ### Added
 - Wheel holdings with active stock positions now appear as covered call (CC) entries in the weekly plan — screener switches from CSP to CC for held tickers, using `call_20d_strike` / `call_20d_premium` from the Render API

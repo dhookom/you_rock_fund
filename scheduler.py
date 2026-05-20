@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.blocking import BlockingScheduler
 from config import NUM_POSITIONS, TOTAL_FUND_BUDGET
 from secrets_client import get_secret
+from market_calendar import is_first_trading_day_of_week, is_market_holiday
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,6 +164,10 @@ def run_screener_preview():
 def run_assignment_detection():
     loop = _new_loop()
     now  = datetime.now(PST)
+    if is_market_holiday(now.date()):
+        log.info(f"⏭️  FRIDAY ASSIGNMENT DETECTION skipped — market holiday ({now.strftime('%Y-%m-%d')})")
+        loop.close()
+        return
     log.info("\n" + "=" * 65)
     log.info(f"🔍 FRIDAY ASSIGNMENT DETECTION — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("=" * 65)
@@ -191,6 +196,10 @@ def run_assignment_detection():
 # ── Monday 9:50AM — Discord pre-execution preview ─────────────
 
 def run_discord_preview():
+    now = datetime.now(PST)
+    if not is_first_trading_day_of_week(now.date()):
+        log.info(f"⏭️  Discord preview skipped — not the first trading day of the week ({now.strftime('%A %Y-%m-%d')})")
+        return
     from discord_poster import is_enabled, post_preview
     if not is_enabled():
         return
@@ -228,8 +237,12 @@ def run_discord_preview():
 def run_wheel_check_job():
     loop = _new_loop()
     now  = datetime.now(PST)
+    if not is_first_trading_day_of_week(now.date()):
+        log.info(f"⏭️  WHEEL CHECK skipped — not the first trading day of the week ({now.strftime('%A %Y-%m-%d')})")
+        loop.close()
+        return
     log.info("\n" + "=" * 65)
-    log.info(f"🔄 MONDAY WHEEL CHECK — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
+    log.info(f"🔄 WHEEL CHECK — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("=" * 65)
     if not _ibkr_reachable():
         msg = "IB Gateway unreachable before Monday wheel check — jobs will likely fail"
@@ -252,8 +265,12 @@ def run_wheel_check_job():
 def run_pipeline():
     loop = _new_loop()
     now  = datetime.now(PST)
+    if not is_first_trading_day_of_week(now.date()):
+        log.info(f"⏭️  CSP PIPELINE skipped — not the first trading day of the week ({now.strftime('%A %Y-%m-%d')})")
+        loop.close()
+        return
     log.info("\n" + "=" * 65)
-    log.info(f"⏰ MONDAY EXECUTION — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
+    log.info(f"⏰ WEEKLY EXECUTION — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("=" * 65)
     if not _ibkr_reachable():
         msg = "IB Gateway unreachable before Monday CSP pipeline — trades will not execute"
@@ -352,6 +369,10 @@ def run_pipeline():
 def run_risk_monitor():
     loop = _new_loop()
     now  = datetime.now(PST)
+    if is_market_holiday(now.date()):
+        log.info(f"⏭️  DAILY RISK MONITOR skipped — market holiday ({now.strftime('%Y-%m-%d')})")
+        loop.close()
+        return
     log.info("\n" + "=" * 65)
     log.info(f"📊 DAILY RISK MONITOR — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("=" * 65)
@@ -391,18 +412,18 @@ def main():
     )
     scheduler.add_job(
         run_discord_preview,
-        trigger="cron", day_of_week="mon", hour=prev_h, minute=prev_m,
-        id="monday_discord_preview", name="Monday Discord Preview"
+        trigger="cron", day_of_week="mon,tue", hour=prev_h, minute=prev_m,
+        id="monday_discord_preview", name="Weekly Discord Preview"
     )
     scheduler.add_job(
         run_wheel_check_job,
-        trigger="cron", day_of_week="mon", hour=wheel_h, minute=wheel_m,
-        id="monday_wheel_check", name="Monday Wheel Check"
+        trigger="cron", day_of_week="mon,tue", hour=wheel_h, minute=wheel_m,
+        id="monday_wheel_check", name="Weekly Wheel Check"
     )
     scheduler.add_job(
         run_pipeline,
-        trigger="cron", day_of_week="mon", hour=exec_h, minute=exec_m,
-        id="monday_execution", name="Monday CSP Execution"
+        trigger="cron", day_of_week="mon,tue", hour=exec_h, minute=exec_m,
+        id="monday_execution", name="Weekly CSP Execution"
     )
     scheduler.add_job(
         run_risk_monitor,
@@ -419,12 +440,13 @@ def main():
     log.info("\n" + "=" * 65)
     log.info("🗓️  YOU ROCK FUND SCHEDULER — Running")
     log.info(f"   Current time : {datetime.now(PST).strftime('%A %Y-%m-%d %H:%M %Z')}")
-    log.info("   • Friday     4:15 PM PST  — assignment detection")
+    log.info("   • Friday     4:15 PM PST  — assignment detection (skipped on Good Friday)")
     log.info("   • Saturday   6:00 PM PST  — screener preview")
-    log.info(f"   • Monday    {fmt(prev_h, prev_m):>11}  — Discord preview (if webhook set)")
-    log.info(f"   • Monday    {fmt(wheel_h, wheel_m):>11}  — wheel check (stop loss + CCs)")
-    log.info(f"   • Monday    {fmt(exec_h, exec_m):>11}  — CSP execution  ← configured")
-    log.info("   • Tue–Thu    9:00 AM PST  — daily risk monitor")
+    log.info(f"   • Mon/Tue*  {fmt(prev_h, prev_m):>11}  — Discord preview (if webhook set)")
+    log.info(f"   • Mon/Tue*  {fmt(wheel_h, wheel_m):>11}  — wheel check (stop loss + CCs)")
+    log.info(f"   • Mon/Tue*  {fmt(exec_h, exec_m):>11}  — CSP execution  ← configured")
+    log.info("   • Tue–Thu    9:00 AM PST  — daily risk monitor (skipped on holidays)")
+    log.info("   * Shifts to Tuesday when Monday is a market holiday")
     log.info("   Press Ctrl+C to stop")
     log.info("=" * 65 + "\n")
 
