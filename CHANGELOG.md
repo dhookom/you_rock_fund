@@ -1,3 +1,9 @@
+## [1.10.0] — 2026-05-20
+### Added
+- Help page (sidebar, pinned below a divider) with three sections: System Diagnostics, FAQ & Troubleshooting, Report a Bug / Feature Request
+- `/api/diag` endpoint — fast read-only health check (scheduler heartbeat age, IB Gateway TCP reachability, last CSP run, last wheel check, market status today, version); no IBKR API calls
+- `_next_execution()` in `api.py` now accounts for market holidays — status bar shows Tuesday when Monday is a holiday
+
 ## [1.9.0] — 2026-05-20
 ### Added
 - `market_calendar.py` — NYSE holiday calendar computed dynamically from rules (no external dependencies); covers all 10 federal/NYSE holidays including Saturday/Sunday observation shifts

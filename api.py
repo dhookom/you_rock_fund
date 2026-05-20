@@ -30,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from secrets_client import get_secret
+from market_calendar import is_market_holiday, is_first_trading_day_of_week
 
 load_dotenv()
 
@@ -702,7 +703,104 @@ def _next_execution() -> str:
     if days == 0 and (now.hour > exec_h or (now.hour == exec_h and now.minute >= exec_m)):
         days = 7
     target = (now + timedelta(days=days)).replace(hour=exec_h, minute=exec_m, second=0, microsecond=0)
+    # Shift to Tuesday if Monday is a market holiday
+    if target.weekday() == 0 and is_market_holiday(target.date()):
+        target = target + timedelta(days=1)
     return target.isoformat()
+
+
+def _build_diag() -> dict:
+    """Fast system health check — file reads + TCP probe only, no IBKR API calls."""
+    checks = []
+    overall = "ok"
+
+    def check(name, status, detail):
+        nonlocal overall
+        checks.append({"name": name, "status": status, "detail": detail})
+        if status == "error" and overall != "error":
+            overall = "error"
+        elif status == "warn" and overall == "ok":
+            overall = "warn"
+
+    settings = load_settings()
+    port = settings.get("ibkr_port", 4002)
+    now = datetime.now(PST)
+
+    # ── 1. Scheduler heartbeat ─────────────────────────────────
+    try:
+        hb = json.loads(HEARTBEAT_FILE.read_text())
+        ts = datetime.fromisoformat(hb["timestamp"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=PST)
+        age_sec = (now - ts).total_seconds()
+        if age_sec < 180:
+            check("Scheduler", "ok", f"Running — heartbeat {int(age_sec)}s ago")
+        elif age_sec < 600:
+            check("Scheduler", "warn", f"Heartbeat stale — {int(age_sec / 60)}m ago (may be restarting)")
+        else:
+            check("Scheduler", "error", f"Heartbeat stale — {int(age_sec / 60)}m ago (scheduler may be down)")
+    except FileNotFoundError:
+        check("Scheduler", "error", "No heartbeat file found — scheduler has never run")
+    except Exception as e:
+        check("Scheduler", "error", f"Could not read heartbeat: {e}")
+
+    # ── 2. IB Gateway TCP probe ────────────────────────────────
+    if _gateway_running(port):
+        mode = "live" if port == 4001 else "paper"
+        check("IB Gateway", "ok", f"Reachable on port {port} ({mode})")
+    else:
+        check("IB Gateway", "error", f"Not reachable on port {port} — check that IB Gateway is running")
+
+    # ── 3. Last CSP execution ──────────────────────────────────
+    try:
+        state = load_state()
+        run_date = state.get("run_date")
+        if run_date:
+            ts = datetime.fromisoformat(run_date)
+            filled = state.get("filled_count", 0)
+            premium = state.get("total_premium", 0)
+            age_days = (now.replace(tzinfo=None) - ts.replace(tzinfo=None)).days
+            detail = f"{ts.strftime('%a %b %-d')} — {filled} fill(s), ${premium:,.0f} premium"
+            check("Last CSP Run", "ok" if age_days <= 14 else "warn", detail)
+        else:
+            check("Last CSP Run", "warn", "No execution recorded yet")
+    except Exception as e:
+        check("Last CSP Run", "warn", f"Could not read state: {e}")
+
+    # ── 4. Last wheel check ────────────────────────────────────
+    try:
+        ctx = load_state().get("monday_context", {})
+        updated = ctx.get("updated")
+        if updated:
+            ts = datetime.fromisoformat(updated)
+            check("Last Wheel Check", "ok", ts.strftime("%a %b %-d at %-I:%M %p"))
+        else:
+            check("Last Wheel Check", "warn", "No wheel check recorded yet")
+    except Exception as e:
+        check("Last Wheel Check", "warn", f"Could not read state: {e}")
+
+    # ── 5. Market status today ─────────────────────────────────
+    today = now.date()
+    if is_market_holiday(today):
+        from market_calendar import nyse_holidays
+        from datetime import timedelta as td
+        next_open = today + td(days=1)
+        while is_market_holiday(next_open) or next_open.weekday() >= 5:
+            next_open += td(days=1)
+        check("Market Today", "warn",
+              f"Holiday — market closed. Next open: {next_open.strftime('%a %b %-d')}")
+    elif today.weekday() >= 5:
+        check("Market Today", "ok", "Weekend — market closed")
+    else:
+        check("Market Today", "ok", "Open — regular trading day")
+
+    # ── 6. Version ─────────────────────────────────────────────
+    version_file = BASE_DIR / "VERSION"
+    version = version_file.read_text().strip() if version_file.exists() else "unknown"
+    check("Version", "ok", f"v{version}")
+
+    return {"checks": checks, "overall": overall, "timestamp": now.isoformat()}
+
 
 # ── Endpoints ─────────────────────────────────────────────────
 
@@ -731,6 +829,11 @@ def get_status():
         "wheel_count":          wheel_count,
         "gateway_login_status": _gateway_login_status,
     }
+
+@app.get("/api/diag")
+def get_diag():
+    return _build_diag()
+
 
 @app.get("/api/positions")
 def get_positions():

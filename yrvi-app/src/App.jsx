@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, Calendar, History, Settings, Lock } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Calendar, History, Settings, Lock, HelpCircle } from 'lucide-react'
 import StatusBar from './components/StatusBar.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Performance from './pages/Performance.jsx'
@@ -7,6 +7,7 @@ import ThisWeek from './pages/ThisWeek.jsx'
 import TradeHistory from './pages/TradeHistory.jsx'
 import SettingsPage from './pages/Settings.jsx'
 import Secrets from './pages/Secrets.jsx'
+import Help from './pages/Help.jsx'
 
 const NAV = [
   { path: '/',             label: 'Dashboard',     icon: LayoutDashboard, end: true },
@@ -46,6 +47,23 @@ export default function App() {
               </NavLink>
             ))}
           </div>
+
+          {/* Help — pinned to bottom */}
+          <div className="p-2 border-t border-gray-200 dark:border-gray-800">
+            <NavLink
+              to="/help"
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  isActive
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+                }`
+              }
+            >
+              <HelpCircle size={16} />
+              Help
+            </NavLink>
+          </div>
         </nav>
 
         {/* Main */}
@@ -59,6 +77,7 @@ export default function App() {
               <Route path="/trade-history" element={<TradeHistory />} />
               <Route path="/settings"      element={<SettingsPage />} />
               <Route path="/secrets"       element={<Secrets />} />
+              <Route path="/help"          element={<Help />} />
             </Routes>
           </main>
         </div>
