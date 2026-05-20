@@ -1,3 +1,8 @@
+## [1.18.0] — 2026-05-20
+### Fixed
+- Upgrade reconnect polling timeout increased from 15s to 120s — Docker image builds take 1-2 minutes before containers restart; 15s was triggering a false "Upgrade problem" error while the build was still running
+- Upgrade modal phase labels updated to set clearer expectations ("Building & restarting — this takes 1–2 minutes…")
+
 ## [1.17.0] — 2026-05-20
 ### Fixed
 - Version badge click now shows feedback in all cases: "✓ Up to date" (green) when current, "Unable to reach GitHub" (gray) if the check fails — previously silent on both

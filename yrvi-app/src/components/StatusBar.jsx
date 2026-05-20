@@ -138,14 +138,14 @@ export default function StatusBar() {
       elapsed += 2000
       axios.get('/api/health', { timeout: 1500 })
         .then(() => {
-          if (elapsed >= 15000) {
-            // Still up after 15s — restart probably didn't fire
+          if (elapsed >= 120000) {
+            // Still up after 2 min — something is likely wrong
             stopPoll()
             setUpgradePhase('error')
             setUpgradeOutput(baseOutput +
-              '\n\n⚠️  Restart may not have triggered — check Terminal')
+              '\n\n⚠️  Still running after 2 minutes — the upgrade may still be in progress in Terminal. Check the Terminal window and refresh this page when done.')
           }
-          // else still up, keep waiting
+          // else still up, keep waiting — build takes time before containers restart
         })
         .catch(() => {
           // /health went away — containers going down; start phase 2
@@ -181,10 +181,10 @@ export default function StatusBar() {
   const canCancel = upgradePhase === 'waiting_down' || upgradePhase === 'waiting_up'
 
   const upgradeModalPhaseLabel = {
-    waiting_down: 'Waiting for restart...',
-    waiting_up:   'Restarting...',
+    waiting_down: 'Building & restarting — this takes 1–2 minutes…',
+    waiting_up:   'Containers restarting — almost there…',
     done:         '✅ Back online! Refreshing...',
-    error:        '❌ Upgrade problem',
+    error:        '⚠️ Taking longer than expected',
   }
 
   return (
