@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timedelta
 from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, WHEEL_CC_IGNORE_EARNINGS_FILTER
 from screener import get_all_candidates
 import discord_poster
 
@@ -526,7 +526,9 @@ def run_wheel_check() -> tuple[float, list]:
         else:
             # Screener candidates (Steps 1 & 2 prerequisite)
             log.info("\n📡 Fetching screener candidates...")
-            candidate_info = get_all_candidates()
+            if WHEEL_CC_IGNORE_EARNINGS_FILTER:
+                log.info("  ⚠️  wheel_cc_ignore_earnings_filter=true — earnings filter bypassed for CC decisions")
+            candidate_info = get_all_candidates(ignore_earnings_filter=WHEEL_CC_IGNORE_EARNINGS_FILTER)
             if candidate_info:
                 log.info(f"  ✅ {len(candidate_info)} ticker(s) pass screener filters")
             else:
@@ -577,45 +579,53 @@ def run_wheel_check() -> tuple[float, list]:
             log.info(f"  ✅ {ticker} on screener — checking earnings")
 
             # ── Step 2: Earnings check ────────────────────────
-            ticker_info      = candidate_info.get(ticker, {})
-            days_to_earnings = ticker_info.get("days_to_earnings")
-            try:
-                earnings_this_week = (
-                    days_to_earnings is not None
-                    and 0 <= int(days_to_earnings) <= 4
-                )
-            except (TypeError, ValueError):
-                earnings_this_week = False
+            # Skipped entirely when WHEEL_CC_IGNORE_EARNINGS_FILTER is True.
+            if not WHEEL_CC_IGNORE_EARNINGS_FILTER:
+                ticker_info      = candidate_info.get(ticker, {})
+                days_to_earnings = ticker_info.get("days_to_earnings")
+                try:
+                    earnings_this_week = (
+                        days_to_earnings is not None
+                        and 0 <= int(days_to_earnings) <= 4
+                    )
+                except (TypeError, ValueError):
+                    earnings_this_week = False
 
-            if earnings_this_week:
-                dte_int = int(days_to_earnings)
-                log.warning(f"  🚨 {ticker}: earnings in {dte_int} day(s) — "
-                             f"selling shares to avoid earnings risk")
-                result = _sell_stock_market(ib, ticker, shares, "earnings_this_week",
-                                               assigned_strike=assigned_strike)
-                if result["status"] == "filled":
-                    proceeds = result["proceeds"]
-                    realized = round(proceeds - (assigned_strike * shares), 2)
-                    freed_capital   += proceeds
-                    shares_sold_pnl += realized
-                    skip_tickers.append(ticker)
-                    h["shares"]    = 0
-                    h["cc_status"] = "sold_earnings_this_week"
-                    wheel_activity.append({
-                        "ticker":           ticker,
-                        "action":           "sold_earnings_this_week",
-                        "days_to_earnings": dte_int,
-                        "shares":           shares,
-                        "fill_price":       result["fill_price"],
-                        "proceeds":         proceeds,
-                        "realized_pnl":     realized,
-                    })
-                    log.info(f"  📊 P&L: ${realized:,.0f}  Freed: ${proceeds:,.0f}")
-                else:
-                    log.error(f"  ❌ Sale FAILED for {ticker} — MANUAL ACTION REQUIRED")
-                continue
+                if earnings_this_week:
+                    dte_int = int(days_to_earnings)
+                    log.warning(f"  🚨 {ticker}: earnings in {dte_int} day(s) — "
+                                 f"selling shares to avoid earnings risk")
+                    result = _sell_stock_market(ib, ticker, shares, "earnings_this_week",
+                                                   assigned_strike=assigned_strike)
+                    if result["status"] == "filled":
+                        proceeds = result["proceeds"]
+                        realized = round(proceeds - (assigned_strike * shares), 2)
+                        freed_capital   += proceeds
+                        shares_sold_pnl += realized
+                        skip_tickers.append(ticker)
+                        h["shares"]    = 0
+                        h["cc_status"] = "sold_earnings_this_week"
+                        wheel_activity.append({
+                            "ticker":           ticker,
+                            "action":           "sold_earnings_this_week",
+                            "days_to_earnings": dte_int,
+                            "shares":           shares,
+                            "fill_price":       result["fill_price"],
+                            "proceeds":         proceeds,
+                            "realized_pnl":     realized,
+                        })
+                        log.info(f"  📊 P&L: ${realized:,.0f}  Freed: ${proceeds:,.0f}")
+                    else:
+                        log.error(f"  ❌ Sale FAILED for {ticker} — MANUAL ACTION REQUIRED")
+                    continue
+            else:
+                ticker_info      = candidate_info.get(ticker, {})
+                days_to_earnings = ticker_info.get("days_to_earnings")
+                if days_to_earnings is not None:
+                    log.info(f"  ⚠️  {ticker}: earnings in {days_to_earnings} day(s) — "
+                             f"ignored (wheel_cc_ignore_earnings_filter=true)")
 
-            log.info(f"  ✅ {ticker}: no earnings this week — querying option chain")
+            log.info(f"  ✅ {ticker}: earnings check passed — querying option chain")
 
             # ── Step 3: Find best CC strike ───────────────────
             cc_info = _find_cc_strike(ib, ticker, expiry, assigned_strike)

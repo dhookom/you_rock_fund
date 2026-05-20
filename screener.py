@@ -142,15 +142,23 @@ def get_top_targets(n=5, always_include: set = None):
     print("\n" + "=" * 65)
     return top
 
-def get_all_candidates() -> dict[str, dict]:
+def get_all_candidates(ignore_earnings_filter=False) -> dict[str, dict]:
     """
     Returns a dict of ticker → metadata for tickers that pass all screener filters.
     Metadata keys: days_to_earnings (int|None), earnings_date (str|None).
     No printing — designed for programmatic use by wheel_manager and risk_manager.
     Returns an empty dict on API error so callers handle gracefully.
+
+    ignore_earnings_filter: when True, bypasses the earnings_days_hide API param and
+    the client-side _earnings_safe() check. Used by wheel_manager for CC decisions so
+    holdings with earnings in 5–7 days aren't mistakenly sold as "dropped screener".
+    The wheel_manager's 0–4 day earnings-this-week hard stop still applies.
     """
     try:
-        response = requests.get(URL, params=PARAMS, timeout=60)
+        params = dict(PARAMS)
+        if ignore_earnings_filter:
+            params["earnings_days_hide"] = 0
+        response = requests.get(URL, params=params, timeout=60)
         response.raise_for_status()
         rows = response.json().get("rows", [])
     except Exception as e:
@@ -175,13 +183,13 @@ def get_all_candidates() -> dict[str, dict]:
         r["_buffer_pct"] = (r["latest_price"] - r["put_20d_strike"]) / r["latest_price"]
     rows = [r for r in rows if r["_buffer_pct"] >= MIN_BUFFER_PCT]
 
-    # Earnings safety check — lookup fallback for None/"?"
-    safe_rows = []
-    for r in rows:
-        is_safe, r = _earnings_safe(r)
-        if is_safe:
-            safe_rows.append(r)
-    rows = safe_rows
+    if not ignore_earnings_filter:
+        safe_rows = []
+        for r in rows:
+            is_safe, r = _earnings_safe(r)
+            if is_safe:
+                safe_rows.append(r)
+        rows = safe_rows
 
     return {
         r["ticker"]: {

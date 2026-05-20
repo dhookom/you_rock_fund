@@ -61,4 +61,5 @@ NUM_POSITIONS       = _s.get("num_positions",     5)
 TARGET_PER_POSITION = int(TOTAL_FUND_BUDGET // NUM_POSITIONS)
 MAX_PER_POSITION    = _s.get("max_position_size", 70_000)
 WEEKLY_INCOME_GOAL  = 0.01       # 1% per week
-DRY_RUN             = _s.get("dry_run",           False)
+DRY_RUN                          = _s.get("dry_run",                          False)
+WHEEL_CC_IGNORE_EARNINGS_FILTER  = _s.get("wheel_cc_ignore_earnings_filter",  False)
