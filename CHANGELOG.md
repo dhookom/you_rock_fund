@@ -1,3 +1,7 @@
+## [1.12.0] — 2026-05-20
+### Changed
+- Feedback webhook ships with a hardcoded default (`#yrvi-app-feedback`) — works out of the box with no manual secret setup; overridable via `discord_feedback_webhook_url` secret
+
 ## [1.11.0] — 2026-05-20
 ### Added
 - Help page feedback form — Bug Report / Feature Request selector + textarea posts directly to `#yrvi-app-feedback` Discord channel via `/api/feedback`; no Discord account needed, never leaves the dashboard

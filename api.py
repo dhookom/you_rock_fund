@@ -59,6 +59,8 @@ ANNUAL_TARGET = 100_000
 CONTAINERIZED = os.environ.get("YRVI_CONTAINERIZED", "0") == "1"
 HEARTBEAT_FILE = BASE_DIR / "scheduler_heartbeat.json"
 SECRETS_SERVICE_URL = "http://secrets:8001"
+# Default feedback webhook — posts to #yrvi-app-feedback; overridable via discord_feedback_webhook_url secret
+_FEEDBACK_WEBHOOK_DEFAULT = "https://discord.com/api/webhooks/1506721232383512587/wBPbzD0J2znceu6XC-hiTtRplPMeL-zM5l5HUdqOQof3Cgy-wajUnnfbF-TofTnXTn7a"
 # clientId 100-999 used at runtime (random per call) — never conflicts with trader(1) wheel(2) risk(3)
 
 # ── Watchdog ───────────────────────────────────────────────────
@@ -1279,9 +1281,7 @@ def test_discord():
 
 @app.post("/api/feedback")
 def submit_feedback(body: FeedbackRequest):
-    webhook_url = _read_secret_or_env("discord_feedback_webhook_url", "DISCORD_FEEDBACK_WEBHOOK_URL")
-    if not webhook_url:
-        raise HTTPException(status_code=400, detail="Feedback webhook not configured — add discord_feedback_webhook_url in Secrets")
+    webhook_url = _read_secret_or_env("discord_feedback_webhook_url", "DISCORD_FEEDBACK_WEBHOOK_URL") or _FEEDBACK_WEBHOOK_DEFAULT
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
