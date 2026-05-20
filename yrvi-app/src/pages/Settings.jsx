@@ -320,6 +320,14 @@ export default function SettingsPage() {
         <SliderRow label="Max Delta"      value={settings.max_delta}            min={0.10} max={0.30} step={0.01} format={v => v.toFixed(2)}                onChange={v => set('max_delta', v)} />
         <SliderRow label="Min Buffer %"   value={settings.min_buffer_pct}       min={0.03} max={0.20} step={0.01} format={v => `${(v * 100).toFixed(0)}%`} onChange={v => set('min_buffer_pct', v)} />
         <SliderRow label="Earnings Filter" value={settings.earnings_filter_days} min={0}    max={30}              format={v => `${v} days`}                  onChange={v => set('earnings_filter_days', v)} />
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
+          <Toggle
+            label="Ignore Earnings Filter for Wheel CCs"
+            sub="Allow covered calls on held positions even if earnings fall within the filter window. The screener's other criteria (delta, buffer, IV) still apply. Has no effect on new CSP entries."
+            checked={!!settings.wheel_cc_ignore_earnings_filter}
+            onChange={v => set('wheel_cc_ignore_earnings_filter', v)}
+          />
+        </div>
       </Section>
 
       {/* Liquidity Filters */}
