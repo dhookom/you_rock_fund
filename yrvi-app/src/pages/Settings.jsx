@@ -88,7 +88,7 @@ function Toggle({ label, sub, checked, onChange }) {
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        className={`relative inline-flex h-5 w-9 shrink-0 ml-3 items-center rounded-full transition-colors ${
           checked ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
         }`}
       >
@@ -323,7 +323,7 @@ export default function SettingsPage() {
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
           <Toggle
             label="Ignore Earnings Filter for Wheel CCs"
-            sub="Allow covered calls on held positions even if earnings fall within the filter window. The screener's other criteria (delta, buffer, IV) still apply. Has no effect on new CSP entries."
+            sub="Allow CCs on held positions through earnings — no effect on new CSP entries"
             checked={!!settings.wheel_cc_ignore_earnings_filter}
             onChange={v => set('wheel_cc_ignore_earnings_filter', v)}
           />
