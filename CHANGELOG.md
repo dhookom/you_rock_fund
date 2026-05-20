@@ -1,3 +1,7 @@
+## [1.17.0] — 2026-05-20
+### Fixed
+- Version badge click now shows feedback in all cases: "✓ Up to date" (green) when current, "Unable to reach GitHub" (gray) if the check fails — previously silent on both
+
 ## [1.16.0] — 2026-05-20
 ### Added
 - Clicking the version badge when already up to date briefly flashes "✓ Up to date" in green for 2 seconds — confirms the check ran

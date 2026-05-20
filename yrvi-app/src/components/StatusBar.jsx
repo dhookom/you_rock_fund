@@ -42,7 +42,7 @@ export default function StatusBar() {
 
   const [versionInfo, setVersionInfo]     = useState(null)
   const [vChecking, setVChecking]         = useState(false)
-  const [vFlash, setVFlash]               = useState(false)  // brief "up to date" confirmation
+  const [vFlash, setVFlash]               = useState(null)   // {msg, color} | null
   const [showConfirm, setShowConfirm]     = useState(false)
   const [upgradePhase, setUpgradePhase]   = useState(null)   // null|waiting_down|waiting_up|done|error
   const [upgradeOutput, setUpgradeOutput] = useState('')
@@ -79,6 +79,11 @@ export default function StatusBar() {
     return () => clearInterval(t)
   }, [])
 
+  const flash = (msg, color) => {
+    setVFlash({ msg, color })
+    setTimeout(() => setVFlash(null), 2500)
+  }
+
   const checkVersionNow = () => {
     if (vChecking) return
     setVChecking(true)
@@ -86,11 +91,11 @@ export default function StatusBar() {
       .then(r => {
         setVersionInfo(r.data)
         if (r.data?.up_to_date) {
-          setVFlash(true)
-          setTimeout(() => setVFlash(false), 2000)
+          flash('✓ Up to date', 'text-green-400')
         }
+        // if behind, the Upgrade button appearing is feedback enough
       })
-      .catch(() => {})
+      .catch(() => flash('Unable to reach GitHub', 'text-gray-400'))
       .finally(() => setVChecking(false))
   }
 
@@ -245,8 +250,8 @@ export default function StatusBar() {
                     : `v${versionInfo.current} → v${versionInfo.latest}`}
                 </span>
                 {vFlash && (
-                  <span className="text-xs text-green-400 font-medium animate-pulse">
-                    ✓ Up to date
+                  <span className={`text-xs font-medium ${vFlash.color}`}>
+                    {vFlash.msg}
                   </span>
                 )}
               </button>
