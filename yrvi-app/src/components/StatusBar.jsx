@@ -41,6 +41,7 @@ export default function StatusBar() {
   const { theme, setTheme }       = useThemeContext()
 
   const [versionInfo, setVersionInfo]     = useState(null)
+  const [vChecking, setVChecking]         = useState(false)
   const [showConfirm, setShowConfirm]     = useState(false)
   const [upgradePhase, setUpgradePhase]   = useState(null)   // null|waiting_down|waiting_up|done|error
   const [upgradeOutput, setUpgradeOutput] = useState('')
@@ -76,6 +77,15 @@ export default function StatusBar() {
     const t = setInterval(check, 5 * 60 * 1000)
     return () => clearInterval(t)
   }, [])
+
+  const checkVersionNow = () => {
+    if (vChecking) return
+    setVChecking(true)
+    axios.get('/api/version/check')
+      .then(r => setVersionInfo(r.data))
+      .catch(() => {})
+      .finally(() => setVChecking(false))
+  }
 
   // Cleanup any active poll on unmount
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
@@ -194,27 +204,40 @@ export default function StatusBar() {
 
           <Indicator ok={status?.ibkr_connected} label="IBKR" />
 
-          {/* Version pill */}
+          {/* Version pill — click to check for updates */}
           {versionInfo && (
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${
-                  pillColor === 'green'  ? 'bg-green-400' :
-                  pillColor === 'yellow' ? 'bg-yellow-400' :
-                  pillColor === 'red'    ? 'bg-red-500' : 'bg-gray-400'
-                }`} />
+              <button
+                onClick={checkVersionNow}
+                disabled={vChecking}
+                title={vChecking ? 'Checking…' : 'Click to check for updates'}
+                className="flex items-center gap-1.5 hover:opacity-70 transition-opacity disabled:cursor-wait"
+              >
+                {vChecking
+                  ? <svg className="animate-spin w-2 h-2 text-gray-400" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  : <div className={`w-2 h-2 rounded-full ${
+                      pillColor === 'green'  ? 'bg-green-400' :
+                      pillColor === 'yellow' ? 'bg-yellow-400' :
+                      pillColor === 'red'    ? 'bg-red-500' : 'bg-gray-400'
+                    }`} />
+                }
                 <span className={`text-xs ${
                   pillColor === 'green'  ? 'text-gray-700 dark:text-gray-300' :
                   pillColor === 'yellow' ? 'text-yellow-400' :
                   pillColor === 'red'    ? 'text-red-400' : 'text-gray-500'
                 }`}>
-                  {vUnknown
+                  {vChecking
+                    ? `v${versionInfo.current}`
+                    : vUnknown
                     ? 'version unknown'
                     : vUp
                     ? `v${versionInfo.current}`
                     : `v${versionInfo.current} → v${versionInfo.latest}`}
                 </span>
-              </div>
+              </button>
               {vBehind && (
                 <button
                   onClick={() => setShowConfirm(true)}

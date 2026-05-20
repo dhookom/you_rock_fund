@@ -1,3 +1,7 @@
+## [1.15.0] — 2026-05-20
+### Added
+- Version badge in status bar is now clickable — click to immediately check for updates; shows a spinner while checking and reveals the Upgrade button if a new version is found
+
 ## [1.14.0] — 2026-05-20
 ### Fixed
 - Feedback sender lookup now uses correct secret key `tws_userid_paper` (was `tws_userid`); falls back to `tws_userid_live` then `account_paper` — eliminates "root" showing up from Docker home directory
