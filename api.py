@@ -1291,11 +1291,11 @@ def submit_feedback(body: FeedbackRequest):
     mode = settings.get("trading_mode", "paper").capitalize()
     now_str = datetime.now(PST).strftime("%Y-%m-%d %-I:%M %p %Z")
 
-    # Identify sender: IBKR username → home dir basename → "Unknown"
+    # Identify sender: paper username → live username → paper account ID → "Unknown"
     sender = (
-        _read_secret_or_env("tws_userid", "IBKR_USERNAME")
+        _read_secret_or_env("tws_userid_paper", "IBKR_USERNAME_PAPER")
         or _read_secret_or_env("tws_userid_live", "IBKR_USERNAME_LIVE")
-        or os.path.basename(os.path.expanduser("~"))
+        or _read_secret_or_env("account_paper", "IBKR_ACCOUNT_PAPER")
         or "Unknown"
     )
 

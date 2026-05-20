@@ -1,3 +1,7 @@
+## [1.14.0] — 2026-05-20
+### Fixed
+- Feedback sender lookup now uses correct secret key `tws_userid_paper` (was `tws_userid`); falls back to `tws_userid_live` then `account_paper` — eliminates "root" showing up from Docker home directory
+
 ## [1.13.0] — 2026-05-20
 ### Changed
 - Feedback Discord post now identifies the sender: IBKR username (`tws_userid`) → live username (`tws_userid_live`) → home directory name → "Unknown"
