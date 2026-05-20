@@ -42,6 +42,7 @@ export default function StatusBar() {
 
   const [versionInfo, setVersionInfo]     = useState(null)
   const [vChecking, setVChecking]         = useState(false)
+  const [vFlash, setVFlash]               = useState(false)  // brief "up to date" confirmation
   const [showConfirm, setShowConfirm]     = useState(false)
   const [upgradePhase, setUpgradePhase]   = useState(null)   // null|waiting_down|waiting_up|done|error
   const [upgradeOutput, setUpgradeOutput] = useState('')
@@ -82,7 +83,13 @@ export default function StatusBar() {
     if (vChecking) return
     setVChecking(true)
     axios.get('/api/version/check')
-      .then(r => setVersionInfo(r.data))
+      .then(r => {
+        setVersionInfo(r.data)
+        if (r.data?.up_to_date) {
+          setVFlash(true)
+          setTimeout(() => setVFlash(false), 2000)
+        }
+      })
       .catch(() => {})
       .finally(() => setVChecking(false))
   }
@@ -237,6 +244,11 @@ export default function StatusBar() {
                     ? `v${versionInfo.current}`
                     : `v${versionInfo.current} → v${versionInfo.latest}`}
                 </span>
+                {vFlash && (
+                  <span className="text-xs text-green-400 font-medium animate-pulse">
+                    ✓ Up to date
+                  </span>
+                )}
               </button>
               {vBehind && (
                 <button

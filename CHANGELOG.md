@@ -1,3 +1,7 @@
+## [1.16.0] — 2026-05-20
+### Added
+- Clicking the version badge when already up to date briefly flashes "✓ Up to date" in green for 2 seconds — confirms the check ran
+
 ## [1.15.0] — 2026-05-20
 ### Added
 - Version badge in status bar is now clickable — click to immediately check for updates; shows a spinner while checking and reveals the Upgrade button if a new version is found
