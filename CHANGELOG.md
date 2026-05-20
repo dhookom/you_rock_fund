@@ -1,3 +1,7 @@
+## [1.13.0] — 2026-05-20
+### Changed
+- Feedback Discord post now identifies the sender: IBKR username (`tws_userid`) → live username (`tws_userid_live`) → home directory name → "Unknown"
+
 ## [1.12.0] — 2026-05-20
 ### Changed
 - Feedback webhook ships with a hardcoded default (`#yrvi-app-feedback`) — works out of the box with no manual secret setup; overridable via `discord_feedback_webhook_url` secret

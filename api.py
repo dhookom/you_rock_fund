@@ -1291,11 +1291,19 @@ def submit_feedback(body: FeedbackRequest):
     mode = settings.get("trading_mode", "paper").capitalize()
     now_str = datetime.now(PST).strftime("%Y-%m-%d %-I:%M %p %Z")
 
+    # Identify sender: IBKR username → home dir basename → "Unknown"
+    sender = (
+        _read_secret_or_env("tws_userid", "IBKR_USERNAME")
+        or _read_secret_or_env("tws_userid_live", "IBKR_USERNAME_LIVE")
+        or os.path.basename(os.path.expanduser("~"))
+        or "Unknown"
+    )
+
     emoji = "🐛" if body.type == "bug" else "💡"
     label = "Bug Report" if body.type == "bug" else "Feature Request"
 
     content = (
-        f"{emoji} **{label}** — YRVI Dashboard\n"
+        f"{emoji} **{label}** from **{sender}**\n"
         f"```\n{body.message.strip()}\n```\n"
         f"v{version} · {mode} mode · {now_str}"
     )
