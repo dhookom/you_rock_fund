@@ -209,9 +209,11 @@ While waiting for live account approval, set up paper trading to test the full Y
 4. Your paper account is created with **$1,000,000** virtual cash
 
 **Reset paper account to $250,000 for accurate YRVI testing:**
-1. Log into the paper trading account at **https://paper.interactivebrokers.com**
-2. Go to **Account → Account Settings → Reset Paper Trading Account**
-3. Set the balance to **$250,000**
+1. Log into your IBKR account in a browser — make sure you select **Paper Trading** at login (you'll see a pink banner: *"This is a Paper Trading account for Simulated Trading"*)
+2. Go to **Account Settings** → click the **gear icon** next to **Paper Trading Account Reset**
+3. Select **$250,000** from the "Select Reset Amount" dropdown and click **Continue**
+
+> Note: Only the cash balance is reset — close any open positions first for a full reset. Reset requests submitted before 4:00 PM ET are processed the next day.
 
 > Paper trading uses real market data and real order routing logic — the only difference is no real money changes hands. Run YRVI in paper mode for at least 4 weeks before going live.
 
