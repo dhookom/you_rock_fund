@@ -338,6 +338,46 @@ Hard filters applied before scoring:
 
 The last position absorbs remaining capital up to `MAX_PER_POSITION`.
 
+## Settings Reference
+
+All settings are managed from the dashboard **Settings** page and hot-reload on every API call — no restart required unless noted. They are stored in `settings.json` and fall back to `settings_default.json` for any missing keys.
+
+### Fund Settings
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| Initial Fund Budget | $250,000 | $10K – $2M | Starting capital for CSP deployment. When Compound Weekly is off, this is always the deployment base. |
+| # Positions | 5 | 1 – 10 | Target number of CSP positions to fill each Monday. |
+| Min Position | $10,000 | $5K – $100K | Minimum capital allocated to any single CSP position. |
+| Max Position | $90,000 | $10K – $200K | Maximum capital for any single position. The last position absorbs remaining budget up to this cap. |
+| Compound Weekly | On | On / Off | When on, uses IBKR net liquidation as the Monday deployment budget so the fund grows as premiums accumulate. Falls back to Initial Fund Budget if IBKR is unreachable. |
+
+### Screener Filters
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| Max Delta | 0.21 | 0.10 – 0.30 | Maximum absolute delta for CSPs sold. Higher = more aggressive strikes and more premium, but more assignment risk. |
+| Min Buffer % | 5% | 3% – 20% | The strike must be at least this far below the current stock price. Higher = more downside cushion. |
+| Earnings Filter | 7 days | 0 – 30 days | Skip tickers with earnings within this many days. Protects against earnings-driven gap moves. |
+| Ignore Earnings Filter for Wheel CCs | Off | On / Off | When on, covered calls are still sold on held positions even during earnings weeks. Has no effect on new CSP entries. |
+| Stop Loss on Wheel Holdings | Off | On / Off | When on, a holding is sold on Monday if its price has fallen more than the Stop Loss % below its assigned strike. The screener exit is the primary exit — this is an optional additional layer. |
+| Stop Loss % | 10% | 0% – 50% | How far below the assigned strike triggers a stop loss sale. Only active when Stop Loss on Wheel Holdings is enabled. |
+
+### Liquidity Filters
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| Max Spread % | 20% | 5% – 50% | Skip a CSP if the bid/ask spread exceeds this percentage of the mid price. Protects against poor fills on illiquid options. |
+| Min Bid Yield % | 1% | 0.5% – 3% | Override the spread filter if the bid yield meets this threshold — useful when wide spreads are justified by high premium. |
+| Max Spread Hard Cap % | 50% | 25% – 100% | Always skip regardless of yield if spread exceeds this. An absolute ceiling that cannot be overridden by bid yield. |
+
+### Execution
+
+| Setting | Default | Options | Description |
+|---------|---------|---------|-------------|
+| Monday Execution Time | 10:00 AM PST | Any time | When the CSP pipeline fires each Monday. 10:00 AM PST (1:00 PM ET) is recommended for best liquidity and tighter spreads. **Requires a scheduler restart to take effect.** |
+| Dry Run | Off | On / Off | Simulate all orders without placing real trades. Fills are logged as `dry_run`. Useful for testing a new configuration. When in live trading, enable this for extra protection before committing real money. |
+
 ## Order Execution
 
 Each position escalates through three stages (120 seconds each):

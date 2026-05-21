@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { Activity, BookOpen, MessageSquare, CheckCircle, AlertTriangle, XCircle, RefreshCw, ExternalLink, Send } from 'lucide-react'
+import { Activity, BookOpen, MessageSquare, CheckCircle, AlertTriangle, XCircle, RefreshCw, ExternalLink, Send, SlidersHorizontal, ChevronDown } from 'lucide-react'
 
 const FAQ_URL = 'https://github.com/controllinghand/you_rock_fund/blob/main/FAQ.md'
 
@@ -34,6 +34,76 @@ function OverallBadge({ overall }) {
     <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium ${styles[overall] ?? styles.ok}`}>
       <StatusIcon status={overall} />
       {labels[overall] ?? overall}
+    </div>
+  )
+}
+
+const SETTINGS_GROUPS = [
+  {
+    title: 'Fund Settings',
+    items: [
+      { label: 'Initial Fund Budget', default: '$250,000', range: '$10K – $2M',   description: 'Starting capital for CSP deployment. When Compound Weekly is off, this is always the deployment base.' },
+      { label: '# Positions',         default: '5',        range: '1 – 10',        description: 'Target number of CSP positions to fill each Monday.' },
+      { label: 'Min Position',        default: '$10,000',  range: '$5K – $100K',   description: 'Minimum capital allocated to any single CSP position.' },
+      { label: 'Max Position',        default: '$90,000',  range: '$10K – $200K',  description: 'Maximum capital for any single position. The last position absorbs remaining budget up to this cap.' },
+      { label: 'Compound Weekly',     default: 'On',       range: 'On / Off',      description: 'When on, uses your IBKR net liquidation as the Monday deployment budget so the fund grows as premiums accumulate. When off, always deploys the fixed initial budget.' },
+    ],
+  },
+  {
+    title: 'Screener Filters',
+    items: [
+      { label: 'Max Delta',                          default: '0.21',  range: '0.10 – 0.30', description: 'Maximum absolute delta for CSPs sold. Higher = more aggressive strike selection and more premium, but more assignment risk.' },
+      { label: 'Min Buffer %',                       default: '5%',    range: '3% – 20%',    description: 'The strike must be at least this far below the current stock price. Higher = more downside cushion.' },
+      { label: 'Earnings Filter',                    default: '7 days', range: '0 – 30 days', description: 'Skip tickers with earnings within this many days. Protects against earnings-driven moves.' },
+      { label: 'Ignore Earnings Filter for Wheel CCs', default: 'Off', range: 'On / Off',    description: 'When on, covered calls are still sold on held positions even during earnings weeks. Has no effect on new CSP entries.' },
+      { label: 'Stop Loss on Wheel Holdings',        default: 'Off',   range: 'On / Off',    description: 'When on, a holding is sold on Monday if its price has fallen more than the Stop Loss % below its assigned strike. The screener exit (dropping off the IV screener) is the primary exit — this is an optional additional layer.' },
+      { label: 'Stop Loss %',                        default: '10%',   range: '0% – 50%',    description: 'How far below the assigned strike triggers a stop loss sale. Only applies when Stop Loss on Wheel Holdings is enabled.' },
+    ],
+  },
+  {
+    title: 'Liquidity Filters',
+    items: [
+      { label: 'Max Spread %',         default: '20%', range: '5% – 50%',    description: 'Skip a CSP if the bid/ask spread exceeds this percentage of the mid price. Protects against poor fills on illiquid options.' },
+      { label: 'Min Bid Yield %',      default: '1%',  range: '0.5% – 3%',   description: 'Override the spread filter if the bid yield meets this threshold — useful when wide spreads are justified by high premium.' },
+      { label: 'Max Spread Hard Cap %', default: '50%', range: '25% – 100%', description: 'Always skip regardless of yield if spread exceeds this. An absolute ceiling that cannot be overridden by bid yield.' },
+    ],
+  },
+  {
+    title: 'Execution',
+    items: [
+      { label: 'Monday Execution Time', default: '10:00 AM PST', range: 'Any time',  description: 'When the CSP pipeline fires each Monday. 10:00 AM PST (1:00 PM ET) is recommended for best liquidity and tighter spreads. Requires a scheduler restart to take effect.' },
+      { label: 'Dry Run',               default: 'Off',          range: 'On / Off',  description: 'Simulate all orders without placing real trades. Fills are logged as dry_run. Useful for testing the pipeline or verifying a new configuration. When in live trading, enable this for extra protection before committing real money.' },
+    ],
+  },
+]
+
+function SettingsGroup({ group }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors"
+      >
+        {group.title}
+        <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? '' : '-rotate-90'}`} />
+      </button>
+      {open && (
+        <div className="divide-y divide-gray-100 dark:divide-gray-800">
+          {group.items.map(item => (
+            <div key={item.label} className="px-4 py-3 space-y-0.5">
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{item.label}</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                  Default: <span className="font-mono">{item.default}</span>
+                  {item.range && <> &middot; {item.range}</>}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-500 leading-relaxed">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -147,6 +217,18 @@ export default function Help() {
           <ExternalLink size={13} />
           View FAQ on GitHub
         </a>
+      </Section>
+
+      {/* ── Settings Reference ──────────────────────────────── */}
+      <Section icon={SlidersHorizontal} title="Settings Reference">
+        <div className="text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
+          All settings hot-reload — changes take effect immediately without restarting. Exception: Monday Execution Time requires a scheduler restart.
+        </div>
+        <div className="space-y-2">
+          {SETTINGS_GROUPS.map(group => (
+            <SettingsGroup key={group.title} group={group} />
+          ))}
+        </div>
       </Section>
 
       {/* ── Report a Bug / Feature Request ──────────────────── */}
