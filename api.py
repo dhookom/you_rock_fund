@@ -1009,6 +1009,8 @@ class SettingsUpdate(BaseModel):
     min_buffer_pct:           Optional[float] = None
     earnings_filter_days:              Optional[int]   = None
     wheel_cc_ignore_earnings_filter:   Optional[bool]  = None
+    wheel_stop_loss_enabled:           Optional[bool]  = None
+    stop_loss_pct:                     Optional[float] = None
     max_spread_pct:           Optional[float] = None
     min_bid_yield_pct:        Optional[float] = None
     max_spread_hard_cap:      Optional[float] = None

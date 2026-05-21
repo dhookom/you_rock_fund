@@ -328,6 +328,26 @@ export default function SettingsPage() {
             onChange={v => set('wheel_cc_ignore_earnings_filter', v)}
           />
         </div>
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
+          <Toggle
+            label="Stop Loss on Wheel Holdings"
+            sub="Sell a holding on Monday if price has fallen below assigned strike by this %"
+            checked={!!settings.wheel_stop_loss_enabled}
+            onChange={v => set('wheel_stop_loss_enabled', v)}
+          />
+          {settings.wheel_stop_loss_enabled && (
+            <div className="mt-3">
+              <SliderRow
+                label="Stop Loss %"
+                value={settings.stop_loss_pct ?? 0.10}
+                min={0} max={0.50} step={0.01}
+                format={v => `${(v * 100).toFixed(0)}%`}
+                onChange={v => set('stop_loss_pct', v)}
+                description={`Sell if price falls more than ${((settings.stop_loss_pct ?? 0.10) * 100).toFixed(0)}% below assigned strike`}
+              />
+            </div>
+          )}
+        </div>
       </Section>
 
       {/* Liquidity Filters */}

@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timedelta
 from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, WHEEL_CC_IGNORE_EARNINGS_FILTER
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, WHEEL_CC_IGNORE_EARNINGS_FILTER, WHEEL_STOP_LOSS_ENABLED, STOP_LOSS_PCT
 from screener import get_all_candidates
 import discord_poster
 
@@ -92,6 +92,21 @@ def _is_nan(val) -> bool:
         return val != val
     except Exception:
         return True
+
+
+def _get_stock_price(ib: IB, ticker: str) -> float | None:
+    contract  = Stock(ticker, "SMART", "USD")
+    qualified = ib.qualifyContracts(contract)
+    if not qualified:
+        return None
+    data  = ib.reqMktData(qualified[0], snapshot=False)
+    ib.sleep(3)
+    price = data.last  if data.last  and data.last  > 0 else \
+            data.close if data.close and data.close > 0 else \
+            data.bid   if data.bid   and data.bid   > 0 else None
+    ib.cancelMktData(qualified[0])
+    ib.sleep(0.5)
+    return round(float(price), 2) if price else None
 
 
 def _next_friday_expiry() -> str:
@@ -576,7 +591,54 @@ def run_wheel_check() -> tuple[float, list]:
                     log.error(f"  ❌ Sale FAILED for {ticker} — MANUAL ACTION REQUIRED")
                 continue
 
-            log.info(f"  ✅ {ticker} on screener — checking earnings")
+            log.info(f"  ✅ {ticker} on screener — checking stop loss")
+
+            # ── Step 1b: Stop-loss check ──────────────────────
+            if WHEEL_STOP_LOSS_ENABLED and assigned_strike > 0:
+                current_price = _get_stock_price(ib, ticker)
+                if current_price is None:
+                    log.warning(f"  ⚠️  {ticker}: price unavailable — skipping stop-loss check")
+                else:
+                    stop_threshold = round(assigned_strike * (1 - STOP_LOSS_PCT), 2)
+                    loss_pct       = round((1 - current_price / assigned_strike) * 100, 1)
+                    if current_price < stop_threshold:
+                        log.warning(
+                            f"  🛑 {ticker}: price ${current_price:.2f} is {loss_pct:.1f}% below "
+                            f"assigned strike ${assigned_strike:.2f} "
+                            f"(threshold {STOP_LOSS_PCT*100:.0f}%) — selling shares"
+                        )
+                        result = _sell_stock_market(ib, ticker, shares, "stop_loss",
+                                                    assigned_strike=assigned_strike)
+                        if result["status"] == "filled":
+                            proceeds = result["proceeds"]
+                            realized = round(proceeds - (assigned_strike * shares), 2)
+                            freed_capital   += proceeds
+                            shares_sold_pnl += realized
+                            skip_tickers.append(ticker)
+                            h["shares"]    = 0
+                            h["cc_status"] = "sold_stop_loss"
+                            wheel_activity.append({
+                                "ticker":       ticker,
+                                "action":       "sold_stop_loss",
+                                "loss_pct":     loss_pct,
+                                "shares":       shares,
+                                "fill_price":   result["fill_price"],
+                                "proceeds":     proceeds,
+                                "realized_pnl": realized,
+                            })
+                            log.info(f"  📊 P&L: ${realized:,.0f}  Freed: ${proceeds:,.0f}")
+                        else:
+                            log.error(f"  ❌ Sale FAILED for {ticker} — MANUAL ACTION REQUIRED")
+                        continue
+                    else:
+                        log.info(
+                            f"  ✅ {ticker}: price ${current_price:.2f}  "
+                            f"({loss_pct:.1f}% below strike — within {STOP_LOSS_PCT*100:.0f}% threshold)"
+                            if current_price < assigned_strike else
+                            f"  ✅ {ticker}: price ${current_price:.2f} (above assigned strike)"
+                        )
+
+            log.info(f"  ✅ {ticker}: stop-loss check passed — checking earnings")
 
             # ── Step 2: Earnings check ────────────────────────
             # Skipped entirely when WHEEL_CC_IGNORE_EARNINGS_FILTER is True.
