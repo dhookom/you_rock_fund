@@ -250,13 +250,13 @@ else
         echo ""
         info "Required secrets:"
         prompt_required "tws_password_paper" "IBKR paper trading password"
-        prompt_required "tws_password_live"  "IBKR live trading password"
         prompt_required "render_secret"      "Render screener API secret"
 
         echo ""
-        info "Optional (for live trading):"
-        prompt_optional "account_live"     "IBKR live account ID"
-        prompt_optional "tws_userid_live"  "IBKR live username"
+        info "Optional (for live trading only):"
+        prompt_optional "account_live"      "IBKR live account ID"
+        prompt_optional "tws_userid_live"   "IBKR live username"
+        prompt_optional "tws_password_live" "IBKR live trading password"
 
         echo ""
         info "Optional secrets:"

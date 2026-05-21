@@ -203,7 +203,7 @@ const SECTIONS = [
     title: "Passwords & API Keys",
     secrets: [
       { name: "tws_password_paper",          label: "IBKR Paper Trading Password",   required: true },
-      { name: "tws_password_live",           label: "IBKR Live Trading Password",    required: true },
+      { name: "tws_password_live",           label: "IBKR Live Trading Password",    required: false, hint: "Optional — only needed for live trading" },
       { name: "render_secret",               label: "Render Screener API Secret",    required: true },
       { name: "discord_webhook_url",         label: "Discord Webhook URL",           required: false },
       { name: "discord_webhook_weekly_plan", label: "Discord Weekly Plan Webhook",   required: false },

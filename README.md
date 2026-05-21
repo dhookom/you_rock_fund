@@ -126,8 +126,8 @@ Account credentials and passwords are stored encrypted (AES-256-GCM) in a persis
 
 **Passwords & API keys**
 
-- **Required:** IBKR paper password, IBKR live password, Render screener API secret
-- **Optional:** Discord webhook URL, Discord weekly-plan webhook URL
+- **Required:** IBKR paper password, Render screener API secret
+- **Optional:** IBKR live password (only needed for live trading), Discord webhook URL, Discord weekly-plan webhook URL
 
 If the browser flow times out (5 minutes), the script falls back to terminal prompts. You can update any secret later by visiting `http://localhost:8001` directly or via the **Secrets** page in the dashboard.
 
@@ -149,9 +149,9 @@ Before running setup, go to **System Settings → General → Sharing → Screen
 
 On first run, the script opens `http://localhost:8001` in your browser where you'll enter:
 - Your IBKR paper account password
-- Your IBKR live account password (re-use the paper password if you don't trade live)
 - Your Render screener API secret
 - Discord webhooks (optional)
+- Your IBKR live password (optional — only needed if you plan to trade live)
 
 If the browser flow times out, you'll be prompted in the terminal. On subsequent runs, the script detects existing secrets and skips this step.
 
