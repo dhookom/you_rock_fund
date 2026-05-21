@@ -309,7 +309,20 @@ export default function SettingsPage() {
 
       {/* Fund Settings */}
       <Section title="Fund Settings" emoji="💰">
-        <SliderRow label="Fund Budget"  value={settings.fund_budget}      min={10000}  max={2000000} step={10000} format={v => `$${v.toLocaleString()}`} onChange={v => set('fund_budget', v)} />
+        <SliderRow label="Initial Fund Budget"  value={settings.fund_budget}      min={10000}  max={2000000} step={10000} format={v => `$${v.toLocaleString()}`} onChange={v => set('fund_budget', v)} />
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
+          <Toggle
+            label="Compound Weekly"
+            sub="Use IBKR net liquidation as the deployment budget each Monday — grows with realized gains"
+            checked={settings.compound_enabled !== false}
+            onChange={v => set('compound_enabled', v)}
+          />
+          {settings.compound_enabled === false && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-600">
+              Fixed budget — always deploying ${(settings.fund_budget ?? 250000).toLocaleString()} regardless of account growth.
+            </p>
+          )}
+        </div>
         <SliderRow label="# Positions"  value={settings.num_positions}    min={1}      max={10}                  format={v => `${v} positions`}           onChange={v => set('num_positions', v)} />
         <SliderRow label="Min Position" value={settings.min_position_size} min={5000}  max={100000}  step={5000}  format={v => `$${v.toLocaleString()}`} onChange={v => set('min_position_size', v)} />
         <SliderRow label="Max Position" value={settings.max_position_size} min={10000} max={200000}  step={5000}  format={v => `$${v.toLocaleString()}`} onChange={v => set('max_position_size', v)} />

@@ -942,8 +942,16 @@ def run_screener():
         from screener import get_top_targets
         from position_sizer import size_all
 
-        n      = settings.get("num_positions", 5)
-        budget = settings.get("fund_budget", 250_000)
+        n                    = settings.get("num_positions", 5)
+        initial_fund_budget  = settings.get("fund_budget", 250_000)
+        compound_enabled     = settings.get("compound_enabled", True)
+
+        if compound_enabled:
+            cached   = _ibkr_cache.get("data")
+            net_liq  = cached.get("account_value") if cached else None
+            budget   = net_liq if net_liq else initial_fund_budget
+        else:
+            budget = initial_fund_budget
 
         # Deduct capital reserved for active wheel holdings
         state          = load_state()
@@ -982,12 +990,14 @@ def run_screener():
             "total_premium":      total_premium,
             "total_capital":      total_capital,
             "blended_yield":      round(total_premium / total_capital * 100 if total_capital else 0, 3),
-            "budget":             adjusted_budget,
-            "total_budget":       budget,
-            "reserved_capital":   reserved_capital,
-            "active_wheel_count": active_wheel_count,
-            "wheel_holdings":     wheel_holdings,
-            "run_at":             datetime.now(PST).isoformat(),
+            "budget":               adjusted_budget,
+            "total_budget":         budget,
+            "initial_fund_budget":  initial_fund_budget,
+            "compound_enabled":     compound_enabled,
+            "reserved_capital":     reserved_capital,
+            "active_wheel_count":   active_wheel_count,
+            "wheel_holdings":       wheel_holdings,
+            "run_at":               datetime.now(PST).isoformat(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1011,6 +1021,7 @@ class SettingsUpdate(BaseModel):
     wheel_cc_ignore_earnings_filter:   Optional[bool]  = None
     wheel_stop_loss_enabled:           Optional[bool]  = None
     stop_loss_pct:                     Optional[float] = None
+    compound_enabled:                  Optional[bool]  = None
     max_spread_pct:           Optional[float] = None
     min_bid_yield_pct:        Optional[float] = None
     max_spread_hard_cap:      Optional[float] = None

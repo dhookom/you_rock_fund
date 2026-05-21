@@ -124,7 +124,9 @@ export default function ThisWeek() {
               <div className="text-gray-900 dark:text-white font-semibold text-sm mb-3">Capital Allocation</div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Fund Budget</span>
+                  <span className="text-gray-500">
+                    {screener.compound_enabled ? 'Effective Budget (net liq)' : 'Fund Budget'}
+                  </span>
                   <span className="text-gray-900 dark:text-white font-mono">${(screener.total_budget ?? 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-red-400">

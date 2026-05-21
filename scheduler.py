@@ -7,7 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from config import NUM_POSITIONS, TOTAL_FUND_BUDGET
+from config import NUM_POSITIONS, TOTAL_FUND_BUDGET, IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, get_settings
 from secrets_client import get_secret
 from market_calendar import is_first_trading_day_of_week, is_market_holiday
 
@@ -62,6 +62,27 @@ def _discord_alert(message: str) -> None:
         requests.post(webhook_url, json={"content": message}, timeout=5)
     except Exception as e:
         log.warning(f"Discord alert failed: {e}")
+
+
+def _fetch_net_liq(fallback: float) -> float:
+    """Fetch IBKR account NetLiquidation. Returns fallback on any failure."""
+    try:
+        from ib_insync import IB
+        ib = IB()
+        ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID, readonly=True)
+        summary = ib.accountSummary(ACCOUNT)
+        ib.disconnect()
+        net_liq = next(
+            (float(v.value) for v in summary if v.tag == "NetLiquidation"),
+            None,
+        )
+        if net_liq and net_liq > 0:
+            log.info(f"  💹 Compound mode: IBKR net liquidation = ${net_liq:,.0f}")
+            return net_liq
+        log.warning("  ⚠️  NetLiquidation not found in account summary — using initial fund budget")
+    except Exception as e:
+        log.warning(f"  ⚠️  Could not fetch net liq from IBKR ({e}) — using initial fund budget")
+    return fallback
 
 
 def _ibkr_reachable() -> bool:
@@ -307,7 +328,13 @@ def run_pipeline():
             log.info(f"  Filtered {len(all_targets) - len(filtered_targets)} ticker(s) "
                      f"from screener results")
 
-        effective_budget = TOTAL_FUND_BUDGET + freed_capital - reserved_capital
+        settings         = get_settings()
+        compound_enabled = settings.get("compound_enabled", True)
+        base_budget      = _fetch_net_liq(TOTAL_FUND_BUDGET) if compound_enabled else TOTAL_FUND_BUDGET
+        effective_budget = base_budget + freed_capital - reserved_capital
+        log.info(f"  📊 Budget: base=${base_budget:,.0f}  freed=${freed_capital:,.0f}  "
+                 f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}"
+                 f"{'  (compounding ON)' if compound_enabled else '  (compounding OFF)'}")
         target_fills     = max(1, NUM_POSITIONS - active_wheel_count)
         if target_fills < NUM_POSITIONS:
             log.info(f"  🔢 Targeting {target_fills} CSP(s) "

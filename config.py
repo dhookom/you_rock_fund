@@ -65,3 +65,4 @@ DRY_RUN                          = _s.get("dry_run",                          Fa
 WHEEL_CC_IGNORE_EARNINGS_FILTER  = _s.get("wheel_cc_ignore_earnings_filter",  False)
 WHEEL_STOP_LOSS_ENABLED          = _s.get("wheel_stop_loss_enabled",          False)
 STOP_LOSS_PCT                    = _s.get("stop_loss_pct",                    0.10)
+COMPOUND_ENABLED                 = _s.get("compound_enabled",                 True)
