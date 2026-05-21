@@ -59,8 +59,8 @@ ANNUAL_TARGET = 100_000
 CONTAINERIZED = os.environ.get("YRVI_CONTAINERIZED", "0") == "1"
 HEARTBEAT_FILE = BASE_DIR / "scheduler_heartbeat.json"
 SECRETS_SERVICE_URL = "http://secrets:8001"
-# Default feedback webhook — posts to #yrvi-app-feedback; overridable via discord_feedback_webhook_url secret
-_FEEDBACK_WEBHOOK_DEFAULT = "https://discord.com/api/webhooks/1506721232383512587/wBPbzD0J2znceu6XC-hiTtRplPMeL-zM5l5HUdqOQof3Cgy-wajUnnfbF-TofTnXTn7a"
+# Feedback webhook — configure via discord_feedback_webhook_url secret in the secrets container
+_FEEDBACK_WEBHOOK_DEFAULT = ""
 # clientId 100-999 used at runtime (random per call) — never conflicts with trader(1) wheel(2) risk(3)
 
 # ── Watchdog ───────────────────────────────────────────────────
