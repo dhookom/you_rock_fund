@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.5.0-blue)
+![Version](https://img.shields.io/badge/version-1.19.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -532,6 +532,13 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.19.0 (May 2026)
+- **Compound Weekly** — when enabled (default on), the Monday pipeline uses IBKR net liquidation as the deployment budget so the fund grows automatically as premiums accumulate; falls back to Initial Fund Budget if IBKR is unreachable
+- **Stop Loss on Wheel Holdings** — optional toggle to sell a holding on Monday if price falls more than a configurable % below its assigned strike (0–50%, default 10%); off by default since the screener exit is the primary exit
+- **Dry Run default changed to off** — paper trading is already the safety layer; Dry Run on first install no longer adds a redundant extra step. Live trading mode shows an amber callout in Settings so users know the option exists
+- **Settings Reference** — collapsible reference section added to the Help page (grouped by section, with default and range for every setting); matching table added to README
+- Version files reconciled: `VERSION`, `package.json`, and README badge now all track the same number
 
 ### v1.6.0 (May 2026)
 - Version update notification — dashboard checks GitHub for a newer release and displays a banner with a one-click `yrvi://` upgrade link
