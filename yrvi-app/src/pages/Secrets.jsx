@@ -21,8 +21,9 @@ const LABELS = {
   account_live:                { label: 'IBKR Live Account ID',         required: false },
   tws_userid_live:             { label: 'IBKR Live Username',           required: false },
   vnc_server_password:         { label: 'VNC Password',                 required: false, description: 'Default: ibgateway123!test — used to connect via VNC to the IB Gateway container (port 5900)' },
-  discord_webhook_url:         { label: 'Discord Webhook URL',          required: false },
-  discord_webhook_weekly_plan: { label: 'Discord Weekly Plan Webhook',  required: false },
+  discord_webhook_url:          { label: 'Discord Webhook URL',          required: false },
+  discord_webhook_weekly_plan:  { label: 'Discord Weekly Plan Webhook',  required: false },
+  discord_feedback_webhook_url: { label: 'Discord Feedback Webhook URL', required: false, description: 'Enables the bug/feature feedback form on the Help page. Get the URL from the #yrvi_secrets channel in the You Rock Club Discord.' },
 }
 
 function deriveSecrets(statusSecrets) {

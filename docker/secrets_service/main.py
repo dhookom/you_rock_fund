@@ -25,6 +25,7 @@ OPTIONAL_SECRETS = [
     "vnc_server_password",
     "discord_webhook_url",
     "discord_webhook_weekly_plan",
+    "discord_feedback_webhook_url",
 ]
 ALL_SECRETS = REQUIRED_SECRETS + OPTIONAL_SECRETS
 

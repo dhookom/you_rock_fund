@@ -1283,6 +1283,11 @@ def test_discord():
 @app.post("/api/feedback")
 def submit_feedback(body: FeedbackRequest):
     webhook_url = _read_secret_or_env("discord_feedback_webhook_url", "DISCORD_FEEDBACK_WEBHOOK_URL") or _FEEDBACK_WEBHOOK_DEFAULT
+    if not webhook_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Feedback webhook not configured — get the URL from #yrvi_secrets in the You Rock Club Discord and add it in Secrets."
+        )
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
