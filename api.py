@@ -769,7 +769,7 @@ def _build_diag() -> dict:
             detail = f"{ts.strftime('%a %b %-d')} — {filled} fill(s), ${premium:,.0f} premium"
             check("Last CSP Run", "ok" if age_days <= 14 else "warn", detail)
         else:
-            check("Last CSP Run", "warn", "No execution recorded yet")
+            check("Last CSP Run", "ok", "Not yet run — will execute automatically on the first Monday at 10:00 AM")
     except Exception as e:
         check("Last CSP Run", "warn", f"Could not read state: {e}")
 
@@ -781,7 +781,7 @@ def _build_diag() -> dict:
             ts = datetime.fromisoformat(updated)
             check("Last Wheel Check", "ok", ts.strftime("%a %b %-d at %-I:%M %p"))
         else:
-            check("Last Wheel Check", "warn", "No wheel check recorded yet")
+            check("Last Wheel Check", "ok", "Not yet run — will execute automatically on the first Monday at 9:55 AM")
     except Exception as e:
         check("Last Wheel Check", "warn", f"Could not read state: {e}")
 
