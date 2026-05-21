@@ -314,18 +314,18 @@ if docker compose --env-file .env.compose up -d --build; then
         info "  docker compose --env-file .env.compose ps"
     fi
 
-    # ── dry_run safety check ──────────────────────────────────
-    info "Checking dry_run safety default..."
+    # ── dry_run check ──────────────────────────────────────────
+    info "Checking dry_run setting..."
     sleep 5
     DRY_RUN=$(curl -sf http://127.0.0.1:8000/api/settings 2>/dev/null \
         | python3 -c \
           "import sys,json; print(json.load(sys.stdin).get('dry_run','?'))" \
           2>/dev/null \
         || echo "?")
-    if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then
-        ok "dry_run=true — no IBKR orders will be submitted until you enable trading"
-    elif [ "$DRY_RUN" = "False" ] || [ "$DRY_RUN" = "false" ]; then
-        warn "dry_run=false — the scheduler WILL submit orders to IBKR when scheduled jobs run"
+    if [ "$DRY_RUN" = "False" ] || [ "$DRY_RUN" = "false" ]; then
+        ok "dry_run=false — paper trading handles safety; orders go to your paper account"
+    elif [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then
+        info "dry_run=true — orders are simulated (no fills). Toggle off in Settings when ready to trade"
     else
         info "dry_run not checked yet (API still starting — verify at http://localhost:8000/api/settings)"
     fi

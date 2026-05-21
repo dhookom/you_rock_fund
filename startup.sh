@@ -127,9 +127,9 @@ if [ -n "$DRY_RESP" ]; then
     DRY=$(echo "$DRY_RESP" | python3 -c \
         "import sys,json; d=json.load(sys.stdin); print(d.get('dry_run','?'))" 2>/dev/null || echo "?")
     if [ "$DRY" = "False" ] || [ "$DRY" = "false" ]; then
-        pass "DRY_RUN = false  (live orders enabled)"
+        pass "DRY_RUN = false  (orders will be submitted to IBKR)"
     elif [ "$DRY" = "True" ] || [ "$DRY" = "true" ]; then
-        warn "DRY_RUN = true — no real orders will be placed"
+        pass "DRY_RUN = true  (orders simulated — toggle off in Settings when ready to trade)"
     else
         warn "Could not determine DRY_RUN state from API"
     fi

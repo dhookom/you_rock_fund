@@ -423,6 +423,11 @@ export default function SettingsPage() {
 
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
           <Toggle label="Dry Run" sub="Simulate orders — no real trades placed" checked={settings.dry_run} onChange={v => set('dry_run', v)} />
+          {isLive && !settings.dry_run && (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              You're in live trading — enable Dry Run above if you want to test without placing real orders.
+            </p>
+          )}
         </div>
       </Section>
 
