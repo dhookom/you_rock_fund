@@ -3,10 +3,11 @@ from config import (
     TARGET_PER_POSITION,
     MAX_PER_POSITION,
     TOTAL_FUND_BUDGET,
-    NUM_POSITIONS
+    NUM_POSITIONS,
+    COMPOUND_ENABLED
 )
 
-def size_position(target: dict, available_capital: float, is_last: bool = False) -> dict | None:
+def size_position(target: dict, available_capital: float, is_last: bool = False, target_capital: float = None, no_max: bool = False) -> dict | None:
     # CC: contracts fixed by shares owned; no new capital consumed
     if target.get("action_type") == "CC":
         contracts = target.get("shares", 0) // 100
@@ -39,7 +40,7 @@ def size_position(target: dict, available_capital: float, is_last: bool = False)
     strike            = target["put_20d_strike"]
     cash_per_contract = strike * 100
 
-    if cash_per_contract > MAX_PER_POSITION:
+    if not COMPOUND_ENABLED and cash_per_contract > MAX_PER_POSITION:
         print(f"  ⚠️  {target['ticker']} skipped — 1 contract = ${cash_per_contract:,.0f} (exceeds ${MAX_PER_POSITION:,.0f} max)")
         return None
 
@@ -48,12 +49,11 @@ def size_position(target: dict, available_capital: float, is_last: bool = False)
         return None
 
     if is_last:
-        # Last position: maximize contracts up to MAX_PER_POSITION
-        budget    = min(available_capital, MAX_PER_POSITION)
+        budget    = available_capital if no_max else min(available_capital, MAX_PER_POSITION)
         contracts = math.floor(budget / cash_per_contract)
     else:
-        # Normal positions: closest to TARGET without exceeding it
-        contracts = math.floor(TARGET_PER_POSITION / cash_per_contract)
+        per_pos   = target_capital if target_capital is not None else TARGET_PER_POSITION
+        contracts = math.floor(per_pos / cash_per_contract)
         if contracts < 1:
             contracts = 1
 
@@ -93,37 +93,67 @@ def size_all(targets: list, budget: float = None, num_positions: int = None,
         if result:
             cc_sized.append(result)
 
-    # Pass 1: find and allocate the remainder/top position first so the best
-    # viable target gets priority capital before other slots consume the budget.
-    # Iterate in score order until one fits (skips oversized tickers like SNDK).
-    top_sized    = []
-    used_tickers = set()
-    for t in targets:
-        result = size_position(t, remaining_budget, is_last=True)
-        if result:
-            top_sized.append(result)
-            remaining_budget -= result["capital_used"]
-            used_tickers.add(t["ticker"])
-            break
+    num_csp_slots = num - len(cc_sized)
 
-    # Pass 2: fill remaining positions at TARGET, skipping the top pick
-    rest_sized   = []
-    target_index = 0
-    while len(rest_sized) < num - 1 and target_index < len(targets):
-        t = targets[target_index]
-        target_index += 1
-        if t["ticker"] in used_tickers:
-            continue
-        result = size_position(t, remaining_budget, is_last=False)
-        if result:
-            rest_sized.append(result)
-            remaining_budget -= result["capital_used"]
-            used_tickers.add(t["ticker"])
+    if COMPOUND_ENABLED and num_csp_slots > 0:
+        equal_target = remaining_budget / num_csp_slots
+
+        # Pass 1: fill slots #2–N at the equal per-slot target (skip index 0 — reserved for #1)
+        rest_sized   = []
+        used_tickers = set()
+        target_index = 1
+        while len(rest_sized) < num_csp_slots - 1 and target_index < len(targets):
+            t = targets[target_index]
+            target_index += 1
+            result = size_position(t, remaining_budget, is_last=False, target_capital=equal_target)
+            if result:
+                rest_sized.append(result)
+                remaining_budget -= result["capital_used"]
+                used_tickers.add(t["ticker"])
+
+        # Pass 2: slot #1 (top score) gets the remainder — no cap in compound mode
+        top_sized = []
+        for t in targets:
+            if t["ticker"] in used_tickers:
+                continue
+            result = size_position(t, remaining_budget, is_last=True, no_max=True)
+            if result:
+                top_sized.append(result)
+                remaining_budget -= result["capital_used"]
+                used_tickers.add(t["ticker"])
+                break
+    else:
+        # Non-compound: top position gets remainder first, rest get TARGET_PER_POSITION
+        top_sized    = []
+        used_tickers = set()
+        for t in targets:
+            result = size_position(t, remaining_budget, is_last=True)
+            if result:
+                top_sized.append(result)
+                remaining_budget -= result["capital_used"]
+                used_tickers.add(t["ticker"])
+                break
+
+        rest_sized   = []
+        target_index = 0
+        while len(rest_sized) < num - 1 and target_index < len(targets):
+            t = targets[target_index]
+            target_index += 1
+            if t["ticker"] in used_tickers:
+                continue
+            result = size_position(t, remaining_budget, is_last=False)
+            if result:
+                rest_sized.append(result)
+                remaining_budget -= result["capital_used"]
+                used_tickers.add(t["ticker"])
 
     sized = cc_sized + top_sized + rest_sized
 
     print("\n💼 Position Sizing Summary")
-    print(f"   Fund Budget: ${effective_budget:,.0f}  |  Target: ${TARGET_PER_POSITION:,.0f}/pos (#2–{num})  |  Max #1: ${MAX_PER_POSITION:,.0f}")
+    if COMPOUND_ENABLED and num_csp_slots > 0:
+        print(f"   Fund Budget: ${effective_budget:,.0f}  |  Equal Target: ${equal_target:,.0f}/pos ({num_csp_slots} slots)  |  Max #1: ${MAX_PER_POSITION:,.0f}")
+    else:
+        print(f"   Fund Budget: ${effective_budget:,.0f}  |  Target: ${TARGET_PER_POSITION:,.0f}/pos (#2–{num})  |  Max #1: ${MAX_PER_POSITION:,.0f}")
     print("=" * 65)
 
     total_capital = 0
@@ -132,7 +162,13 @@ def size_all(targets: list, budget: float = None, num_positions: int = None,
     for i, p in enumerate(sized, 1):
         bz          = "✅" if p["buyzone"] else "❌"
         atype       = p.get("action_type", "CSP")
-        last_tag    = " ← remainder (max $70K)" if (atype == "CSP" and i == len(cc_sized or []) + 1) else ""
+        is_top_csp  = atype == "CSP" and i == len(cc_sized) + 1
+        if is_top_csp and COMPOUND_ENABLED:
+            last_tag = " ← remainder"
+        elif is_top_csp:
+            last_tag = " ← remainder (max $70K)"
+        else:
+            last_tag = ""
         over        = " ⚡" if p["capital_used"] > TARGET_PER_POSITION else ""
         capital_str = "held (no new capital)" if atype == "CC" else f"${p['capital_used']:,.0f}{over}"
         print(f"\n  #{i} {p['ticker']} [{atype}]  (Buyzone: {bz}){last_tag}")
