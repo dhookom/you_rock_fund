@@ -327,7 +327,7 @@ export default function SettingsPage() {
         <SliderRow label="Min Position" value={settings.min_position_size} min={5000}  max={100000}  step={5000}  format={v => `$${v.toLocaleString()}`} onChange={v => set('min_position_size', v)} />
         <SliderRow label="Max Position" value={settings.max_position_size} min={10000} max={200000}  step={5000}  format={v => `$${v.toLocaleString()}`} onChange={v => set('max_position_size', v)} />
         {settings.compound_enabled !== false && (
-          <p className="mt-1 text-xs text-amber-500 dark:text-amber-400">Ignored in compound mode — each slot is sized by net balance ÷ # positions.</p>
+          <p className="mt-1 text-xs text-amber-500 dark:text-amber-400">Max Position ignored in compound mode — each slot is sized by net balance ÷ # positions.</p>
         )}
       </Section>
 
