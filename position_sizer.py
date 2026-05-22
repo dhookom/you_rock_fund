@@ -54,6 +54,7 @@ def size_position(target: dict, available_capital: float, is_last: bool = False,
     else:
         per_pos   = target_capital if target_capital is not None else TARGET_PER_POSITION
         contracts = math.floor(per_pos / cash_per_contract)
+        contracts = min(contracts, math.floor(available_capital / cash_per_contract))
         if contracts < 1:
             contracts = 1
 
