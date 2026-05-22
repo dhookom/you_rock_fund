@@ -102,9 +102,10 @@ export default function Dashboard() {
   const execLabel = (() => {
     if (!status?.next_execution) return 'Monday 10:00 AM PST (1:00 PM ET)'
     const d = new Date(status.next_execution)
+    const day = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Los_Angeles' })
     const pst = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Los_Angeles' })
     const et  = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' })
-    return `Monday ${pst} PST (${et} ET)`
+    return `${day} ${pst} PST (${et} ET)`
   })()
 
   if (loading) {
