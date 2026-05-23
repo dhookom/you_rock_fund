@@ -388,6 +388,10 @@ def detect_assignments():
     Friday 4:15PM PST — scan IBKR for stock positions and reconcile
     against known wheel_holdings. New assignments are added with the
     assigned strike looked up from that week's state.json positions.
+    Holdings whose CC has expired and are no longer in IBKR are
+    recognized as called away and removed from wheel_holdings.
+
+    Returns list of called-away holding dicts (may be empty).
     """
     log.info("\n" + "=" * 65)
     log.info(f"🔍 FRIDAY ASSIGNMENT DETECTION — "
@@ -413,10 +417,37 @@ def detect_assignments():
 
     log.info(f"📊 Found {len(stock_positions)} stock position(s) in IBKR")
 
-    if not stock_positions and existing_holdings:
-        log.error(f"❌ IBKR returned 0 stock positions but {len(existing_holdings)} "
-                  f"holding(s) already on record — skipping save to avoid data loss")
-        return
+    # Identify holdings whose CC expired and are no longer in IBKR — called away.
+    # CC expiry is stored as "YYYYMMDD"; compare against today in the same format.
+    today_str     = datetime.now().strftime("%Y%m%d")
+    called_away   = []
+    for ticker, h in existing_holdings.items():
+        cc_expiry = h.get("current_cc_expiry")
+        if (h.get("cc_status") == "open"
+                and cc_expiry
+                and cc_expiry <= today_str
+                and ticker not in stock_positions):
+            cc_strike       = h.get("current_cc_strike") or h.get("assigned_strike", 0.0)
+            assigned_strike = h.get("assigned_strike", 0.0)
+            shares          = h.get("shares", 0)
+            stock_pnl       = round((cc_strike - assigned_strike) * shares, 2)
+            cc_premium      = h.get("current_cc_premium", 0.0)
+            log.info(f"  📤 {ticker}: CC expired {cc_expiry}, no longer in IBKR — "
+                     f"called away  stock P&L ${stock_pnl:+,.0f}  "
+                     f"CC premium ${cc_premium:,.0f}")
+            called_away.append({**h, "_stock_pnl": stock_pnl})
+
+    called_away_tickers = {h["ticker"] for h in called_away}
+
+    # Safety guard: bail only if IBKR shows 0 positions AND there are holdings
+    # that are NOT explained by an expired CC (i.e., data may be unreliable).
+    unexplained = [t for t in existing_holdings
+                   if t not in stock_positions and t not in called_away_tickers]
+    if not stock_positions and unexplained:
+        log.error(f"❌ IBKR returned 0 stock positions but {len(unexplained)} "
+                  f"holding(s) have no expired CC to explain their absence — "
+                  f"skipping save to avoid data loss: {unexplained}")
+        return []
 
     updated         = []
     new_assignments = []
@@ -453,15 +484,14 @@ def detect_assignments():
                      f"@ ${assigned_strike:.2f}")
             new_assignments.append(h)
         updated.append(h)
-
-    for ticker in existing_holdings:
-        if ticker not in stock_positions:
-            log.info(f"  📤 {ticker}: no longer held (called away or sold)")
+        # called-away holdings are intentionally excluded from updated → removed from state
 
     state["wheel_holdings"] = updated
     _save_state(state)
-    log.info(f"\n💾 Saved {len(updated)} wheel holding(s) to state.json")
+    log.info(f"\n💾 Saved {len(updated)} wheel holding(s) to state.json "
+             f"({len(called_away)} called away, {len(new_assignments)} new assignment(s))")
     log.info("=" * 65)
+    return called_away
 
     if new_assignments:
         discord_poster.post_assignment_alert(new_assignments)

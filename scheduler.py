@@ -197,9 +197,9 @@ def run_assignment_detection():
         state_before  = _load_state()
         known_tickers = {h["ticker"] for h in state_before.get("wheel_holdings", [])}
 
-        detect_assignments()
+        called_away = detect_assignments()
 
-        from discord_poster import is_enabled, post_assignment_alert
+        from discord_poster import is_enabled, post_assignment_alert, post_called_away_alert
         if is_enabled():
             state_after  = _load_state()
             today        = now.date().isoformat()
@@ -207,6 +207,7 @@ def run_assignment_detection():
                             if h["ticker"] not in known_tickers
                             and h.get("assignment_date") == today]
             post_assignment_alert(new_ones)
+            post_called_away_alert(called_away or [])
     except Exception as e:
         log.error(f"❌ Assignment detection error: {e}", exc_info=True)
         _discord_alert(f"🚨 **YRVI** Friday assignment detection failed: `{type(e).__name__}: {e}`")

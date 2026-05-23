@@ -500,6 +500,41 @@ def post_emergency_share_sale(result: dict):
     })
 
 
+def post_called_away_alert(called_away: list):
+    """Post Friday alert when CC-covered shares were called away at expiry."""
+    if not WEBHOOK_URL or not called_away:
+        return
+
+    lines = []
+    for h in called_away:
+        ticker          = h["ticker"]
+        shares          = h.get("shares", 0)
+        assigned_strike = h.get("assigned_strike", 0.0)
+        cc_strike       = h.get("current_cc_strike") or assigned_strike
+        cc_premium      = h.get("current_cc_premium", 0.0)
+        weeks_held      = h.get("weeks_held", 0)
+        stock_pnl       = h.get("_stock_pnl", round((cc_strike - assigned_strike) * shares, 2))
+        pnl_str         = f"+${stock_pnl:,.0f}" if stock_pnl >= 0 else f"-${abs(stock_pnl):,.0f}"
+        lines.append(
+            f"• **{ticker}** — {shares} shares called away @ ${cc_strike:.2f}  "
+            f"(assigned ${assigned_strike:.2f})  stock P&L {pnl_str}  "
+            f"CC premium ${cc_premium:,.0f}  held {weeks_held}w"
+        )
+
+    _post({"embeds": [{
+        "title":       f"📤 YRVI — {len(called_away)} Position(s) Called Away",
+        "description": "\n".join(lines),
+        "color":       COLOR_GREEN,
+        "fields": [{
+            "name":   "Capital Freed",
+            "value":  "Capital returns to the CSP pool — new positions sized Monday 10:00 AM",
+            "inline": False,
+        }],
+        "footer":    {"text": "You Rock Volatility Income Fund"},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }]})
+
+
 def post_assignment_alert(new_assignments: list):
     """Post Friday alert for newly detected stock assignments."""
     if not WEBHOOK_URL or not new_assignments:
