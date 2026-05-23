@@ -553,18 +553,26 @@ def post_friday_summary(state: dict, called_away: list, new_assignments: list,
     for h in called_away:
         cc_strike = h.get("current_cc_strike") or h.get("assigned_strike", 0.0)
         stock_pnl = h.get("_stock_pnl", 0.0)
-        pnl_str   = f"+${stock_pnl:,.0f}" if stock_pnl >= 0 else f"-${abs(stock_pnl):,.0f}"
+        cc_prem   = h.get("current_cc_premium", 0.0)
+        if stock_pnl > 0:
+            shares_str = f"+${stock_pnl:,.0f} on shares"
+        elif stock_pnl < 0:
+            shares_str = f"-${abs(stock_pnl):,.0f} on shares"
+        else:
+            shares_str = "break-even on shares"
         outcome_lines.append(
             f"📤 **{h['ticker']}** called away @ {_fmt_strike(cc_strike)}  "
-            f"stock P&L {pnl_str}  CC ${h.get('current_cc_premium', 0.0):,.0f}"
+            f"{shares_str}  · ${cc_prem:,.0f} CC already collected"
         )
 
     # ── Fields ────────────────────────────────────────────────────
+    # Discord renders 3 inline fields per row.
+    # Row 1: CSP / CC / Total Realized  Row 2: Week Yield + spacers
     fields = [
         {"name": "CSP Premium",    "value": f"${csp_premium:,.0f}",  "inline": True},
         {"name": "CC Premium",     "value": f"${cc_premium:,.0f}",   "inline": True},
-        {"name": "Week Yield",     "value": f"{yield_pct:.2f}%",     "inline": True},
         {"name": "Total Realized", "value": f"${grand_total:,.0f}",  "inline": True},
+        {"name": "Week Yield",     "value": f"{yield_pct:.2f}%",     "inline": True},
         {"name": "​",         "value": "​",                "inline": True},
         {"name": "​",         "value": "​",                "inline": True},
     ]
