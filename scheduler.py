@@ -199,15 +199,17 @@ def run_assignment_detection():
 
         called_away = detect_assignments()
 
-        from discord_poster import is_enabled, post_assignment_alert, post_called_away_alert
+        from discord_poster import is_enabled, post_friday_summary
         if is_enabled():
             state_after  = _load_state()
             today        = now.date().isoformat()
             new_ones     = [h for h in state_after.get("wheel_holdings", [])
                             if h["ticker"] not in known_tickers
                             and h.get("assignment_date") == today]
-            post_assignment_alert(new_ones)
-            post_called_away_alert(called_away or [])
+            settings      = _load_settings()
+            fund_budget   = settings.get("fund_budget", TOTAL_FUND_BUDGET)
+            post_friday_summary(state_after, called_away or [], new_ones,
+                                fund_budget=fund_budget)
     except Exception as e:
         log.error(f"❌ Assignment detection error: {e}", exc_info=True)
         _discord_alert(f"🚨 **YRVI** Friday assignment detection failed: `{type(e).__name__}: {e}`")

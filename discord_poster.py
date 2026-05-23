@@ -500,6 +500,136 @@ def post_emergency_share_sale(result: dict):
     })
 
 
+def post_friday_summary(state: dict, called_away: list, new_assignments: list,
+                        fund_budget: float = 250_000):
+    """
+    Post Friday end-of-week summary — how every position resolved.
+    Replaces the individual assignment + called-away alerts with one rich embed.
+    """
+    if not WEBHOOK_URL:
+        return
+
+    pnl            = state.get("weekly_pnl", {})
+    week_start     = pnl.get("week_start", datetime.now(PST).strftime("%Y-%m-%d"))
+    csp_premium    = pnl.get("csp_premium", 0.0)
+    cc_premium     = pnl.get("cc_premium", 0.0)
+    shares_sold_pnl = pnl.get("shares_sold_pnl", 0.0)
+    total_realized  = pnl.get("total_realized", 0.0)
+
+    # Called-away stock P&L happens Friday — not yet in weekly_pnl
+    called_away_stock_pnl = sum(h.get("_stock_pnl", 0.0) for h in called_away)
+    grand_total = total_realized + called_away_stock_pnl
+    yield_pct   = (csp_premium + cc_premium) / fund_budget * 100 if fund_budget else 0
+
+    # Position lookup for strike info
+    pos_lookup = {p["ticker"]: p for p in state.get("positions", [])}
+
+    # Split filled executions into expired-worthless vs assigned
+    assigned_tickers = {h["ticker"] for h in new_assignments}
+    filled_execs     = [e for e in state.get("executions", [])
+                        if e.get("status") in ("filled", "partial_fill")]
+    expired_execs    = [e for e in filled_execs if e["ticker"] not in assigned_tickers]
+
+    # ── Outcome lines ──────────────────────────────────────────────
+    outcome_lines = []
+
+    for e in expired_execs:
+        pos    = pos_lookup.get(e["ticker"], {})
+        strike = pos.get("strike", 0.0)
+        prem   = e.get("premium_collected", 0.0)
+        outcome_lines.append(
+            f"✅ **{e['ticker']}** expired worthless  "
+            f"{_fmt_strike(strike)} strike  ${prem:,.0f} kept"
+        )
+
+    for h in new_assignments:
+        exec_rec = next((e for e in filled_execs if e["ticker"] == h["ticker"]), {})
+        prem     = exec_rec.get("premium_collected", 0.0)
+        outcome_lines.append(
+            f"📬 **{h['ticker']}** assigned @ {_fmt_strike(h['assigned_strike'])}  "
+            f"{h['shares']} shares  ${prem:,.0f} premium collected"
+        )
+
+    for h in called_away:
+        cc_strike = h.get("current_cc_strike") or h.get("assigned_strike", 0.0)
+        stock_pnl = h.get("_stock_pnl", 0.0)
+        pnl_str   = f"+${stock_pnl:,.0f}" if stock_pnl >= 0 else f"-${abs(stock_pnl):,.0f}"
+        outcome_lines.append(
+            f"📤 **{h['ticker']}** called away @ {_fmt_strike(cc_strike)}  "
+            f"stock P&L {pnl_str}  CC ${h.get('current_cc_premium', 0.0):,.0f}"
+        )
+
+    # ── Fields ────────────────────────────────────────────────────
+    fields = [
+        {"name": "CSP Premium",    "value": f"${csp_premium:,.0f}",  "inline": True},
+        {"name": "CC Premium",     "value": f"${cc_premium:,.0f}",   "inline": True},
+        {"name": "Week Yield",     "value": f"{yield_pct:.2f}%",     "inline": True},
+        {"name": "Total Realized", "value": f"${grand_total:,.0f}",  "inline": True},
+        {"name": "​",         "value": "​",                "inline": True},
+        {"name": "​",         "value": "​",                "inline": True},
+    ]
+
+    if outcome_lines:
+        fields.append({
+            "name":   "📋 Week Outcomes",
+            "value":  "\n".join(outcome_lines),
+            "inline": False,
+        })
+
+    # Ongoing holdings (held from before, not assigned or called away this week)
+    called_away_tickers = {h["ticker"] for h in called_away}
+    ongoing = [h for h in state.get("wheel_holdings", [])
+               if h["ticker"] not in assigned_tickers
+               and h["ticker"] not in called_away_tickers]
+    if ongoing:
+        hold_lines = []
+        for h in ongoing:
+            cc_str = (f"  CC @ {_fmt_strike(h['current_cc_strike'])} wk {h['weeks_held']}"
+                      if h.get("current_cc_strike") else "  (pending CC)")
+            hold_lines.append(
+                f"🔄 **{h['ticker']}** {h['shares']} shares "
+                f"@ {_fmt_strike(h['assigned_strike'])}{cc_str}"
+            )
+        fields.append({
+            "name":   "🔄 Ongoing Wheel Holdings",
+            "value":  "\n".join(hold_lines),
+            "inline": False,
+        })
+
+    # YTD — read-only (already updated Monday after CSP execution)
+    ytd = _load_ytd()
+    if ytd.get("weeks_traded"):
+        avg_yield    = ytd["total_premium"] / ytd["weeks_traded"] / fund_budget * 100
+        progress_pct = ytd["total_premium"] / ANNUAL_TARGET * 100
+        fields.append({
+            "name": "📊 YTD Stats",
+            "value": (
+                f"Total Premium: ${ytd['total_premium']:,.0f}\n"
+                f"Weeks Traded: {ytd['weeks_traded']}\n"
+                f"Avg Yield/Week: {avg_yield:.2f}%\n"
+                f"Progress: {progress_pct:.1f}% toward ${ANNUAL_TARGET:,.0f} annual target"
+            ),
+            "inline": False,
+        })
+
+    # Week label e.g. "May 18–22"
+    try:
+        from datetime import date, timedelta
+        ws         = date.fromisoformat(week_start)
+        week_label = f"{ws.strftime('%b %-d')}–{(ws + timedelta(days=4)).strftime('%b %-d')}"
+    except Exception:
+        week_label = week_start
+
+    _post({"embeds": [{
+        "title":       f"{_yield_emoji(yield_pct)} YRVI Week of {week_label} — Week in Review",
+        "description": f"**${grand_total:,.0f} realized**  ({yield_pct:.2f}% yield)",
+        "color":       _yield_color(yield_pct),
+        "fields":      fields,
+        "footer":      {"text": "You Rock Volatility Income Fund"},
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
+    }]})
+
+
 def post_called_away_alert(called_away: list):
     """Post Friday alert when CC-covered shares were called away at expiry."""
     if not WEBHOOK_URL or not called_away:
