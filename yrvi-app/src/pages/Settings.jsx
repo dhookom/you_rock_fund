@@ -274,6 +274,9 @@ export default function SettingsPage() {
     setPatching(true)
     setPatchResult(null)
     try {
+      // Save settings first so the watchdog window moves to the new time too
+      await axios.post('/api/settings', settings)
+      setOriginal(s => ({ ...s, auto_restart_time: settings.auto_restart_time, auto_restart_suppress_mins: settings.auto_restart_suppress_mins }))
       const res = await axios.post('/api/gateway/patch-restart-time', {
         auto_restart_time: settings.auto_restart_time ?? '11:59 PM',
       })
