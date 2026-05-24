@@ -1,3 +1,10 @@
+## [1.23.0] — 2026-05-24
+### Changed
+- **Apply to Gateway now restarts the container immediately** — writes the new restart time to a shared volume file (`/data/gw_auto_restart_time`), then issues `docker restart ib_gateway`; gateway entrypoint reads the override on every startup so the change persists across future restarts without editing `.env.compose`
+- Gateway entrypoint (`docker/ib-gateway/entrypoint.sh`) reads `/data/gw_auto_restart_time` override before starting IBC, exporting it as `AUTO_RESTART_TIME`
+- `yrvi_data` volume now mounted into `ib_gateway` container at `/data` so the override file is accessible to the entrypoint
+- Apply to Gateway returns immediately (restart runs in background thread, ~30–60s); success message updated to reflect that the gateway is restarting
+
 ## [1.22.0] — 2026-05-24
 ### Added
 - **IB Gateway settings UI** — new Settings section with a daily auto-restart time picker (7 PM – 2 AM), a restart window slider (10–60 min), and an "Apply to Gateway" button that patches IBC `config.ini` in the running container via `docker exec`

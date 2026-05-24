@@ -120,6 +120,16 @@ fi
 
 patch_ibc_login_failed
 
+# Allow the YRVI API to override AUTO_RESTART_TIME via a file on the shared volume
+# without requiring a .env.compose edit + full stack restart.
+if [ -f "/data/gw_auto_restart_time" ]; then
+    _override=$(cat "/data/gw_auto_restart_time" 2>/dev/null | tr -d '\n\r' || true)
+    if [ -n "$_override" ]; then
+        export AUTO_RESTART_TIME="$_override"
+        echo "yrvi-gw-entrypoint: AUTO_RESTART_TIME overridden from /data: $AUTO_RESTART_TIME"
+    fi
+fi
+
 # The image's common.sh errors if both TWS_PASSWORD and TWS_PASSWORD_FILE are set.
 # Pass the password as TWS_PASSWORD and clear the file path.
 unset TWS_PASSWORD_FILE

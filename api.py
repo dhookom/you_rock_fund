@@ -1115,29 +1115,37 @@ def set_timezone(body: TimezoneUpdate):
 class GatewayRestartTimeBody(BaseModel):
     auto_restart_time: str
 
+def _restart_gateway_background(time_str: str) -> None:
+    """Restart ib_gateway in a background thread — takes 30-60s."""
+    try:
+        subprocess.run(
+            ["docker", "restart", "ib_gateway"],
+            capture_output=True, text=True, timeout=120,
+        )
+        print(f"[api/gateway-restart] restarted with AUTO_RESTART_TIME={time_str}")
+    except Exception as e:
+        print(f"[api/gateway-restart] error: {e}")
+
+
 @app.post("/api/gateway/patch-restart-time")
 def patch_gateway_restart_time(body: GatewayRestartTimeBody):
-    """Patch AutoRestartTime in the running ib_gateway container's IBC config.ini.
-    This takes effect for the CURRENT session only — the env var in docker-compose
-    overrides config.ini again on the next container start."""
+    """Write the new restart time to the shared volume and restart ib_gateway.
+    The entrypoint reads /data/gw_auto_restart_time and exports it as
+    AUTO_RESTART_TIME before the base image starts, so the change is permanent
+    across container restarts without editing .env.compose."""
     time_str = body.auto_restart_time.strip()
-    escaped  = time_str.replace("\\", "\\\\").replace("'", r"'\''")
-    cmd = [
-        "docker", "exec", "ib_gateway", "sh", "-c",
-        f"found=; for f in /opt/ibc/config.ini /home/ibgateway/ibc/config.ini /root/ibc/config.ini; do "
-        f"[ -f \"$f\" ] || continue; "
-        f"sed -i 's|^AutoRestartTime=.*|AutoRestartTime={escaped}|' \"$f\" && echo \"patched $f\" && found=1 && break; "
-        f"done; [ -n \"$found\" ] || echo 'no config.ini found'"
-    ]
+
+    # Write override file to shared volume — entrypoint reads this on every startup
+    override_path = Path("/data/gw_auto_restart_time")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        out    = result.stdout.strip()
-        patched = result.returncode == 0 and out.startswith("patched")
-        return {"patched": patched, "detail": out or result.stderr.strip()}
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="docker exec timed out — is the gateway running?")
+        override_path.write_text(time_str)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to write override file: {e}")
+
+    # Restart gateway in background — returns immediately, restart takes ~30-60s
+    threading.Thread(target=_restart_gateway_background, args=(time_str,), daemon=True).start()
+
+    return {"restarting": True, "auto_restart_time": time_str}
 
 
 class SecretValueRequest(BaseModel):

@@ -280,9 +280,10 @@ export default function SettingsPage() {
       const res = await axios.post('/api/gateway/patch-restart-time', {
         auto_restart_time: settings.auto_restart_time ?? '11:59 PM',
       })
-      setPatchResult({ ok: res.data.patched, text: res.data.patched
-        ? `Applied — gateway will restart at ${settings.auto_restart_time} tonight`
-        : `Not applied: ${res.data.detail}`
+      setPatchResult({ ok: res.data.restarting,
+        text: res.data.restarting
+          ? `Gateway restarting now — will use ${settings.auto_restart_time} from tonight onwards (~30–60s to come back up)`
+          : `Failed: ${res.data.detail}`
       })
     } catch (err) {
       setPatchResult({ ok: false, text: err.response?.data?.detail ?? 'Patch failed' })
@@ -527,9 +528,7 @@ export default function SettingsPage() {
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
           <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
             Alerts always fire, but within the restart window they say <em>"likely the daily restart — recovery message will follow"</em> instead of <em>"manual restart required."</em>{' '}
-            <strong className="text-gray-700 dark:text-gray-400">Apply to Gateway</strong> queues the new time for the next IBC restart cycle (takes effect tomorrow night). To change it immediately and permanently, set{' '}
-            <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">AUTO_RESTART_TIME</code> in your <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">.env.compose</code>{' '}
-            and run <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">docker compose --env-file .env.compose restart ib_gateway</code>.
+            <strong className="text-gray-700 dark:text-gray-400">Apply to Gateway</strong> saves the new time and restarts the gateway container immediately — it will come back up using the new restart time tonight and on every future restart.
           </div>
           <button
             onClick={patchGateway}
@@ -537,7 +536,7 @@ export default function SettingsPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-600 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-60 disabled:cursor-wait transition-colors"
           >
             <RefreshCw size={11} className={patching ? 'animate-spin' : ''} />
-            {patching ? 'Applying…' : 'Apply to Gateway'}
+            {patching ? 'Restarting…' : 'Apply to Gateway'}
           </button>
           {patchResult && (
             <div className={`text-xs font-medium ${patchResult.ok ? 'text-green-500' : 'text-red-400'}`}>
