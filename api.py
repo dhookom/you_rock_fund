@@ -79,6 +79,33 @@ _gateway_login_status: str = "unknown"
 WATCHDOG_INTERVAL = 300   # seconds between checks
 ALERT_THRESHOLD   = 600   # seconds a failure must persist before we alert
 
+# Auto-restart suppression: read the gateway's configured restart time and
+# suppress gateway/IBKR alerts for this many seconds after it fires.
+# Avoids false alarms on slower machines that take longer to log back in.
+# Env vars are fallbacks; settings.json values take precedence and update live.
+_AUTO_RESTART_TIME_ENV     = os.environ.get("AUTO_RESTART_TIME", "11:59 PM").strip()
+_AUTO_RESTART_SUPPRESS_ENV = int(os.environ.get("AUTO_RESTART_SUPPRESS_SECS", "1800"))
+
+
+def _in_auto_restart_window(now: datetime) -> bool:
+    """Return True if now falls within the post-restart suppression window."""
+    try:
+        cfg = load_settings()
+        time_str     = (cfg.get("auto_restart_time") or _AUTO_RESTART_TIME_ENV).strip()
+        suppress_sec = int(cfg.get("auto_restart_suppress_mins",
+                                   _AUTO_RESTART_SUPPRESS_ENV // 60)) * 60
+        t = datetime.strptime(time_str, "%I:%M %p").time()
+        for delta_days in (0, -1):
+            restart_dt = now.replace(
+                hour=t.hour, minute=t.minute, second=0, microsecond=0
+            ) + timedelta(days=delta_days)
+            elapsed = (now - restart_dt).total_seconds()
+            if -120 <= elapsed <= suppress_sec:
+                return True
+        return False
+    except Exception:
+        return False
+
 app = FastAPI(title="YRVI Dashboard API")
 app.add_middleware(
     CORSMiddleware,
@@ -282,15 +309,26 @@ def _watchdog_check() -> None:
                 and _watchdog_state["last_gateway_alert"] is None):
             _watchdog_state["last_gateway_alert"] = now
             host = os.environ.get("IBKR_HOST", "ib_gateway")
-            _send_discord_alert(
-                f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
-                f"(`{host}:{port}`). Gateway may not have logged in or is stuck on a dialog. "
-                f"VNC available on host port 5900.\n"
-                f"🔴 Manual restart required: "
-                f"`docker compose --env-file .env.compose restart ib_gateway`"
-            )
+            if _in_auto_restart_window(now):
+                _send_discord_alert(
+                    f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
+                    f"(`{host}:{port}`). This is likely the scheduled daily restart — "
+                    f"a ✅ recovery message will follow once it's back up. "
+                    f"If it doesn't recover, VNC is available on host port 5900.\n"
+                    f"🔴 Manual restart: "
+                    f"`docker compose --env-file .env.compose restart ib_gateway`"
+                )
+            else:
+                _send_discord_alert(
+                    f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
+                    f"(`{host}:{port}`). Gateway may not have logged in or is stuck on a dialog. "
+                    f"VNC available on host port 5900.\n"
+                    f"🔴 Manual restart required: "
+                    f"`docker compose --env-file .env.compose restart ib_gateway`"
+                )
     else:
-        if _watchdog_state["gateway_down_since"] is not None:
+        if (_watchdog_state["gateway_down_since"] is not None
+                and _watchdog_state["last_gateway_alert"] is not None):
             down_sec = (now - _watchdog_state["gateway_down_since"]).total_seconds()
             _send_discord_alert(
                 f"✅ **YRVI** IB Gateway port is reachable again "
@@ -312,16 +350,28 @@ def _watchdog_check() -> None:
                     and _watchdog_state["last_ibkr_alert"] is None):
                 _watchdog_state["last_ibkr_alert"] = now
                 err = ibkr.get("error") or "unknown error"
-                _send_discord_alert(
-                    f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
-                    f"for {int(down_sec / 60)} min. Error: `{err}`. "
-                    f"Gateway may be frozen on a 2FA or confirmation dialog. "
-                    f"VNC available on host port 5900.\n"
-                    f"🔴 Manual restart required: "
-                    f"`docker compose --env-file .env.compose restart ib_gateway`"
-                )
+                if _in_auto_restart_window(now):
+                    _send_discord_alert(
+                        f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
+                        f"for {int(down_sec / 60)} min (`{err}`). "
+                        f"This is likely the scheduled daily restart — "
+                        f"a ✅ recovery message will follow once it's back up. "
+                        f"If it doesn't recover, VNC is available on host port 5900.\n"
+                        f"🔴 Manual restart: "
+                        f"`docker compose --env-file .env.compose restart ib_gateway`"
+                    )
+                else:
+                    _send_discord_alert(
+                        f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
+                        f"for {int(down_sec / 60)} min. Error: `{err}`. "
+                        f"Gateway may be slow to reconnect or stuck on a login dialog. "
+                        f"VNC available on host port 5900.\n"
+                        f"🔴 Manual restart required: "
+                        f"`docker compose --env-file .env.compose restart ib_gateway`"
+                    )
         else:
-            if _watchdog_state["ibkr_down_since"] is not None:
+            if (_watchdog_state["ibkr_down_since"] is not None
+                    and _watchdog_state["last_ibkr_alert"] is not None):
                 down_sec = (now - _watchdog_state["ibkr_down_since"]).total_seconds()
                 _send_discord_alert(
                     f"✅ **YRVI** IBKR API connection restored "
@@ -1027,9 +1077,11 @@ class SettingsUpdate(BaseModel):
     max_spread_hard_cap:      Optional[float] = None
     dry_run:                  Optional[bool]  = None
     ibkr_port:                Optional[int]   = None
-    discord_webhook_enabled:  Optional[bool]  = None
-    trading_mode:             Optional[str]   = None
-    execution_time:           Optional[str]   = None
+    discord_webhook_enabled:       Optional[bool]  = None
+    trading_mode:                  Optional[str]   = None
+    execution_time:                Optional[str]   = None
+    auto_restart_time:             Optional[str]   = None
+    auto_restart_suppress_mins:    Optional[int]   = None
 
 @app.post("/api/settings")
 def update_settings(body: SettingsUpdate):
@@ -1059,6 +1111,34 @@ def set_timezone(body: TimezoneUpdate):
     current["timezone"] = tz
     save_settings(current)
     return {"timezone": tz}
+
+class GatewayRestartTimeBody(BaseModel):
+    auto_restart_time: str
+
+@app.post("/api/gateway/patch-restart-time")
+def patch_gateway_restart_time(body: GatewayRestartTimeBody):
+    """Patch AutoRestartTime in the running ib_gateway container's IBC config.ini.
+    This takes effect for the CURRENT session only — the env var in docker-compose
+    overrides config.ini again on the next container start."""
+    time_str = body.auto_restart_time.strip()
+    escaped  = time_str.replace("\\", "\\\\").replace("'", r"'\''")
+    cmd = [
+        "docker", "exec", "ib_gateway", "sh", "-c",
+        f"found=; for f in /opt/ibc/config.ini /home/ibgateway/ibc/config.ini /root/ibc/config.ini; do "
+        f"[ -f \"$f\" ] || continue; "
+        f"sed -i 's|^AutoRestartTime=.*|AutoRestartTime={escaped}|' \"$f\" && echo \"patched $f\" && found=1 && break; "
+        f"done; [ -n \"$found\" ] || echo 'no config.ini found'"
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        out    = result.stdout.strip()
+        patched = result.returncode == 0 and out.startswith("patched")
+        return {"patched": patched, "detail": out or result.stderr.strip()}
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="docker exec timed out — is the gateway running?")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 class SecretValueRequest(BaseModel):
     value: str

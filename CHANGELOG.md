@@ -1,3 +1,15 @@
+## [1.22.0] — 2026-05-24
+### Added
+- **IB Gateway settings UI** — new Settings section with a daily auto-restart time picker (7 PM – 2 AM), a restart window slider (10–60 min), and an "Apply to Gateway" button that patches IBC `config.ini` in the running container via `docker exec`
+- `POST /api/gateway/patch-restart-time` — patches `AutoRestartTime` in IBC `config.ini` inside the running gateway container
+- `auto_restart_time` and `auto_restart_suppress_mins` added to `settings.json` schema and `SettingsUpdate` model; settings take effect on the next watchdog poll with no container restart
+- `AUTO_RESTART_TIME` and `AUTO_RESTART_SUPPRESS_SECS` added to `x-python-env` anchor in `docker-compose.yml` so the api container inherits them alongside the gateway
+
+### Fixed
+- **Watchdog alert messages are now context-aware** — failures within the configured restart window say "likely the daily restart — a ✅ recovery message will follow" instead of "manual restart required"; failures outside the window keep the original urgent wording
+- Removed "2FA or confirmation dialog" assumption from IBKR connection-failure alerts — paper accounts have no 2FA; message now says "slow to reconnect or stuck on a login dialog"
+- **Recovery messages now paired with alerts** — `✅ restored` only fires if a prior `🚨` alert was sent for that episode; eliminates phantom recovery messages when the restart window suppresses the outgoing alert
+
 ## [1.18.0] — 2026-05-20
 ### Fixed
 - Upgrade reconnect polling timeout increased from 15s to 120s — Docker image builds take 1-2 minutes before containers restart; 15s was triggering a false "Upgrade problem" error while the build was still running

@@ -12,6 +12,8 @@ x-python-env: &python-env
   IBKR_PORT: ${IBKR_PORT:-4004}
   IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1}
   RENDER_URL: ${RENDER_URL:-https://yourockclub-ledger-sync.onrender.com/api/targets/csp}
+  AUTO_RESTART_TIME: ${AUTO_RESTART_TIME:-11:59 PM}
+  AUTO_RESTART_SUPPRESS_SECS: ${AUTO_RESTART_SUPPRESS_SECS:-1800}
 
 services:
   secrets:

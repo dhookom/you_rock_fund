@@ -18,5 +18,7 @@
   "discord_webhook_enabled": true,
   "trading_mode": "paper",
   "execution_time": "10:00",
-  "timezone": "America/Los_Angeles"
+  "timezone": "America/Los_Angeles",
+  "auto_restart_time": "11:59 PM",
+  "auto_restart_suppress_mins": 30
 }

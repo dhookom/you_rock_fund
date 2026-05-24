@@ -128,8 +128,10 @@ export default function SettingsPage() {
   const [liveMissing, setLiveMissing]     = useState([])
   const [liveChecking, setLiveChecking]   = useState(false)
   const [accountMasked, setAccountMasked] = useState('')
-  const [restarting, setRestarting]       = useState(false)
-  const [restartResult, setRestartResult] = useState(null)
+  const [restarting, setRestarting]         = useState(false)
+  const [restartResult, setRestartResult]   = useState(null)
+  const [patching, setPatching]             = useState(false)
+  const [patchResult, setPatchResult]       = useState(null)
   const [timezone, setTimezone]                 = useState('')
   const [timezoneOriginal, setTimezoneOriginal] = useState('')
   const [tzSaving, setTzSaving]                 = useState(false)
@@ -265,6 +267,24 @@ export default function SettingsPage() {
       showMsg('error', err.response?.data?.detail ?? err.message)
     } finally {
       setSwitching(false)
+    }
+  }
+
+  const patchGateway = async () => {
+    setPatching(true)
+    setPatchResult(null)
+    try {
+      const res = await axios.post('/api/gateway/patch-restart-time', {
+        auto_restart_time: settings.auto_restart_time ?? '11:59 PM',
+      })
+      setPatchResult({ ok: res.data.patched, text: res.data.patched
+        ? `Applied — gateway will restart at ${settings.auto_restart_time} tonight`
+        : `Not applied: ${res.data.detail}`
+      })
+    } catch (err) {
+      setPatchResult({ ok: false, text: err.response?.data?.detail ?? 'Patch failed' })
+    } finally {
+      setPatching(false)
     }
   }
 
@@ -463,6 +483,62 @@ export default function SettingsPage() {
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
               You're in live trading — enable Dry Run above if you want to test without placing real orders.
             </p>
+          )}
+        </div>
+      </Section>
+
+      {/* IB Gateway */}
+      <Section title="IB Gateway" emoji="🔌">
+        <div>
+          <div className="text-gray-700 dark:text-gray-300 text-sm mb-2">⏰ Daily Auto-Restart Time</div>
+          <select
+            value={settings.auto_restart_time ?? '11:59 PM'}
+            onChange={e => { set('auto_restart_time', e.target.value); setPatchResult(null) }}
+            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          >
+            {[
+              '07:00 PM','07:30 PM','08:00 PM','08:30 PM',
+              '09:00 PM','09:30 PM','10:00 PM','10:30 PM',
+              '11:00 PM','11:30 PM','11:59 PM',
+              '12:00 AM','12:30 AM','01:00 AM','01:30 AM','02:00 AM',
+            ].map(t => (
+              <option key={t} value={t}>{t}{t === '11:59 PM' ? ' (default)' : ''}</option>
+            ))}
+          </select>
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
+            IB Gateway restarts at this time each night to keep the session fresh. Choose a time with no trading activity.
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
+          <SliderRow
+            label="Restart Window"
+            value={settings.auto_restart_suppress_mins ?? 30}
+            min={10} max={60} step={5}
+            format={v => `${v} min`}
+            onChange={v => set('auto_restart_suppress_mins', v)}
+            description="How long after the restart time to treat alerts as restart-related — alerts in this window say 'likely the daily restart' instead of 'manual restart required'"
+          />
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
+          <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
+            Alerts always fire, but within the restart window they say <em>"likely the daily restart — recovery message will follow"</em> instead of <em>"manual restart required."</em>{' '}
+            <strong className="text-gray-700 dark:text-gray-400">Apply to Gateway</strong> patches the running container so it restarts at the new time tonight — but this is overwritten on the next container restart. To make it permanent, set{' '}
+            <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">AUTO_RESTART_TIME</code> in your <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">.env.compose</code>.
+          </div>
+          <button
+            onClick={patchGateway}
+            disabled={patching}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-600 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-60 disabled:cursor-wait transition-colors"
+          >
+            <RefreshCw size={11} className={patching ? 'animate-spin' : ''} />
+            {patching ? 'Applying…' : 'Apply to Gateway'}
+          </button>
+          {patchResult && (
+            <div className={`text-xs font-medium ${patchResult.ok ? 'text-green-500' : 'text-red-400'}`}>
+              {patchResult.ok ? '✅' : '❌'} {patchResult.text}
+            </div>
           )}
         </div>
       </Section>
