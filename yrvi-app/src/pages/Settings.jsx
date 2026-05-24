@@ -527,8 +527,9 @@ export default function SettingsPage() {
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
           <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
             Alerts always fire, but within the restart window they say <em>"likely the daily restart — recovery message will follow"</em> instead of <em>"manual restart required."</em>{' '}
-            <strong className="text-gray-700 dark:text-gray-400">Apply to Gateway</strong> patches the running container so it restarts at the new time tonight — but this is overwritten on the next container restart. To make it permanent, set{' '}
-            <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">AUTO_RESTART_TIME</code> in your <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">.env.compose</code>.
+            <strong className="text-gray-700 dark:text-gray-400">Apply to Gateway</strong> queues the new time for the next IBC restart cycle (takes effect tomorrow night). To change it immediately and permanently, set{' '}
+            <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">AUTO_RESTART_TIME</code> in your <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">.env.compose</code>{' '}
+            and run <code className="text-blue-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">docker compose --env-file .env.compose restart ib_gateway</code>.
           </div>
           <button
             onClick={patchGateway}
