@@ -5,6 +5,7 @@ Only active when DISCORD_WEBHOOK_URL is set in .env — silently no-ops otherwis
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
@@ -20,6 +21,10 @@ WEBHOOK_URL_WEEKLY_PLAN = get_secret("discord_webhook_weekly_plan", "DISCORD_WEB
 YTD_FILE      = "ytd_tracker.json"
 PST           = ZoneInfo("America/Los_Angeles")
 ANNUAL_TARGET = 100_000
+
+_version_file = Path(__file__).parent / "VERSION"
+_VERSION = f"v{_version_file.read_text().strip()}" if _version_file.exists() else "unknown"
+_FOOTER  = f"You Rock Volatility Income Fund · {_VERSION}"
 
 COLOR_GREEN  = 0x2ECC71   # yield ≥ 1%
 COLOR_YELLOW = 0xF1C40F   # yield 0.5–1%
@@ -299,7 +304,7 @@ def post_weekly_plan(positions: list):
             {"name": "​",           "value": "Results posted Monday after execution ✅",
              "inline": False},
         ],
-        "footer":    {"text": f"Screener run {run_time}"},
+        "footer":    {"text": f"Screener run {run_time} · {_VERSION}"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})
 
@@ -419,7 +424,7 @@ def post_weekly_results(state: dict, fund_budget: float = 250_000):
                      f"${total_realized:,.0f} realized ({yield_pct:.2f}%)",
         "color":     _yield_color(yield_pct),
         "fields":    fields,
-        "footer":    {"text": "You Rock Volatility Income Fund"},
+        "footer":    {"text": _FOOTER},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})
 
@@ -451,7 +456,7 @@ def post_preview(positions: list, budget: float):
             {"name": "Positions",         "value": str(len(positions)),   "inline": True},
             {"name": "Est. Total Prem.",  "value": f"~${est_total:,.0f}", "inline": True},
         ],
-        "footer":    {"text": "You Rock Volatility Income Fund"},
+        "footer":    {"text": _FOOTER},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})
 
@@ -494,7 +499,7 @@ def post_emergency_share_sale(result: dict):
                 {"name": "Realized P&L", "value": pnl_str,               "inline": True},
                 {"name": "Reason",       "value": reason_str,            "inline": True},
             ],
-            "footer":    {"text": "You Rock Volatility Income Fund — SHARES SOLD"},
+            "footer":    {"text": f"{_FOOTER} — SHARES SOLD"},
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }],
     })
@@ -633,7 +638,7 @@ def post_friday_summary(state: dict, called_away: list, new_assignments: list,
         "description": f"**${grand_total:,.0f} realized**  ({yield_pct:.2f}% yield)",
         "color":       _yield_color(yield_pct),
         "fields":      fields,
-        "footer":      {"text": "You Rock Volatility Income Fund"},
+        "footer":      {"text": _FOOTER},
         "timestamp":   datetime.now(timezone.utc).isoformat(),
     }]})
 
@@ -668,7 +673,7 @@ def post_called_away_alert(called_away: list):
             "value":  "Capital returns to the CSP pool — new positions sized Monday 10:00 AM",
             "inline": False,
         }],
-        "footer":    {"text": "You Rock Volatility Income Fund"},
+        "footer":    {"text": _FOOTER},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})
 
@@ -693,6 +698,6 @@ def post_assignment_alert(new_assignments: list):
             "value":  "Wheel check runs Monday 9:55AM — screener check + 0.20-delta covered calls",
             "inline": False,
         }],
-        "footer":    {"text": "You Rock Volatility Income Fund"},
+        "footer":    {"text": _FOOTER},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})

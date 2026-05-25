@@ -59,7 +59,11 @@ def _discord_alert(message: str) -> None:
         if not webhook_url:
             return
         import requests
-        requests.post(webhook_url, json={"content": message}, timeout=5)
+        from pathlib import Path
+        _vf = Path(__file__).parent / "VERSION"
+        _v  = f"v{_vf.read_text().strip()}" if _vf.exists() else "?"
+        _tag = f"`{_v} · {ACCOUNT}`" if ACCOUNT else f"`{_v}`"
+        requests.post(webhook_url, json={"content": f"{message}\n{_tag}"}, timeout=5)
     except Exception as e:
         log.warning(f"Discord alert failed: {e}")
 
