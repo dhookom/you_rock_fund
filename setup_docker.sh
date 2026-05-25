@@ -153,19 +153,6 @@ secrets_complete() {
         || echo "false"
 }
 
-post_secret() {
-    local name="$1"
-    local value="$2"
-    local code
-    code=$(printf '%s' "$value" \
-        | python3 -c "import json,sys; print(json.dumps({'value': sys.stdin.read()}))" \
-        | curl -s -o /dev/null -w '%{http_code}' \
-            -X POST "$SECRETS_URL/secret/$name" \
-            -H 'Content-Type: application/json' \
-            --data-binary @-)
-    [ "$code" = "200" ]
-}
-
 if [ "$(secrets_complete)" = "true" ]; then
     ok "Secrets already configured"
 else
@@ -176,94 +163,16 @@ else
         *)      info "Open $SECRETS_URL in a browser to enter secrets" ;;
     esac
 
+    printf "  Enter your credentials at ${BLUE}%s${NC} — setup will continue automatically when done.\n" "$SECRETS_URL"
     echo ""
-    printf "  Finish the setup form at ${BLUE}%s${NC}\n" "$SECRETS_URL"
-    printf "  When done, press Enter to continue — or type ${BOLD}cli${NC} and press Enter to enter credentials here instead.\n"
-    printf "\n  > "
-    read -r USER_CHOICE </dev/tty
-    echo ""
-
-    BROWSER_OK=false
-    if [ "$USER_CHOICE" != "cli" ]; then
-        if [ "$(secrets_complete)" = "true" ]; then
-            BROWSER_OK=true
-        else
-            warn "Secrets not yet submitted in the browser — switching to CLI..."
-        fi
-    fi
-
-    if [ "$BROWSER_OK" = true ]; then
-        ok "Secrets configured via browser"
-    else
-
-        prompt_required() {
-            local name="$1"
-            local label="$2"
-            local value confirm
-            while true; do
-                printf "  Enter %s: " "$label"
-                read -rs value </dev/tty
-                echo ""
-                if [ -z "$value" ]; then
-                    printf "  ${RED}❌${NC}  '%s' cannot be empty.\n" "$label"
-                    continue
-                fi
-                printf "  Confirm %s: " "$label"
-                read -rs confirm </dev/tty
-                echo ""
-                if [ "$value" = "$confirm" ]; then
-                    if post_secret "$name" "$value"; then
-                        ok "$label saved"
-                        return 0
-                    else
-                        fail "Failed to save '$label' to secrets container"
-                    fi
-                else
-                    printf "  ${RED}❌${NC}  Values do not match. Please try again.\n"
-                fi
-            done
-        }
-
-        prompt_optional() {
-            local name="$1"
-            local label="$2"
-            local value
-            printf "  %s (press Enter to skip): " "$label"
-            read -rs value </dev/tty
-            echo ""
-            if [ -n "$value" ]; then
-                if post_secret "$name" "$value"; then
-                    ok "$label saved"
-                else
-                    fail "Failed to save '$label' to secrets container"
-                fi
-            else
-                info "$label — skipped"
-            fi
-        }
-
-        echo ""
-        info "Required account info:"
-        prompt_required "account_paper"      "IBKR paper account ID (e.g. DU123456)"
-        prompt_required "tws_userid_paper"   "IBKR paper username"
-
-        echo ""
-        info "Required secrets:"
-        prompt_required "tws_password_paper" "IBKR paper trading password"
-        prompt_required "render_secret"      "Render screener API secret"
-
-        echo ""
-        info "Optional (for live trading only):"
-        prompt_optional "account_live"      "IBKR live account ID"
-        prompt_optional "tws_userid_live"   "IBKR live username"
-        prompt_optional "tws_password_live" "IBKR live trading password"
-
-        echo ""
-        info "Optional secrets:"
-        prompt_optional "vnc_server_password"          "VNC password (default: ibgateway123!test)"
-        prompt_optional "discord_webhook_url"          "Discord webhook URL"
-        prompt_optional "discord_webhook_weekly_plan"  "Discord weekly plan webhook"
-    fi
+    DOTS=0
+    while [ "$(secrets_complete)" != "true" ]; do
+        DOTS=$(( (DOTS % 3) + 1 ))
+        printf "\r  Waiting for secrets%-3s" "$(printf '%0.s.' $(seq 1 $DOTS))"
+        sleep 3
+    done
+    printf "\r%-40s\r" ""
+    ok "Secrets configured"
 fi
 
 # ── Step 3: Validate .env.compose and config ─────────────────
