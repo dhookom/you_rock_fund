@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.19.1-blue)
+![Version](https://img.shields.io/badge/version-1.24.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -129,7 +129,7 @@ Account credentials and passwords are stored encrypted (AES-256-GCM) in a persis
 - **Required:** IBKR paper password, Render screener API secret
 - **Optional:** IBKR live password (only needed for live trading), Discord webhook URL, Discord weekly-plan webhook URL
 
-If the browser flow times out (5 minutes), the script falls back to terminal prompts. You can update any secret later by visiting `http://localhost:8001` directly or via the **Secrets** page in the dashboard.
+Setup polls silently until the browser form is submitted, then auto-proceeds — the browser UI shows a completion banner when all required secrets are saved. You can update any secret later by visiting `http://localhost:8001` directly or via the **Secrets** page in the dashboard.
 
 > **Note:** The `docker/secrets/` directory holds empty placeholder files for the file-based fallback path; it's git-ignored and the real values never live there.
 
@@ -153,7 +153,7 @@ On first run, the script opens `http://localhost:8001` in your browser where you
 - Discord webhooks (optional)
 - Your IBKR live password (optional — only needed if you plan to trade live)
 
-If the browser flow times out, you'll be prompted in the terminal. On subsequent runs, the script detects existing secrets and skips this step.
+Setup polls silently until the form is submitted; the browser shows a completion banner when done, then the script auto-proceeds. On subsequent runs, the script detects existing secrets and skips this step.
 
 #### macOS Setup (Live)
 
@@ -349,7 +349,7 @@ All settings are managed from the dashboard **Settings** page and hot-reload on 
 | Initial Fund Budget | $250,000 | $10K – $2M | Starting capital for CSP deployment. When Compound Weekly is off, this is always the deployment base. |
 | # Positions | 5 | 1 – 10 | Target number of CSP positions to fill each Monday. |
 | Min Position | $10,000 | $5K – $100K | Minimum capital allocated to any single CSP position. |
-| Max Position | $90,000 | $10K – $200K | Maximum capital for any single position. The last position absorbs remaining budget up to this cap. |
+| Max Position | $70,000 | $10K – $200K | Maximum capital for any single position. The last position absorbs remaining budget up to this cap. |
 | Compound Weekly | On | On / Off | When on, uses IBKR net liquidation as the Monday deployment budget so the fund grows as premiums accumulate. Falls back to Initial Fund Budget if IBKR is unreachable. |
 
 ### Screener Filters
@@ -377,6 +377,14 @@ All settings are managed from the dashboard **Settings** page and hot-reload on 
 |---------|---------|---------|-------------|
 | Monday Execution Time | 10:00 AM PST | Any time | When the CSP pipeline fires each Monday. 10:00 AM PST (1:00 PM ET) is recommended for best liquidity and tighter spreads. **Requires a scheduler restart to take effect.** |
 | Dry Run | Off | On / Off | Simulate all orders without placing real trades. Fills are logged as `dry_run`. Useful for testing a new configuration. When in live trading, enable this for extra protection before committing real money. |
+
+### IB Gateway
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| Auto-restart Gateway | On | On / Off | Automatically restart the IB Gateway container if it goes offline outside market hours (9:30 AM – 4:00 PM ET). One attempt per failure episode; hourly alerts resume if the restart fails. |
+| Nightly Restart Time | 11:59 PM | Any time | Scheduled time for the nightly gateway container restart. Use **Apply to Gateway** to push a new time to the running container immediately. |
+| Suppress Restart Window | 30 min | 0 – 120 min | How long before the scheduled restart time to suppress other auto-restart attempts. Prevents a double-restart if the gateway drops just before the nightly cycle. |
 
 ## Order Execution
 
@@ -417,6 +425,9 @@ YRVI can post trade results to a Discord channel automatically. This is entirely
 | Pre-execution preview | Monday 9:50AM | Sized positions with strikes, contracts, estimated premium |
 | Weekly results | Monday ~10:30AM | CSP/CC/stop-loss P&L, week yield %, YTD stats |
 | Assignment alert | Friday 4:15PM | Newly assigned stocks with stop-loss prices |
+| Called-away alert | Friday 4:15PM | CC-covered shares called away at expiry |
+| End-of-week summary | Friday ~4:20PM | Called-away recap, open wheel positions, weekly P&L |
+| Gateway watchdog alert | As needed | Gateway down / restarting / back online notifications |
 
 Results are color-coded: 🟢 green (≥1% yield), 🟡 yellow (0.5–1%), 🔴 red (<0.5%).
 
@@ -426,13 +437,10 @@ YTD stats track total premium collected, weeks traded, avg weekly yield, best/wo
 
 1. In Discord, go to your channel → **Edit Channel → Integrations → Webhooks → New Webhook**
 2. Copy the webhook URL
-3. Add it to your `.env` file:
-   ```env
-   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy
-   ```
+3. Open `http://localhost:8001` (or visit **Secrets** in the dashboard) and paste it into the **Discord Webhook URL** field
 4. Restart the scheduler — Discord posts will begin automatically
 
-No code changes needed. If `DISCORD_WEBHOOK_URL` is absent or blank, all Discord calls are silently skipped.
+No code changes needed. If no webhook is configured, all Discord calls are silently skipped.
 
 ---
 
@@ -532,6 +540,43 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v1.24.0 (May 2026)
+- **Shutdown progress overlay** — after confirming shutdown, the dashboard shows a full-screen overlay while containers stop, then displays "YRVI is offline / restart from Desktop" once the API goes silent; prevents interaction with the dead UI during the shutdown window
+- Setup now polls silently until the browser secrets form is submitted and auto-proceeds — no CLI fallback, no manual Enter prompt; the browser shows a completion banner when done
+- Fix: `OverallBadge` contrast improved in light mode
+- Fix: setup script step headers now use `printf` instead of `echo` for correct ANSI color rendering across all shells
+
+### v1.23.2 (May 2026)
+- Discord trade notifications now include the fund version number and IBKR account identifier
+
+### v1.23.1 (May 2026)
+- Fix: holiday countdown displayed the next Monday instead of next Tuesday when the trading day shifts due to a market holiday
+
+### v1.23.0 (May 2026)
+- **Apply to Gateway** — new button on the IB Gateway settings panel that schedules a container restart with a persistent restart-time override, so watchdog timing changes take effect without manual intervention
+
+### v1.22.0 (May 2026)
+- **Context-aware gateway watchdog alerts** — Discord alerts now include richer context about gateway state; new IB Gateway section in the Settings UI lets members configure watchdog restart timing directly from the dashboard
+
+### v1.21.1 (May 2026)
+- **Friday end-of-week summary** — Discord post sent automatically after the Friday assignment detection run, summarizing called-away shares, open wheel positions, and weekly P&L
+- Fix: Friday summary field layout and called-away wording
+
+### v1.21.0 (May 2026)
+- **Called-away detection** — system detects when CC-covered shares are called away at Friday expiry and sends a Discord alert
+
+### v1.20.1 (May 2026)
+- Fix: non-compound CSP contract count now capped to available capital (was possible to over-allocate in edge cases)
+- Fix: clarified UI note that Max Position is ignored in compound mode
+
+### v1.20.0 (May 2026)
+- **Compound equal-weight position sizing** — in compound mode, capital is divided equally across all active positions rather than being weighted by screener score
+- Max Position cap is skipped in compound mode (equal weighting makes it redundant)
+- **Wheel CC earnings filter toggle** — new Settings toggle to bypass the earnings proximity check when selling covered calls
+
+### v1.19.1 (May 2026)
+- Fix: execution day label showed the wrong day when Monday falls on a market holiday
 
 ### v1.19.0 (May 2026)
 - **Compound Weekly** — when enabled (default on), the Monday pipeline uses IBKR net liquidation as the deployment budget so the fund grows automatically as premiums accumulate; falls back to Initial Fund Budget if IBKR is unreachable
