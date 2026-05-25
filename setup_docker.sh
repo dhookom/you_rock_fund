@@ -178,23 +178,25 @@ else
         *)      info "Open $SECRETS_URL in a browser to enter secrets" ;;
     esac
 
+    echo ""
+    printf "  Finish the setup form at ${BLUE}%s${NC}\n" "$SECRETS_URL"
+    printf "  When done, press Enter to continue — or type ${BOLD}cli${NC} and press Enter to enter credentials here instead.\n"
+    printf "\n  > "
+    read -r USER_CHOICE </dev/tty
+    echo ""
+
     BROWSER_OK=false
-    ELAPSED=0
-    while [ "$ELAPSED" -lt 300 ]; do
+    if [ "$USER_CHOICE" != "cli" ]; then
         if [ "$(secrets_complete)" = "true" ]; then
             BROWSER_OK=true
-            break
+        else
+            warn "Secrets not yet submitted in the browser — switching to CLI..."
         fi
-        printf "\r  Waiting for secrets... (%ds / 300s)" "$ELAPSED"
-        sleep 5
-        ELAPSED=$((ELAPSED + 5))
-    done
-    printf "\r%-60s\r" ""
+    fi
 
     if [ "$BROWSER_OK" = true ]; then
         ok "Secrets configured via browser"
     else
-        warn "Browser setup incomplete — switching to CLI..."
 
         prompt_required() {
             local name="$1"
