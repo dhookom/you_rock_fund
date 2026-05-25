@@ -137,6 +137,7 @@ export default function SettingsPage() {
   const [tzSaving, setTzSaving]                 = useState(false)
   const [showShutdownModal, setShowShutdownModal] = useState(false)
   const [shuttingDown, setShuttingDown]           = useState(false)
+  const [systemOffline, setSystemOffline]         = useState(false)
 
   const { theme, setTheme } = useThemeContext()
 
@@ -187,7 +188,7 @@ export default function SettingsPage() {
 
   const confirmShutdown = async () => {
     setShuttingDown(true)
-    showMsg('success', 'Shutting down…')
+    setShowShutdownModal(false)
     try {
       await axios.post('/api/shutdown', { confirm: 'shutdown' })
     } catch (err) {
@@ -200,7 +201,16 @@ export default function SettingsPage() {
         return
       }
     }
-    setShowShutdownModal(false)
+    // Poll until the API stops responding, then show the offline screen.
+    const checkOffline = async () => {
+      try {
+        await axios.get('/api/status', { timeout: 2000 })
+        setTimeout(checkOffline, 1500)
+      } catch {
+        setSystemOffline(true)
+      }
+    }
+    setTimeout(checkOffline, 2000)
   }
 
   const saveTimezone = async () => {
@@ -690,6 +700,25 @@ export default function SettingsPage() {
           </button>
         </div>
       </Section>
+
+      {/* Shutdown overlay — covers page while stopping, then confirms offline */}
+      {shuttingDown && (
+        <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[100]">
+          {systemOffline ? (
+            <>
+              <Power size={48} className="text-red-400 mb-5" />
+              <h2 className="text-white text-2xl font-bold mb-2">YRVI is offline</h2>
+              <p className="text-gray-400 text-sm">Restart from the YRVI icon on your desktop.</p>
+            </>
+          ) : (
+            <>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-400 mb-5" />
+              <h2 className="text-white text-xl font-semibold mb-1">Shutting down YRVI…</h2>
+              <p className="text-gray-500 text-sm">Stopping all containers</p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Shutdown Modal */}
       {showShutdownModal && (
