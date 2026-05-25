@@ -25,9 +25,9 @@ function StatusIcon({ status }) {
 
 function OverallBadge({ overall }) {
   const styles = {
-    ok:    'bg-green-900/30 border-green-800 text-green-400',
-    warn:  'bg-amber-900/30 border-amber-800 text-amber-400',
-    error: 'bg-red-900/30 border-red-800 text-red-400',
+    ok:    'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400',
+    warn:  'bg-amber-50 border-amber-400 text-amber-800 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-400',
+    error: 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400',
   }
   const labels = { ok: 'All systems go', warn: 'Needs attention', error: 'Action required' }
   return (
