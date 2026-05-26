@@ -1451,12 +1451,24 @@ def version_upgrade():
 
     output_parts: list[str] = []
 
+    # /host_repo is the live host filesystem (bind-mounted in docker-compose.yml).
+    # git pull must run there — the container's /app is a baked snapshot with no .git.
+    host_repo = Path("/host_repo")
+    if not (host_repo / ".git").exists():
+        return {"success": False,
+                "output": (
+                    "Upgrade requires the host repo to be mounted at /host_repo.\n"
+                    "Run manually from a terminal:\n"
+                    "  git pull origin main\n"
+                    "  bash scripts/yrvi-build.sh all --paper"
+                )}
+
     # ── Step 1: git pull ──────────────────────────────────────
     try:
         pull = subprocess.run(
             ["git", "pull", "origin", "main"],
             capture_output=True, text=True, timeout=60,
-            cwd=str(BASE_DIR),
+            cwd=str(host_repo),
         )
         output_parts.append(
             f"$ git pull origin main\n{(pull.stdout + pull.stderr).strip()}"
@@ -1469,9 +1481,10 @@ def version_upgrade():
         return {"success": False, "output": f"git pull failed: {e}"}
 
     # ── Step 2: yrvi-build.sh all --paper ────────────────────
-    # Launched via Popen (non-blocking) so this response returns before
-    # yrvi-build.sh rebuilds and restarts the containers (including this one).
-    build_script = BASE_DIR / "scripts" / "yrvi-build.sh"
+    # Run from /host_repo so docker compose sends updated host files as the
+    # build context. Launched via Popen (non-blocking) so this response returns
+    # before yrvi-build.sh rebuilds and restarts the containers (including this one).
+    build_script = host_repo / "scripts" / "yrvi-build.sh"
     if not build_script.exists():
         output_parts.append(
             "scripts/yrvi-build.sh not found — run manually from terminal"
@@ -1481,7 +1494,7 @@ def version_upgrade():
     try:
         subprocess.Popen(
             ["bash", str(build_script), "all", "--paper"],
-            cwd=str(BASE_DIR),
+            cwd=str(host_repo),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

@@ -85,6 +85,9 @@ services:
       # ":ro" marks the socket file read-only but does NOT restrict
       # Docker API commands — the api has effectively root on the host.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # host_repo gives git pull access to the live host filesystem so upgrades
+      # update real source files (the container's /app is a baked build snapshot).
+      - .:/host_repo
     ports:
       - "127.0.0.1:${YRVI_API_PORT:-8000}:8000"
     healthcheck:
