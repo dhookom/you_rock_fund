@@ -284,6 +284,13 @@ else
             HOST_REPO_PATH=$(docker inspect "$CONTAINER_ID" \
                 --format '{{range .Mounts}}{{if eq .Destination "/host_repo"}}{{.Source}}{{end}}{{end}}' \
                 2>/dev/null || true)
+            # On Windows, Docker Desktop may return a Windows-style path (C:\Users\...).
+            # Normalise it to a Unix path (/c/Users/...) so it works as a volume mount.
+            if echo "$HOST_REPO_PATH" | grep -qE '^[A-Za-z]:\\'; then
+                DRIVE=$(echo "$HOST_REPO_PATH" | cut -c1 | tr 'A-Z' 'a-z')
+                REST=$(echo "$HOST_REPO_PATH" | cut -c3- | tr '\\' '/')
+                HOST_REPO_PATH="/${DRIVE}/${REST}"
+            fi
             if [ -z "$HOST_REPO_PATH" ]; then
                 warn "Could not resolve /host_repo host path — restart api manually"
             else
