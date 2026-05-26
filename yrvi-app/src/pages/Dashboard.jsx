@@ -195,7 +195,7 @@ export default function Dashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-500 text-xs border-b border-gray-200 dark:border-gray-800">
-                    {['Instrument', 'Position', 'Market Value', 'Avg Price', 'Unrealized P&L', 'Delta', 'Buffer %', 'Prem/Contract', 'Total Premium'].map(h => (
+                    {['Instrument', 'Position', 'Market Value', 'Avg Price', 'Unrealized P&L', 'Entry δ', 'Buffer %', 'Prem/Contract', 'Total Premium'].map(h => (
                       <th key={h} className={`${h === 'Instrument' ? 'text-left' : 'text-right'} px-4 py-3`}>{h}</th>
                     ))}
                   </tr>

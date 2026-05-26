@@ -151,6 +151,7 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
         strike      = pos["strike"]     if pos else None
         screener_px = pos["premium"]    if pos else None   # per share
         buffer_pct  = pos["buffer_pct"] if pos else None
+        plan_delta  = pos["delta"]      if pos else None
 
         if status in ("filled", "dry_run", "partial_fill") and fill_price is not None:
             strike_str   = f"{_fmt_strike(strike)} strike" if strike else "? strike"
@@ -159,14 +160,23 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
             otype_str    = f" via {order_type}" if order_type and order_type != "limit_mid" else ""
             prem_str     = f"${prem_coll:,.0f}"
             buf_str      = f"{buffer_pct:.1f}% buffer" if buffer_pct is not None else ""
+            exec_delta   = ex.get("delta_at_entry")
+            if exec_delta is not None and plan_delta is not None:
+                delta_str = f"δ{abs(plan_delta):.2f}→{abs(exec_delta):.2f}"
+            elif exec_delta is not None:
+                delta_str = f"δ{abs(exec_delta):.2f}"
+            else:
+                delta_str = ""
 
             parts = [
                 f"{emoji} **{ticker}**",
                 f"{strike_str}",
                 f"{contracts} contracts",
                 f"{fill_str} {screener_str}{otype_str}".strip(),
-                prem_str,
             ]
+            if delta_str:
+                parts.append(delta_str)
+            parts.append(prem_str)
             if buf_str:
                 parts.append(buf_str)
             lines.append("  |  ".join(parts))

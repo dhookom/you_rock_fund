@@ -1,3 +1,13 @@
+## [2.2.7] — 2026-05-26
+### Fixed
+- **Strike upward adjustment when stock rallies** — `verify_and_adjust_strike` now handles both directions. Previously it only scanned *downward* when a stock fell and delta exceeded the 0.21 ceiling. If a stock rallied between Saturday and Monday (as with BE this week), the screener strike's delta could drop far below target (e.g., 0.13) and the system would execute there anyway. Now a `MIN_DELTA = 0.15` floor triggers an upward scan: the system walks up the option chain to find the highest strike still within the 0.21 cap, maximising premium while staying within risk limits.
+
+### Added
+- **Delta shown in Discord execution results** — each filled trade now displays the screener (planned) delta alongside the execution delta in `δplan→actual` format (e.g., `δ0.20→0.13`). Makes it easy to spot drift between Saturday screener and Monday open. The `delta_at_entry` field is now written into `state.json` executions (it was previously only in `trade_log.json`).
+
+### Changed
+- **Dashboard "Delta" column renamed to "Entry δ"** — clarifies that the value shown is the Greek delta of the option at entry time, not a plan-vs-actual price difference.
+
 ## [1.23.0] — 2026-05-24
 ### Changed
 - **Apply to Gateway now restarts the container immediately** — writes the new restart time to a shared volume file (`/data/gw_auto_restart_time`), then issues `docker restart ib_gateway`; gateway entrypoint reads the override on every startup so the change persists across future restarts without editing `.env.compose`

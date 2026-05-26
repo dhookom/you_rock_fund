@@ -23,6 +23,7 @@ MIN_BID_YIELD_PCT   = 0.01  # fallback default — bid yield threshold to procee
 MAX_SPREAD_HARD_CAP = 0.50  # fallback default — spread above this is always skipped
 MIN_OPEN_INTEREST   = 100
 MAX_DELTA           = 0.21  # hard ceiling — never sell a CSP with abs(delta) above this
+MIN_DELTA           = 0.15  # floor — if live delta drops below this, scan upward for a better strike
 MID_WAIT_SECS       = 120
 BID_WAIT_SECS       = 120
 MARKET_WAIT_SECS    = 60    # total polling window for market orders
@@ -116,10 +117,12 @@ def verify_and_adjust_strike(
         expiry_str: str, screener_delta: float,
 ) -> tuple | None:
     """
-    Check live delta for screener_strike at execution time.
+    Check live delta for screener_strike at execution time and adjust if needed.
 
-    If abs(delta) > MAX_DELTA (stock moved since Saturday): scan the option chain
-    downward for the nearest strike with delta ≤ MAX_DELTA and use that instead.
+    - If abs(delta) > MAX_DELTA (stock fell since Saturday): scan downward for nearest
+      strike with delta ≤ MAX_DELTA.
+    - If abs(delta) < MIN_DELTA (stock rose since Saturday): scan upward for highest
+      strike still within delta ≤ MAX_DELTA (maximises premium within the safe zone).
 
     Returns (qualified_contract, final_strike, orig_delta, final_delta, was_adjusted)
     or None if qualification fails or no valid strike is found.
@@ -147,15 +150,11 @@ def verify_and_adjust_strike(
 
     orig_delta = live_delta
 
-    if abs(live_delta) <= MAX_DELTA:
-        log.info(f"  ✅ {ticker} delta OK: {live_delta:.3f} ≤ {MAX_DELTA} "
-                 f"at ${screener_strike:.2f}")
+    if MIN_DELTA <= abs(live_delta) <= MAX_DELTA:
+        log.info(f"  ✅ {ticker} delta OK: {live_delta:.3f} at ${screener_strike:.2f}")
         return c, screener_strike, orig_delta, live_delta, False
 
-    log.warning(f"  ⚠️  {ticker} ${screener_strike:.2f} delta {live_delta:.3f} > {MAX_DELTA} "
-                f"— scanning chain for adjusted strike")
-
-    # Get option chain strikes for this expiry
+    # Need to scan the chain — fetch once and reuse for both directions
     try:
         stk = Stock(ticker, "SMART", "USD")
         stk_q = ib.qualifyContracts(stk)
@@ -170,37 +169,60 @@ def verify_and_adjust_strike(
     chains = ib.reqSecDefOptParams(ticker, "", "STK", und_con_id)
     ib.sleep(1)
 
-    candidates = []
-    for ch in chains:
-        if expiry in (ch.expirations or []):
-            candidates.extend(s for s in ch.strikes if s < screener_strike)
-
-    if not candidates:
-        log.error(f"  ❌ {ticker} — no lower strikes in chain for {expiry}")
+    def _scan_strikes(candidates: list, label: str) -> tuple | None:
+        for alt_strike in candidates:
+            alt_c = Option(ticker, expiry, alt_strike, "P", "SMART", currency="USD")
+            try:
+                alt_q = ib.qualifyContracts(alt_c)
+                if not alt_q:
+                    continue
+                alt_c = alt_q[0]
+            except Exception:
+                continue
+            alt_delta = _get_delta_for_contract(ib, alt_c)
+            if alt_delta is None:
+                continue
+            if abs(alt_delta) <= MAX_DELTA:
+                log.warning(f"  {label} {ticker} strike adjusted ${screener_strike:.2f} → "
+                            f"${alt_strike:.2f} (delta {orig_delta:.3f} → {alt_delta:.3f})")
+                return alt_c, alt_strike, orig_delta, alt_delta, True
         return None
 
-    # Scan from closest strike downward; return first that satisfies delta ≤ MAX_DELTA
-    for alt_strike in sorted(set(candidates), reverse=True)[:10]:
-        alt_c = Option(ticker, expiry, alt_strike, "P", "SMART", currency="USD")
-        try:
-            alt_q = ib.qualifyContracts(alt_c)
-            if not alt_q:
-                continue
-            alt_c = alt_q[0]
-        except Exception:
-            continue
+    if abs(live_delta) > MAX_DELTA:
+        # Stock fell — scan downward for first strike with delta ≤ MAX_DELTA
+        log.warning(f"  ⚠️  {ticker} ${screener_strike:.2f} delta {live_delta:.3f} > {MAX_DELTA} "
+                    f"— scanning chain downward")
+        below = []
+        for ch in chains:
+            if expiry in (ch.expirations or []):
+                below.extend(s for s in ch.strikes if s < screener_strike)
+        if not below:
+            log.error(f"  ❌ {ticker} — no lower strikes in chain for {expiry}")
+            return None
+        result = _scan_strikes(sorted(set(below), reverse=True)[:10], "⬇️ ")
+        if result is None:
+            log.error(f"  ❌ {ticker} — no valid strike found with delta ≤ {MAX_DELTA} — skipping")
+        return result
 
-        alt_delta = _get_delta_for_contract(ib, alt_c)
-        if alt_delta is None:
-            continue
-
-        if abs(alt_delta) <= MAX_DELTA:
-            log.warning(f"  ⚠️  {ticker} strike adjusted ${screener_strike:.2f} → ${alt_strike:.2f} "
-                        f"(delta {orig_delta:.3f} → {alt_delta:.3f})")
-            return alt_c, alt_strike, orig_delta, alt_delta, True
-
-    log.error(f"  ❌ {ticker} — no valid strike found with delta ≤ {MAX_DELTA} — skipping")
-    return None
+    # abs(live_delta) < MIN_DELTA — stock rose, delta too low
+    # Scan upward: take 15 closest strikes above screener, scan from highest to lowest
+    # to find the highest strike still within the delta cap (maximises premium)
+    log.warning(f"  ⚠️  {ticker} ${screener_strike:.2f} delta {live_delta:.3f} < {MIN_DELTA} "
+                f"— scanning chain upward for better delta")
+    above = []
+    for ch in chains:
+        if expiry in (ch.expirations or []):
+            above.extend(s for s in ch.strikes if s > screener_strike)
+    if not above:
+        log.warning(f"  ⚠️  {ticker} — no higher strikes in chain; using screener strike as-is")
+        return c, screener_strike, orig_delta, live_delta, False
+    # 15 closest above screener, then scan highest-first to find best delta within cap
+    closest_above = sorted(sorted(set(above))[:15], reverse=True)
+    result = _scan_strikes(closest_above, "⬆️ ")
+    if result is None:
+        log.warning(f"  ⚠️  {ticker} — no higher strike improves delta; using screener strike as-is")
+        return c, screener_strike, orig_delta, live_delta, False
+    return result
 
 
 def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
@@ -608,6 +630,7 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
                 break
             continue
 
+        result["delta_at_entry"] = round(final_delta, 4) if final_delta is not None else None
         results.append(result)
 
         if result["status"] in ("filled", "dry_run", "partial_fill"):
