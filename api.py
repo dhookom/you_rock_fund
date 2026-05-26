@@ -1421,8 +1421,9 @@ def version_check():
     version_file = BASE_DIR / "VERSION"
     current = version_file.read_text().strip() if version_file.exists() else "unknown"
     try:
-        import requests as req
-        r = req.get(_GITHUB_VERSION_URL, timeout=5)
+        import requests as req, time as _time
+        r = req.get(_GITHUB_VERSION_URL, params={"_": int(_time.time())},
+                    headers={"Cache-Control": "no-cache"}, timeout=5)
         r.raise_for_status()
         latest = r.text.strip()
         def parse(v): return [int(x) for x in v.lstrip('v').split('.')]
@@ -1439,8 +1440,9 @@ def version_upgrade():
 
     # Confirm there is actually an update to apply
     try:
-        import requests as req
-        r = req.get(_GITHUB_VERSION_URL, timeout=5)
+        import requests as req, time as _time
+        r = req.get(_GITHUB_VERSION_URL, params={"_": int(_time.time())},
+                    headers={"Cache-Control": "no-cache"}, timeout=5)
         r.raise_for_status()
         latest = r.text.strip()
     except Exception:
