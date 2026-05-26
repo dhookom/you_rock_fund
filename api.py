@@ -1425,7 +1425,9 @@ def version_check():
         r = req.get(_GITHUB_VERSION_URL, timeout=5)
         r.raise_for_status()
         latest = r.text.strip()
-        return {"current": current, "latest": latest, "up_to_date": current == latest}
+        def parse(v): return [int(x) for x in v.lstrip('v').split('.')]
+        up_to_date = parse(current) >= parse(latest)
+        return {"current": current, "latest": latest, "up_to_date": up_to_date}
     except Exception:
         return {"current": current, "latest": None, "up_to_date": None, "error": "unavailable"}
 
