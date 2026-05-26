@@ -107,72 +107,55 @@ export default function StatusBar() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }
 
-  function startPhase2(baseOutput) {
+  // Poll /api/version/check until the running version matches expectedVersion.
+  // docker compose rolling restarts keep the old container alive until the new
+  // one is ready, so waiting for /health to go dark is unreliable — version
+  // comparison is the definitive signal.
+  function startReconnectPolling(baseOutput, expectedVersion) {
     setUpgradePhase('waiting_up')
     let elapsed = 0
     pollRef.current = setInterval(() => {
-      elapsed += 2000
-      axios.get('/api/health', { timeout: 1500 })
-        .then(() => {
-          // /health responded — we're back online
-          stopPoll()
-          setUpgradePhase('done')
-          setTimeout(() => window.location.reload(), 2000)
-        })
-        .catch(() => {
-          if (elapsed >= 60000) {
+      elapsed += 3000
+      if (elapsed > 300000) {
+        stopPoll()
+        setUpgradePhase('error')
+        setUpgradeOutput(baseOutput +
+          '\n\n⚠️  Still running after 5 minutes — check Docker logs:\n  docker compose --env-file .env.compose logs --tail=50 api')
+        return
+      }
+      axios.get('/api/version/check', { timeout: 2000 })
+        .then(r => {
+          if (r.data?.current && r.data.current === expectedVersion) {
             stopPoll()
-            setUpgradePhase('error')
-            setUpgradeOutput(baseOutput +
-              '\n\n❌ Containers taking longer than expected — check Docker or run:\nbash scripts/yrvi-build.sh all --paper')
+            setUpgradePhase('done')
+            setTimeout(() => window.location.reload(), 2000)
           }
         })
-    }, 2000)
-  }
-
-  function startReconnectPolling(baseOutput) {
-    // Phase 1: wait for /health to go dark (confirms containers are restarting)
-    setUpgradePhase('waiting_down')
-    let elapsed = 0
-    pollRef.current = setInterval(() => {
-      elapsed += 2000
-      axios.get('/api/health', { timeout: 1500 })
-        .then(() => {
-          if (elapsed >= 120000) {
-            // Still up after 2 min — something is likely wrong
-            stopPoll()
-            setUpgradePhase('error')
-            setUpgradeOutput(baseOutput +
-              '\n\n⚠️  Still running after 2 minutes — the upgrade may still be in progress.\nCheck Docker logs or refresh when done:\n  docker compose --env-file .env.compose logs --tail=50 api')
-          }
-          // else still up, keep waiting — build takes time before containers restart
-        })
         .catch(() => {
-          // /health went away — containers going down; start phase 2
-          stopPoll()
-          startPhase2(baseOutput)
+          // API restarting — keep polling
         })
-    }, 2000)
+    }, 3000)
   }
 
   // ── Upgrade: call API endpoint, then poll for reconnect ──────
   async function handleUpgrade() {
+    const expectedVersion = versionInfo?.latest
     setShowConfirm(false)
-    setUpgradePhase('waiting_down')
+    setUpgradePhase('waiting_up')
     setUpgradeOutput('Pulling latest code and rebuilding containers…')
     try {
       const res = await axios.post('/api/version/upgrade', {}, { timeout: 90000 })
       const { success, output } = res.data
       setUpgradeOutput(output || '')
       if (success) {
-        startReconnectPolling(output || '')
+        startReconnectPolling(output || '', expectedVersion)
       } else {
         setUpgradePhase('error')
       }
     } catch (err) {
       // API going dark mid-request means containers are already rebuilding — poll for restart
       if (!err.response) {
-        startReconnectPolling('')
+        startReconnectPolling('', expectedVersion)
       } else {
         setUpgradePhase('error')
         setUpgradeOutput(err.response?.data?.detail ?? err.message ?? 'Upgrade request failed')
@@ -194,13 +177,12 @@ export default function StatusBar() {
   const diff      = vBehind ? versionDiff(versionInfo.current, versionInfo.latest) : null
   const pillColor = vUp ? 'green' : vBehind && diff === 'patch' ? 'yellow' : vBehind ? 'red' : 'gray'
 
-  const canCancel = upgradePhase === 'waiting_down' || upgradePhase === 'waiting_up'
+  const canCancel = upgradePhase === 'waiting_up'
 
   const upgradeModalPhaseLabel = {
-    waiting_down: 'Building & restarting — this takes 1–2 minutes…',
-    waiting_up:   'Containers restarting — almost there…',
-    done:         '✅ Back online! Refreshing...',
-    error:        '⚠️ Taking longer than expected',
+    waiting_up: 'Building & restarting — this takes 1–2 minutes…',
+    done:       '✅ Back online! Refreshing...',
+    error:      '⚠️ Taking longer than expected',
   }
 
   return (
