@@ -143,7 +143,7 @@ export default function StatusBar() {
             stopPoll()
             setUpgradePhase('error')
             setUpgradeOutput(baseOutput +
-              '\n\n⚠️  Still running after 2 minutes — the upgrade may still be in progress in Terminal. Check the Terminal window and refresh this page when done.')
+              '\n\n⚠️  Still running after 2 minutes — the upgrade may still be in progress.\nCheck Docker logs or refresh when done:\n  docker compose --env-file .env.compose logs --tail=50 api')
           }
           // else still up, keep waiting — build takes time before containers restart
         })
@@ -155,13 +155,29 @@ export default function StatusBar() {
     }, 2000)
   }
 
-  // ── Upgrade: trigger yrvi:// URL scheme, then poll for reconnect ──
-  function handleUpgrade() {
+  // ── Upgrade: call API endpoint, then poll for reconnect ──────
+  async function handleUpgrade() {
     setShowConfirm(false)
-    const initMsg = 'Opening Terminal to run upgrade...\nThe dashboard will automatically reconnect when complete.'
-    setUpgradeOutput(initMsg)
-    window.location.href = 'yrvi://upgrade'
-    startReconnectPolling(initMsg)
+    setUpgradePhase('waiting_down')
+    setUpgradeOutput('Pulling latest code and rebuilding containers…')
+    try {
+      const res = await axios.post('/api/version/upgrade', {}, { timeout: 90000 })
+      const { success, output } = res.data
+      setUpgradeOutput(output || '')
+      if (success) {
+        startReconnectPolling(output || '')
+      } else {
+        setUpgradePhase('error')
+      }
+    } catch (err) {
+      // API going dark mid-request means containers are already rebuilding — poll for restart
+      if (!err.response) {
+        startReconnectPolling('')
+      } else {
+        setUpgradePhase('error')
+        setUpgradeOutput(err.response?.data?.detail ?? err.message ?? 'Upgrade request failed')
+      }
+    }
   }
 
   function closeUpgrade() {
@@ -323,7 +339,7 @@ export default function StatusBar() {
           <div className="bg-white dark:bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl border border-gray-200 dark:border-gray-700">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Upgrade YRVI?</h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-              This will open Terminal and run the upgrade script (yrvi-upgrade.command).
+              This will pull the latest code and rebuild the containers.
               The dashboard will automatically reconnect when complete. Continue?
             </p>
             <p className="text-sm font-mono text-gray-400 dark:text-gray-500 mb-6">
