@@ -296,9 +296,8 @@ else
                 docker run --rm -d \
                     --name yrvi-api-restarter \
                     -v /var/run/docker.sock:/var/run/docker.sock \
-                    -v "${HOST_REPO_PATH}":/workspace \
+                    -v "${HOST_REPO_PATH}":"${HOST_REPO_PATH}" \
                     -e "HOST_PROJ=${HOST_REPO_PATH}" \
-                    -w /workspace \
                     --entrypoint "" \
                     yrvi-api:local \
                     bash -c 'sleep 2 && docker compose --project-directory "$HOST_PROJ" --env-file "$HOST_PROJ/.env.compose" up -d --no-deps --force-recreate api'
