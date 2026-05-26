@@ -301,7 +301,7 @@ else
                     -w /workspace \
                     --entrypoint "" \
                     yrvi-api:local \
-                    bash -c 'sleep 2 && docker compose --project-directory "$HOST_PROJ" --env-file "$HOST_PROJ/.env.compose" up -d --no-deps api'
+                    bash -c 'sleep 2 && docker compose --project-directory "$HOST_PROJ" --env-file "$HOST_PROJ/.env.compose" up -d --no-deps --force-recreate api'
                 ok "api restart handed off to sidecar — will complete in ~5s"
             fi
         else
