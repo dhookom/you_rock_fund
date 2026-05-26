@@ -278,16 +278,26 @@ else
         # process before the new container is created. Instead, spawn an independent
         # sidecar container that is outside the api cgroup and survives the restart.
         if [ -f "/.dockerenv" ]; then
-            docker rm -f yrvi-api-restarter 2>/dev/null || true
-            docker run --rm -d \
-                --name yrvi-api-restarter \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v "$(pwd)":/workspace \
-                -w /workspace \
-                --entrypoint "" \
-                yrvi-api:local \
-                bash -c "sleep 2 && docker compose --env-file .env.compose up -d --no-deps api"
-            ok "api restart handed off to sidecar — will complete in ~5s"
+            # /host_repo is the container-internal path. For "docker run -v" we need
+            # the real host path — find it by inspecting this container's own mounts.
+            CONTAINER_ID=$(hostname)
+            HOST_REPO_PATH=$(docker inspect "$CONTAINER_ID" \
+                --format '{{range .Mounts}}{{if eq .Destination "/host_repo"}}{{.Source}}{{end}}{{end}}' \
+                2>/dev/null || true)
+            if [ -z "$HOST_REPO_PATH" ]; then
+                warn "Could not resolve /host_repo host path — restart api manually"
+            else
+                docker rm -f yrvi-api-restarter 2>/dev/null || true
+                docker run --rm -d \
+                    --name yrvi-api-restarter \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v "${HOST_REPO_PATH}":/workspace \
+                    -w /workspace \
+                    --entrypoint "" \
+                    yrvi-api:local \
+                    bash -c "sleep 2 && docker compose --env-file .env.compose up -d --no-deps api"
+                ok "api restart handed off to sidecar — will complete in ~5s"
+            fi
         else
             docker compose --env-file .env.compose up -d --no-deps api
         fi
