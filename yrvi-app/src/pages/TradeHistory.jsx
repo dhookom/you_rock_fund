@@ -204,7 +204,7 @@ export default function TradeHistory() {
                 <tr key={i} className="border-b border-gray-100 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
                   <td className="px-5 py-3 text-gray-700 dark:text-gray-300">{fmtDate(w.week_start + 'T00:00:00')}</td>
                   <td className="px-5 py-3 text-right text-green-400 font-medium">
-                    ${(w.realized ?? 0).toLocaleString()}
+                    ${(w.total_realized ?? w.realized ?? 0).toLocaleString()}
                   </td>
                   <td className={`px-5 py-3 text-right font-medium ${
                     (w.yield_pct ?? 0) >= 1 ? 'text-green-400'
