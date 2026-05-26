@@ -256,14 +256,25 @@ echo "────────────────────────�
 
 if [ "$DRY_RUN" = true ]; then
     if [ "$CONTAINER" = "all" ]; then
-        info "Would run: docker compose --env-file .env.compose up -d --build"
+        info "Would run: docker compose --env-file .env.compose build"
+        info "Would run: docker compose --env-file .env.compose up -d --no-deps ib_gateway secrets scheduler web"
+        info "Would run: docker compose --env-file .env.compose up -d --no-deps api"
     else
         info "Would run: docker compose --env-file .env.compose up -d --build $CONTAINER"
     fi
 else
     info "Building and restarting ${CONTAINER}..."
     if [ "$CONTAINER" = "all" ]; then
-        docker compose --env-file .env.compose up -d --build
+        # Phase 1: build all images (no container changes yet)
+        docker compose --env-file .env.compose build
+        # Phase 2: restart every service except api first. When this script runs
+        # inside the api container (upgrade button), docker compose would kill
+        # this process when it recreates the api container — doing api last means
+        # all other services are already updated before that happens.
+        docker compose --env-file .env.compose up -d --no-deps ib_gateway secrets scheduler web
+        # Phase 3: api last — if we're inside the api container this kills us, but
+        # that's fine: the new api starts automatically and the UI polls for the new version.
+        docker compose --env-file .env.compose up -d --no-deps api
     else
         docker compose --env-file .env.compose up -d --build "$CONTAINER"
         # Re-query after rebuild — container ID changes after docker compose replaces the container
