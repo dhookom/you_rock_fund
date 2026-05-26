@@ -272,9 +272,25 @@ else
         # this process when it recreates the api container — doing api last means
         # all other services are already updated before that happens.
         docker compose --env-file .env.compose up -d --no-deps ib_gateway secrets scheduler web
-        # Phase 3: api last — if we're inside the api container this kills us, but
-        # that's fine: the new api starts automatically and the UI polls for the new version.
-        docker compose --env-file .env.compose up -d --no-deps api
+        # Phase 3: restart api.
+        # When this script runs inside the api container (upgrade button), calling
+        # "docker compose up api" would stop the old api container — killing this
+        # process before the new container is created. Instead, spawn an independent
+        # sidecar container that is outside the api cgroup and survives the restart.
+        if [ -f "/.dockerenv" ]; then
+            docker rm -f yrvi-api-restarter 2>/dev/null || true
+            docker run --rm -d \
+                --name yrvi-api-restarter \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v "$(pwd)":/workspace \
+                -w /workspace \
+                --entrypoint "" \
+                yrvi-api:local \
+                bash -c "sleep 2 && docker compose --env-file .env.compose up -d --no-deps api"
+            ok "api restart handed off to sidecar — will complete in ~5s"
+        else
+            docker compose --env-file .env.compose up -d --no-deps api
+        fi
     else
         docker compose --env-file .env.compose up -d --build "$CONTAINER"
         # Re-query after rebuild — container ID changes after docker compose replaces the container
