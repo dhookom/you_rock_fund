@@ -112,6 +112,25 @@ def _get_delta_for_contract(ib: IB, contract) -> float | None:
     return None
 
 
+def _get_stock_price(ib: IB, ticker: str) -> float | None:
+    """Return the current underlying stock price using delayed data. Used to snapshot price at fill."""
+    try:
+        stk = Stock(ticker, "SMART", "USD")
+        stk_q = ib.qualifyContracts(stk)
+        if not stk_q:
+            return None
+        tkr = ib.reqMktData(stk_q[0], snapshot=False)
+        ib.sleep(3)
+        ib.cancelMktData(stk_q[0])
+        ib.sleep(0.5)
+        for price in (tkr.last, tkr.close, tkr.bid, tkr.ask):
+            if price is not None and not is_nan(price) and price > 0:
+                return float(price)
+    except Exception as e:
+        log.warning(f"  ⚠️  Could not fetch stock price for {ticker}: {e}")
+    return None
+
+
 def verify_and_adjust_strike(
         ib: IB, ticker: str, screener_strike: float,
         expiry_str: str, screener_delta: float,
@@ -351,7 +370,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
         "status": "unfilled", "fill_price": None,
         "order_type": None, "premium_collected": 0,
         "simulated": mkt.get("simulated", False),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
     if DRY_RUN:
@@ -363,7 +382,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
             "fill_price": mkt["mid"],
             "order_type": "limit_mid",
             "premium_collected": round(contracts * mkt["mid"] * 100, 2),
-            "exec_timestamp": datetime.now().isoformat()
+            "exec_timestamp": datetime.now(timezone.utc).isoformat()
         })
         return result
 
@@ -391,7 +410,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
                 "status": "filled", "fill_price": fill,
                 "order_type": label,
                 "premium_collected": round(contracts * fill * 100, 2),
-                "exec_timestamp": datetime.now().isoformat()
+                "exec_timestamp": datetime.now(timezone.utc).isoformat()
             })
             return True
         log.info(f"  ⏳ {label} unfilled — escalating...")
@@ -419,7 +438,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
                 "status": "filled", "fill_price": fill,
                 "order_type": f"{label}_fok",
                 "premium_collected": round(filled_qty * fill * 100, 2),
-                "exec_timestamp": datetime.now().isoformat()
+                "exec_timestamp": datetime.now(timezone.utc).isoformat()
             })
             return True
         log.info(f"  ⏳ {label} (FOK) did not fill (status: {final_status})")
@@ -470,7 +489,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
                 "fill_price": fill,
                 "order_type": "market",
                 "premium_collected": round(filled_qty * fill * 100, 2),
-                "exec_timestamp": datetime.now().isoformat()
+                "exec_timestamp": datetime.now(timezone.utc).isoformat()
             })
             return result
 
@@ -494,7 +513,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
             "fill_price": fill,
             "order_type": "market",
             "premium_collected": round(final_qty * fill * 100, 2),
-            "exec_timestamp": datetime.now().isoformat()
+            "exec_timestamp": datetime.now(timezone.utc).isoformat()
         })
     else:
         log.error(f"  ❌ Could not fill {ticker} — manual review needed")
@@ -636,8 +655,10 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
         if result["status"] in ("filled", "dry_run", "partial_fill"):
             filled_count     += 1
             capital_deployed += pos["capital_used"]
-            # Capture execution metadata for dashboard enrichment
-            stock_price = pos.get("latest_price")
+            # Snapshot live stock price at fill for accurate buffer/price in the dashboard
+            live_price  = _get_stock_price(ib, ticker)
+            stock_price = live_price if live_price is not None else pos.get("latest_price")
+            result["stock_price_at_entry"] = stock_price
             fill_price  = result.get("fill_price")
             if result["status"] == "partial_fill" and fill_price:
                 filled_qty = round(result.get("premium_collected", 0) / fill_price / 100)
@@ -651,6 +672,7 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
                     "right":                "P",
                     "entry_date":           result.get("timestamp") or datetime.now(timezone.utc).isoformat(),
                     "delta_at_entry":       round(final_delta, 4) if final_delta is not None else None,
+                    "stock_price_at_entry": stock_price,
                     "buffer_pct_at_entry":  round(((stock_price - strike) / stock_price) * 100, 2) if stock_price else None,
                     "premium_per_contract": fill_price,
                     "contracts":            filled_qty,

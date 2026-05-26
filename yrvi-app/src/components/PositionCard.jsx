@@ -16,15 +16,16 @@ export default function PositionCard({ position: p }) {
     : skip ? 'bg-yellow-900/50 text-yellow-400 border-yellow-800'
     : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
 
-  const bufPct = typeof p.buffer_pct === 'number' ? p.buffer_pct : 0
-  const bufColor = bufPct >= 10 ? 'text-green-400' : bufPct >= 5 ? 'text-yellow-400' : 'text-red-400'
-
   const slip = p.fill_price != null && p.premium != null
     ? (p.fill_price - p.premium).toFixed(2)
     : null
 
-  const displayYield = ok && p.fill_yield_pct != null ? p.fill_yield_pct : p.yield_pct
-  const yieldLabel   = ok && p.fill_yield_pct != null ? 'Act. Yield' : 'Yield'
+  const displayYield  = ok && p.fill_yield_pct != null ? p.fill_yield_pct : p.yield_pct
+  const yieldLabel    = ok && p.fill_yield_pct != null ? 'Act. Yield' : 'Yield'
+  const displayPrice  = p.stock_price_at_entry ?? p.latest_price
+  const displayBuf    = p.buffer_pct_at_entry  ?? p.buffer_pct
+  const bufPctDisplay = typeof displayBuf === 'number' ? displayBuf : 0
+  const bufColor2     = bufPctDisplay >= 10 ? 'text-green-400' : bufPctDisplay >= 5 ? 'text-yellow-400' : 'text-red-400'
 
   const statusLabel = (p.status || 'unknown').replace(/_/g, ' ')
 
@@ -53,8 +54,8 @@ export default function PositionCard({ position: p }) {
         {[
           { label: 'Strike',    value: `$${p.strike}` },
           { label: 'Contracts', value: p.contracts },
-          { label: 'Buffer',    value: `${bufPct.toFixed(1)}%`, className: bufColor },
-          { label: 'Price',     value: `$${p.latest_price?.toFixed(2) ?? '—'}` },
+          { label: 'Buffer',    value: `${bufPctDisplay.toFixed(1)}%`, className: bufColor2 },
+          { label: 'Price',     value: displayPrice != null ? `$${displayPrice.toFixed(2)}` : '—' },
           { label: yieldLabel,  value: `${displayYield?.toFixed(2) ?? '—'}%`, className: 'text-green-400' },
           { label: 'Entry δ',   value: p.delta_at_entry?.toFixed(3) ?? p.delta?.toFixed(3) ?? '—' },
         ].map(({ label, value, className = 'text-gray-900 dark:text-white' }) => (

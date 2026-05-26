@@ -1,3 +1,10 @@
+## [2.2.9] — 2026-05-26
+### Fixed
+- **Open position cards now show a true execution-time snapshot** — Price, Buffer, Delta, and Yield all reflect the exact state when the option was sold, not Saturday's screener snapshot.
+  - `trader.py` fetches the live underlying stock price from IBKR immediately after a fill via new `_get_stock_price()` and stores it as `stock_price_at_entry` in both `state.json` executions and `trade_log.json`. `buffer_pct_at_entry` is now computed from this live price (was previously using the screener's Saturday price).
+  - `api.py` joins `trade_log.json` once and surfaces `stock_price_at_entry` and `buffer_pct_at_entry` into the `/api/positions` response (previously these were only used for the IBKR Holdings table).
+  - `PositionCard.jsx` prefers execution-time values (`stock_price_at_entry`, `buffer_pct_at_entry`) over screener values (`latest_price`, `buffer_pct`), with graceful fallback to screener data for positions from before this release.
+
 ## [2.2.8] — 2026-05-26
 ### Fixed
 - **Open positions card shows actual fill yield, not screener yield** — "Yield" on the Dashboard position card was displaying the screener's projected yield (e.g., 2.21% for BE) rather than the actual collected yield at fill (e.g., 0.89%). The API now computes `fill_yield_pct = fill_price / strike × 100` from the execution record. The card label changes from "Yield" to "Act. Yield" for filled positions to make the distinction explicit. Unfilled/skipped positions still show screener yield.

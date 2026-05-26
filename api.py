@@ -1043,34 +1043,41 @@ def get_positions():
     executions = state.get("executions", [])
     exec_map = {e.get("ticker"): e for e in executions if "ticker" in e}
 
+    # Load trade_log once — used for both positions and portfolio enrichment
+    _backfill_trade_log()
+    trade_log = load_trade_log()
+    tl_by_ticker: dict = {}
+    tl_index: dict = {}
+    for rec in trade_log:
+        tl_by_ticker[rec.get("symbol")] = rec
+        k = (rec.get("symbol"), rec.get("expiry"), rec.get("strike"), rec.get("right"))
+        tl_index[k] = rec
+
     enriched = []
     for p in positions:
-        ex = exec_map.get(p["ticker"], {})
-        fill_price = ex.get("fill_price")
-        strike     = p.get("strike")
-        fill_yield_pct = round(fill_price / strike * 100, 4) if (fill_price and strike) else None
+        ex  = exec_map.get(p["ticker"], {})
+        tl  = tl_by_ticker.get(p["ticker"], {})
+        fill_price       = ex.get("fill_price")
+        strike           = p.get("strike")
+        fill_yield_pct   = round(fill_price / strike * 100, 4) if (fill_price and strike) else None
+        stock_at_entry   = tl.get("stock_price_at_entry") or ex.get("stock_price_at_entry")
+        buffer_at_entry  = tl.get("buffer_pct_at_entry")
         enriched.append({
             **p,
-            "status":            ex.get("status", "unknown"),
-            "fill_price":        fill_price,
-            "fill_yield_pct":    fill_yield_pct,
-            "order_type":        ex.get("order_type"),
-            "premium_collected": ex.get("premium_collected", 0),
-            "simulated":         ex.get("simulated", False),
-            "exec_timestamp":    ex.get("exec_timestamp") or ex.get("timestamp"),
-            "delta_at_entry":    ex.get("delta_at_entry"),
+            "status":                ex.get("status", "unknown"),
+            "fill_price":            fill_price,
+            "fill_yield_pct":        fill_yield_pct,
+            "order_type":            ex.get("order_type"),
+            "premium_collected":     ex.get("premium_collected", 0),
+            "simulated":             ex.get("simulated", False),
+            "exec_timestamp":        ex.get("exec_timestamp") or ex.get("timestamp"),
+            "delta_at_entry":        tl.get("delta_at_entry") or ex.get("delta_at_entry"),
+            "stock_price_at_entry":  stock_at_entry,
+            "buffer_pct_at_entry":   buffer_at_entry,
         })
 
     settings = load_settings()
     ibkr = _get_ibkr_data(settings)
-
-    # Enrich live portfolio items with trade_log metadata
-    _backfill_trade_log()
-    trade_log = load_trade_log()
-    tl_index: dict = {}
-    for rec in trade_log:
-        k = (rec.get("symbol"), rec.get("expiry"), rec.get("strike"), rec.get("right"))
-        tl_index[k] = rec
 
     portfolio = ibkr.get("portfolio", [])
     enriched_portfolio = []
