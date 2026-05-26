@@ -1464,14 +1464,17 @@ def version_upgrade():
                 )}
 
     # ── Step 1: git pull ──────────────────────────────────────
+    # Use the HTTPS URL directly — the container has no SSH keys or agent,
+    # so pulling via "origin" (which may be an SSH remote) would fail.
+    _GIT_HTTPS = "https://github.com/controllinghand/you_rock_fund.git"
     try:
         pull = subprocess.run(
-            ["git", "pull", "origin", "main"],
+            ["git", "pull", _GIT_HTTPS, "main"],
             capture_output=True, text=True, timeout=60,
             cwd=str(host_repo),
         )
         output_parts.append(
-            f"$ git pull origin main\n{(pull.stdout + pull.stderr).strip()}"
+            f"$ git pull {_GIT_HTTPS} main\n{(pull.stdout + pull.stderr).strip()}"
         )
         if pull.returncode != 0:
             return {"success": False, "output": "\n\n".join(output_parts)}
