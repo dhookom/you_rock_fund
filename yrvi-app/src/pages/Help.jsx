@@ -157,8 +157,9 @@ export default function Help() {
       {/* ── System Diagnostics ──────────────────────────────── */}
       <Section icon={Activity} title="System Diagnostics">
         <div className="text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
-          Checks scheduler health, IB Gateway connectivity, last run times, and market status.
-          No trades are placed — read-only.
+          Checks scheduler health, IB Gateway connectivity, last run times, market status,
+          and live SPY market data (stock price + options bid/ask/delta).
+          No trades are placed — read-only. Takes ~10 seconds when the gateway is running.
         </div>
 
         <button

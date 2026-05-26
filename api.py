@@ -862,6 +862,135 @@ def _build_diag() -> dict:
     version = version_file.read_text().strip() if version_file.exists() else "unknown"
     check("Version", "ok", f"v{version}")
 
+    # ── 7 & 8. Live market data (SPY stock + options) ──────────
+    # Only runs when gateway is reachable; adds ~10s to total diag time.
+    if _gateway_running(port):
+        host = os.environ.get("IBKR_HOST", "127.0.0.1")
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+
+        from ib_insync import IB, Stock, Option
+
+        def _diag_is_nan(v):
+            try:
+                return v != v
+            except Exception:
+                return True
+
+        def _next_friday_str():
+            d = datetime.now().date()
+            for i in range(1, 10):
+                c = d + timedelta(days=i)
+                if c.weekday() == 4:
+                    return c.strftime("%Y%m%d")
+
+        ib = IB()
+        spy_price = None
+        stk_q     = None
+        connected = False
+        try:
+            ib.connect(host, port, clientId=random.randint(810, 839), timeout=10)
+            ib.reqMarketDataType(3)
+            connected = True
+        except Exception as e:
+            check("SPY Price",    "error", f"IBKR connect failed: {str(e)[:80]}")
+            check("Options Data", "error", "Skipped — IBKR connection failed")
+
+        if connected:
+            # ── SPY stock price ────────────────────────────────
+            try:
+                stk   = Stock("SPY", "SMART", "USD")
+                stk_q = ib.qualifyContracts(stk)
+                tkr   = ib.reqMktData(stk_q[0], snapshot=False)
+                ib.sleep(3)
+                ib.cancelMktData(stk_q[0])
+                price = tkr.last or tkr.close
+                if price and not _diag_is_nan(price):
+                    spy_price = price
+                    check("SPY Price", "ok", f"${price:.2f} (delayed)")
+                else:
+                    check("SPY Price", "warn", "No price data — market may be closed")
+            except Exception as e:
+                check("SPY Price", "error", str(e)[:100])
+
+            # ── SPY options bid/ask/delta ──────────────────────
+            try:
+                expiry = _next_friday_str()
+                strikes = []
+                if stk_q:
+                    try:
+                        chains = ib.reqSecDefOptParams("SPY", "", "STK", stk_q[0].conId)
+                        ib.sleep(1)
+                        chain = next((c for c in chains if c.exchange == "SMART"), None) or next(iter(chains), None)
+                        if chain:
+                            strikes = sorted(chain.strikes)
+                            fridays = sorted(e for e in chain.expirations
+                                            if datetime.strptime(e, "%Y%m%d").weekday() == 4
+                                            and e >= expiry)
+                            if fridays and expiry not in chain.expirations:
+                                expiry = fridays[0]
+                    except Exception:
+                        pass
+
+                if spy_price and strikes:
+                    strike = min(strikes, key=lambda s: abs(s - spy_price * 0.90))
+                elif strikes:
+                    strike = strikes[len(strikes) // 2]
+                else:
+                    strike = 500
+
+                contract  = Option("SPY", expiry, strike, "P", "SMART", currency="USD")
+                qualified = ib.qualifyContracts(contract)
+                if not qualified:
+                    raise ValueError(f"Could not qualify SPY {expiry} ${strike:.0f}P")
+                contract = qualified[0]
+
+                otkr = ib.reqMktData(contract, genericTickList="106", snapshot=False)
+                ib.sleep(5)
+                ib.cancelMktData(contract)
+                ib.sleep(0.5)
+
+                bid   = otkr.bid
+                ask   = otkr.ask
+                delta = None
+                for greeks in (otkr.modelGreeks, otkr.lastGreeks, otkr.bidGreeks, otkr.askGreeks):
+                    if greeks is not None and not _diag_is_nan(greeks.delta):
+                        delta = greeks.delta
+                        break
+
+                bid_ok   = not _diag_is_nan(bid)   and bid   is not None and bid   > 0
+                ask_ok   = not _diag_is_nan(ask)    and ask   is not None and ask   > 0
+                delta_ok = delta is not None and not _diag_is_nan(delta)
+
+                exp_fmt  = f"{expiry[4:6]}/{expiry[6:]}"
+                label    = f"SPY {exp_fmt} ${strike:.0f}P"
+                delta_str = f" / Δ {delta:.3f}" if delta_ok else ""
+
+                if bid_ok and ask_ok:
+                    check("Options Data", "ok",
+                          f"{label} — Bid ${bid:.2f} / Ask ${ask:.2f}{delta_str}")
+                else:
+                    market_closed = today.weekday() >= 5 or is_market_holiday(today)
+                    if market_closed:
+                        check("Options Data", "warn",
+                              f"{label} — no bid/ask (market closed — normal outside trading hours)")
+                    else:
+                        check("Options Data", "error",
+                              f"{label} — no bid/ask — market data subscription may be pending "
+                              f"(IBKR Client Portal → Market Data Subscriptions)")
+            except Exception as e:
+                check("Options Data", "error", str(e)[:120])
+
+            try:
+                ib.disconnect()
+            except Exception:
+                pass
+    else:
+        check("SPY Price",    "warn", "Skipped — IB Gateway not reachable")
+        check("Options Data", "warn", "Skipped — IB Gateway not reachable")
+
     return {"checks": checks, "overall": overall, "timestamp": now.isoformat()}
 
 
