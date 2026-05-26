@@ -174,14 +174,19 @@ Prerequisites — install these once before cloning:
 Then open **Git Bash** (search "Git Bash" in the Start menu) and run:
 
 ```bash
+cd ~
 git clone https://github.com/controllinghand/you_rock_fund.git
 cd you_rock_fund
 bash setup_docker.sh --paper
 ```
 
+> **Why `cd ~` first?** Git Bash opens at `/` by default, which maps to the Git installation folder — not a good place to clone. `cd ~` takes you to your Windows home directory (`C:\Users\<you>`) first. You can substitute any other Windows path (e.g. `cd /c/trading`) if you prefer a different location.
+
 `setup_docker.sh` detects Windows automatically and handles all platform differences — the experience mirrors the Mac setup including the browser-based secrets UI at `http://localhost:8001`.
 
 > **Always run from Git Bash, not PowerShell or cmd.exe.** The script uses Unix path handling that PowerShell does not support.
+
+> **Don't move the folder after setup.** The Task Scheduler auto-start job hardcodes the repo path at setup time. If you move the folder, re-run `bash setup_docker.sh --paper` from the new location to re-register it.
 
 > **Auto-start after reboot:** The script registers a Windows Task Scheduler job so containers restart automatically on every login. If the registration fails (requires elevated permissions on some machines), rerun Git Bash as Administrator and run `bash setup_docker.sh --paper` again.
 
