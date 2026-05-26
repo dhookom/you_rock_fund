@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /usr/local/bin/yrvi-gw-entrypoint.sh
-RUN chmod +x /usr/local/bin/yrvi-gw-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/yrvi-gw-entrypoint.sh \
+    && chmod +x /usr/local/bin/yrvi-gw-entrypoint.sh
 
 USER 1000:1000
