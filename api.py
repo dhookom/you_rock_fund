@@ -755,20 +755,23 @@ def _next_execution() -> str:
     settings = load_settings()
     exec_h, exec_m = _parse_exec_time(settings)
     now = datetime.now(PST)
-    # Start from this week's Monday (or today if already Monday)
-    days_to_monday = (7 - now.weekday()) % 7
-    target = (now + timedelta(days=days_to_monday)).replace(
-        hour=exec_h, minute=exec_m, second=0, microsecond=0
-    )
-    # Shift to Tuesday if Monday is a market holiday — must happen BEFORE
-    # the "past exec time" check so a holiday Monday doesn't skip to next week
-    if target.weekday() == 0 and is_market_holiday(target.date()):
-        target = target + timedelta(days=1)
+
+    def _exec_day_for_monday(monday_dt: datetime) -> datetime:
+        """Return the execution datetime for the week whose Monday is monday_dt."""
+        t = monday_dt.replace(hour=exec_h, minute=exec_m, second=0, microsecond=0)
+        if is_market_holiday(t.date()):
+            t = t + timedelta(days=1)   # shift to Tuesday
+        return t
+
+    # This week's Monday (go back to Monday regardless of current weekday)
+    this_monday = now - timedelta(days=now.weekday())
+    target = _exec_day_for_monday(this_monday)
+
     # If we've already passed this week's execution, advance to next week
     if now >= target:
-        target = target + timedelta(days=7)
-        if target.weekday() == 0 and is_market_holiday(target.date()):
-            target = target + timedelta(days=1)
+        next_monday = this_monday + timedelta(days=7)
+        target = _exec_day_for_monday(next_monday)
+
     return target.isoformat()
 
 
