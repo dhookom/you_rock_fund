@@ -1496,24 +1496,36 @@ def version_upgrade():
         )
         return {"success": False, "output": "\n\n".join(output_parts)}
 
+    upgrade_log = Path("/data/upgrade.log")
     try:
+        upgrade_log.write_text("")  # clear any previous run
+        log_fh = open(upgrade_log, "w")
         subprocess.Popen(
             ["bash", str(build_script), "all", "--paper"],
             cwd=str(host_repo),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_fh,
+            stderr=log_fh,
             start_new_session=True,
         )
-        output_parts.append(
-            "$ bash scripts/yrvi-build.sh all --paper\n"
-            "(launched — containers rebuilding and restarting, polling /health to detect restart)"
-        )
+        log_fh.close()  # parent closes; child retains its own fd copy
+        output_parts.append("$ bash scripts/yrvi-build.sh all --paper\n(launched)")
         return {"success": True, "output": "\n\n".join(output_parts)}
     except Exception as e:
         output_parts.append(
             f"Failed to launch yrvi-build.sh: {e}\nRun manually from terminal."
         )
         return {"success": False, "output": "\n\n".join(output_parts)}
+
+
+@app.get("/api/upgrade/log")
+def upgrade_log_read():
+    import re
+    log = Path("/data/upgrade.log")
+    if not log.exists():
+        return {"content": ""}
+    raw = log.read_text(errors="replace")
+    clean = re.sub(r'\x1b\[[0-9;]*[mGKHFABCDJsur]', '', raw)
+    return {"content": clean}
 
 
 @app.get("/api/health")

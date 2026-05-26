@@ -44,9 +44,21 @@ export default function StatusBar() {
   const [vChecking, setVChecking]         = useState(false)
   const [vFlash, setVFlash]               = useState(null)   // {msg, color} | null
   const [showConfirm, setShowConfirm]     = useState(false)
-  const [upgradePhase, setUpgradePhase]   = useState(null)   // null|waiting_down|waiting_up|done|error
+  const [upgradePhase, setUpgradePhase]   = useState(null)   // null|waiting_up|done|error
   const [upgradeOutput, setUpgradeOutput] = useState('')
-  const pollRef = useRef(null)
+  const [buildLog, setBuildLog]           = useState('')
+  const [elapsedSecs, setElapsedSecs]     = useState(0)
+  const pollRef      = useRef(null)
+  const timerRef     = useRef(null)
+  const logBoxRef    = useRef(null)
+  const startTimeRef = useRef(null)
+
+  // Auto-scroll build log to bottom as new lines arrive
+  useEffect(() => {
+    if (logBoxRef.current) {
+      logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight
+    }
+  }, [buildLog])
 
   // ── Status polling every 30s ─────────────────────────────────
   useEffect(() => {
@@ -99,30 +111,41 @@ export default function StatusBar() {
       .finally(() => setVChecking(false))
   }
 
-  // Cleanup any active poll on unmount
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (pollRef.current)  clearInterval(pollRef.current)
+    if (timerRef.current) clearInterval(timerRef.current)
+  }, [])
 
   // ── Reconnect polling helpers ─────────────────────────────────
   function stopPoll() {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    if (pollRef.current)  { clearInterval(pollRef.current);  pollRef.current  = null }
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
   }
 
   // Poll /api/version/check until the running version matches expectedVersion.
-  // docker compose rolling restarts keep the old container alive until the new
-  // one is ready, so waiting for /health to go dark is unreliable — version
-  // comparison is the definitive signal.
+  // Also polls /api/upgrade/log every tick to stream live build output.
   function startReconnectPolling(baseOutput, expectedVersion) {
     setUpgradePhase('waiting_up')
-    let elapsed = 0
+    setBuildLog('')
+    setElapsedSecs(0)
+    startTimeRef.current = Date.now()
+
+    // Elapsed-time ticker (every second)
+    timerRef.current = setInterval(() => {
+      setElapsedSecs(Math.floor((Date.now() - startTimeRef.current) / 1000))
+    }, 1000)
+
     pollRef.current = setInterval(() => {
-      elapsed += 3000
+      const elapsed = Date.now() - startTimeRef.current
       if (elapsed > 300000) {
         stopPoll()
         setUpgradePhase('error')
-        setUpgradeOutput(baseOutput +
-          '\n\n⚠️  Still running after 5 minutes — check Docker logs:\n  docker compose --env-file .env.compose logs --tail=50 api')
+        setBuildLog(prev => prev + '\n\n⚠️  Still running after 5 minutes — check Docker logs:\n  docker compose --env-file .env.compose logs --tail=50 api')
         return
       }
+
+      // Version check — detects when upgrade is complete
       axios.get('/api/version/check', { timeout: 2000 })
         .then(r => {
           if (r.data?.current && r.data.current === expectedVersion) {
@@ -131,9 +154,12 @@ export default function StatusBar() {
             setTimeout(() => window.location.reload(), 2000)
           }
         })
-        .catch(() => {
-          // API restarting — keep polling
-        })
+        .catch(() => {})
+
+      // Log poll — streams live build output
+      axios.get('/api/upgrade/log', { timeout: 2000 })
+        .then(r => { if (r.data?.content) setBuildLog(r.data.content) })
+        .catch(() => {})
     }, 3000)
   }
 
@@ -167,6 +193,8 @@ export default function StatusBar() {
     stopPoll()
     setUpgradePhase(null)
     setUpgradeOutput('')
+    setBuildLog('')
+    setElapsedSecs(0)
   }
 
   // ── Derived version state ─────────────────────────────────────
@@ -362,9 +390,9 @@ export default function StatusBar() {
                 <span className="text-2xl">⚠️</span>
                 <h2 className="text-white text-xl font-bold">Build taking longer than expected</h2>
               </div>
-              {upgradeOutput && (
-                <pre className="bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-64 mb-5 whitespace-pre-wrap break-all">
-                  {upgradeOutput}
+              {(upgradeOutput || buildLog) && (
+                <pre className="bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-72 mb-5 whitespace-pre-wrap break-all">
+                  {upgradeOutput}{buildLog ? '\n\n' + buildLog : ''}
                 </pre>
               )}
               <p className="text-yellow-400 text-sm mb-5">
@@ -384,10 +412,14 @@ export default function StatusBar() {
             <div className="w-full max-w-2xl flex flex-col items-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mb-5" />
               <h2 className="text-white text-xl font-semibold mb-1">Upgrading YRVI…</h2>
-              <p className="text-gray-500 text-sm mb-6">Rebuilding containers — dashboard will reload automatically</p>
-              {upgradeOutput && (
-                <pre className="w-full bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-64 mb-5 whitespace-pre-wrap break-all">
-                  {upgradeOutput}
+              <p className="text-gray-400 text-sm mb-1">Rebuilding containers — dashboard will reload automatically</p>
+              <p className="text-gray-600 text-xs mb-6 font-mono">{elapsedSecs}s elapsed · typically 1–2 min</p>
+              {(upgradeOutput || buildLog) && (
+                <pre
+                  ref={logBoxRef}
+                  className="w-full bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-72 mb-5 whitespace-pre-wrap break-all"
+                >
+                  {upgradeOutput}{buildLog ? '\n\n' + buildLog : ''}
                 </pre>
               )}
               {canCancel && (
