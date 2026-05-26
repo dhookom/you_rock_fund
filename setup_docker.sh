@@ -63,6 +63,12 @@ fi
 # ── Globals ────────────────────────────────────────────────────
 
 PROJ=$(cd "$(dirname "$0")" && pwd)
+
+# ── Platform detection ─────────────────────────────────────────
+OS=$(uname -s)
+IS_WINDOWS=false
+case "$OS" in MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=true ;; esac
+
 DOCKER_PLIST_SRC="$PROJ/com.yourockfund.docker.plist"
 DOCKER_PLIST_DEST="$HOME/Library/LaunchAgents/com.yourockfund.docker.plist"
 DOCKER_LABEL="com.yourockfund.docker"
@@ -157,10 +163,11 @@ if [ "$(secrets_complete)" = "true" ]; then
     ok "Secrets already configured"
 else
     info "Opening $SECRETS_URL in your browser..."
-    case "$(uname -s)" in
-        Darwin) open "$SECRETS_URL" 2>/dev/null || true ;;
-        Linux)  xdg-open "$SECRETS_URL" 2>/dev/null || true ;;
-        *)      info "Open $SECRETS_URL in a browser to enter secrets" ;;
+    case "$OS" in
+        Darwin)               open "$SECRETS_URL" 2>/dev/null || true ;;
+        Linux)                xdg-open "$SECRETS_URL" 2>/dev/null || true ;;
+        MINGW*|MSYS*|CYGWIN*) cmd.exe /c start "$SECRETS_URL" 2>/dev/null || true ;;
+        *)                    info "Open $SECRETS_URL in a browser to enter secrets" ;;
     esac
 
     printf "  Enter your credentials at ${BLUE}%s${NC} — setup will continue automatically when done.\n" "$SECRETS_URL"
@@ -252,25 +259,42 @@ echo ""
 printf "${BOLD}Step 5 / 6   Install Docker auto-start on login${NC}\n"
 echo "──────────────────────────────────────────────────────"
 
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+if $IS_WINDOWS; then
+    TASK_NAME="YRVI_Docker_AutoStart"
+    PROJ_WIN=$(cygpath -w "$PROJ")
+    LOGFILE="$(cygpath -w "$HOME")\\yrvi-autostart.log"
+    BATCH="$PROJ/yrvi-autostart.bat"
 
-sed -e "s|__PROJ__|$PROJ|g" -e "s|__HOME__|$HOME|g" "$DOCKER_PLIST_SRC" > "$DOCKER_PLIST_DEST"
+    printf '@echo off\r\ncd /d "%s"\r\ndocker compose --env-file .env.compose up -d >> "%s" 2>&1\r\n' \
+        "$PROJ_WIN" "$LOGFILE" > "$BATCH"
+    BATCH_WIN=$(cygpath -w "$BATCH")
 
-if [ -t 0 ]; then
-    launchctl bootstrap "gui/$(id -u)" "$DOCKER_PLIST_DEST" 2>/dev/null || \
-        launchctl load "$DOCKER_PLIST_DEST" 2>/dev/null || true
-    ok "com.yourockfund.docker installed — containers will auto-start on every login"
+    if schtasks.exe /create /tn "$TASK_NAME" /tr "\"$BATCH_WIN\"" /sc ONLOGON /f 2>/dev/null; then
+        ok "Task Scheduler job '$TASK_NAME' registered — containers auto-start on every login"
+        info "  Reboot log: $LOGFILE"
+    else
+        warn "Could not register Task Scheduler job — rerun Git Bash as Administrator to enable auto-start"
+        info "  Batch file: $BATCH_WIN"
+    fi
 else
-    ok "com.yourockfund.docker already active (launched by launchd — skipping re-register)"
+    mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+    sed -e "s|__PROJ__|$PROJ|g" -e "s|__HOME__|$HOME|g" "$DOCKER_PLIST_SRC" > "$DOCKER_PLIST_DEST"
+
+    if [ -t 0 ]; then
+        launchctl bootstrap "gui/$(id -u)" "$DOCKER_PLIST_DEST" 2>/dev/null || \
+            launchctl load "$DOCKER_PLIST_DEST" 2>/dev/null || true
+        ok "com.yourockfund.docker installed — containers will auto-start on every login"
+    else
+        ok "com.yourockfund.docker already active (launched by launchd — skipping re-register)"
+    fi
+    info "  Reboot log: cat ~/Library/Logs/yrvi-autostart.log"
 fi
-info "  Reboot log: cat ~/Library/Logs/yrvi-autostart.log"
 
 # ── Step 6: Install Desktop app (macOS only) ─────────────────
 echo ""
 printf "${BOLD}Step 6 / 6   Install Desktop app${NC}\n"
 echo "──────────────────────────────────────────────────────"
-
-OS=$(uname -s)
 
 if [ "$OS" = "Darwin" ]; then
     APP_DEST="/Applications/YRVI Startup.app"
@@ -317,7 +341,11 @@ echo "  VNC (if IBKR shows a dialog at first login):"
 echo "    1. Set the VNC password at http://localhost:8001 (or use default)"
 echo "    2. docker compose --env-file .env.compose up -d --force-recreate ib_gateway"
 echo "    3. Connect a VNC client to localhost:5900"
+if $IS_WINDOWS; then
+echo "    Windows: install RealVNC Viewer (free) → https://www.realvnc.com/en/connect/download/viewer/"
+else
 echo "    macOS: open vnc://localhost:5900 in Finder → Go → Connect to Server"
+fi
 echo ""
 echo "  Pre-flight check anytime:"
 echo "    bash startup.sh"

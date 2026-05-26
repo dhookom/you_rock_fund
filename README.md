@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-1.24.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -74,17 +74,19 @@ New to IBKR? See the **[IBKR Account Setup Guide](IBKR_SETUP_GUIDE.md)** for a c
 
 ## Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended for Mac) or [Rancher Desktop](https://rancherdesktop.io) (alternative)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac and Windows)
+- [Git for Windows](https://git-scm.com/download/win) (Windows only — provides Git Bash to run `setup_docker.sh`)
 - Access to the You Rock Club screener API (Render)
 
 ### Hardware Requirements
 
-| Mode | Hardware | OS Required | Secrets Method |
-|------|----------|-------------|----------------|
+| Mode | Hardware | OS | Secrets Method |
+|------|----------|----|----------------|
 | Paper trading | Any Mac (Intel or Apple Silicon) | macOS | Encrypted secrets container (AES-256-GCM) |
-| Live trading | Mac Mini (recommended) | macOS only | Encrypted secrets container (AES-256-GCM) |
+| Paper trading | Any Windows 10/11 PC | Windows | Encrypted secrets container (AES-256-GCM) |
+| Live trading | Mac Mini (recommended) | macOS | Encrypted secrets container (AES-256-GCM) |
 
-> **Cross-platform**: v1.3.0 removed the macOS-only requirement that came with Keychain integration. The stack now runs on macOS, Linux, and Windows. Mac Mini is recommended for live trading purely for the always-on hardware profile and IB Gateway stability — see `setup_windows.ps1` for Windows-specific notes.
+> **Cross-platform**: v1.3.0 removed the macOS-only requirement. `setup_docker.sh` runs on macOS and Windows (via Git Bash) and detects the platform automatically. Mac Mini is recommended for live trading for the always-on hardware profile and IB Gateway stability.
 
 ### IB Gateway port reference
 
@@ -162,6 +164,28 @@ Setup polls silently until the form is submitted; the browser shows a completion
 ```
 
 Requires a Mac Mini or equivalent always-on hardware. Live and paper credentials are stored separately in the secrets container under `tws_password_live` and `tws_password_paper` — they're never shared between modes.
+
+#### Windows Setup (Paper)
+
+Prerequisites — install these once before cloning:
+1. **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)** — enable the WSL2 backend during install; in Settings → General check **Start Docker Desktop when you sign in to your computer**
+2. **[Git for Windows](https://git-scm.com/download/win)** — during install, select **Git from the command line and also from 3rd-party software** (adds git to PATH and includes Git Bash)
+
+Then open **Git Bash** (search "Git Bash" in the Start menu) and run:
+
+```bash
+git clone https://github.com/controllinghand/you_rock_fund.git
+cd you_rock_fund
+bash setup_docker.sh --paper
+```
+
+`setup_docker.sh` detects Windows automatically and handles all platform differences — the experience mirrors the Mac setup including the browser-based secrets UI at `http://localhost:8001`.
+
+> **Always run from Git Bash, not PowerShell or cmd.exe.** The script uses Unix path handling that PowerShell does not support.
+
+> **Auto-start after reboot:** The script registers a Windows Task Scheduler job so containers restart automatically on every login. If the registration fails (requires elevated permissions on some machines), rerun Git Bash as Administrator and run `bash setup_docker.sh --paper` again.
+
+> **VNC for 2FA:** Windows has no built-in VNC viewer. If IBKR requires 2FA on first login, install [RealVNC Viewer](https://www.realvnc.com/en/connect/download/viewer/) (free) and connect to `localhost:5900`. Most first-time logins complete automatically without needing VNC.
 
 #### Verifying secrets
 

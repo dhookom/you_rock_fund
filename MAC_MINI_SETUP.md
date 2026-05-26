@@ -53,7 +53,7 @@ When you first power on the Mac Mini, follow these decisions at each setup scree
 ### FileVault
 - **Do NOT enable FileVault**
 - FileVault requires a manual password entry after every reboot or power outage, which means YRVI won't auto-restart unattended
-- Your IBKR credentials are protected by macOS Keychain regardless of FileVault
+- Your IBKR credentials are stored encrypted in the secrets container regardless of FileVault
 
 ### Automatic Software Updates
 - Turn on **Download new updates when available**
@@ -185,19 +185,19 @@ Leave `TRADING_MODE=paper` and `YRVI_INIT_DRY_RUN=true` — these are the safe d
 ./setup_docker.sh --paper
 ```
 
-On first run you will be prompted for:
-- Your **IBKR paper trading password** (stored in macOS Keychain)
-- Your **Render screener API secret** (stored in macOS Keychain)
+On first run, the script opens `http://localhost:8001` in your browser where you'll enter:
+- Your **IBKR paper trading password**
+- Your **Render screener API secret**
 
-On subsequent runs, secrets are pulled from Keychain silently — no re-entry needed.
+Secrets are stored encrypted in a persistent Docker volume. On subsequent runs, the script detects existing secrets and skips this step.
 
 ### What Setup Does
 The script runs 6 steps automatically:
 1. Verifies Docker is running
-2. Pulls secrets from Keychain and writes ephemeral secret files
+2. Starts the secrets container and opens `http://localhost:8001` for credential entry
 3. Validates your `.env.compose` config
-4. Builds and starts all 4 containers (ib_gateway, api, scheduler, web)
-5. Installs a login item so containers restart automatically after every reboot
+4. Builds and starts all 5 containers (secrets, ib_gateway, api, scheduler, web)
+5. Installs a launchd login item so containers restart automatically after every reboot
 6. Installs the YRVI Startup desktop app
 
 ### Watch IB Gateway Log In
@@ -273,13 +273,17 @@ docker compose --env-file .env.compose logs -f api         # dashboard API
 ```bash
 cd ~/you_rock_fund && ./setup_docker.sh --paper
 ```
-Secrets are pulled from Keychain automatically — no passwords needed.
+Existing secrets are detected automatically — no re-entry needed.
 
 ### Rotating a Secret (e.g. changed IBKR password)
-1. Open **Keychain Access.app**
-2. Search for `YRVI`
-3. Delete the relevant entry (e.g. `YRVI_TWS_PAPER`)
-4. Re-run `./setup_docker.sh --paper` — you will be prompted for the new value
+1. Open `http://localhost:8001` in your browser (or visit **Secrets** in the dashboard)
+2. Click **Update** next to the secret you want to change
+3. Enter the new value and click **Save**
+
+To apply a new IBKR password, restart the gateway after saving:
+```bash
+docker compose --env-file .env.compose restart ib_gateway
+```
 
 ---
 
@@ -292,7 +296,7 @@ Secrets are pulled from Keychain automatically — no passwords needed.
 | "Existing session detected" in gateway log | Another machine is connected to the same IBKR paper account. Shut it down first. |
 | Containers don't start after reboot | Open Docker Desktop manually and wait for "Engine running", then run `./setup_docker.sh --paper` |
 | Dashboard shows Gateway red | Run `docker compose --env-file .env.compose logs -f ib_gateway` and check for errors |
-| Secret files missing error | Run `./setup_docker.sh --paper` — it will re-pull secrets from Keychain |
+| Secret files missing error | Run `./setup_docker.sh --paper` — secrets are re-fetched from the secrets container |
 | IB Gateway needs 2FA | Set the VNC password at `http://localhost:8001`, recreate gateway, connect via Finder → Go → Connect to Server → `vnc://localhost:5900` |
 
 ---
