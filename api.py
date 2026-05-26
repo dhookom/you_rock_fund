@@ -972,7 +972,13 @@ def _build_diag() -> dict:
                     check("Options Data", "ok",
                           f"{label} — Bid ${bid:.2f} / Ask ${ask:.2f}{delta_str}")
                 else:
-                    market_closed = today.weekday() >= 5 or is_market_holiday(today)
+                    now_et = now.astimezone(ET)
+                    outside_hours = (
+                        now_et.hour < 9
+                        or (now_et.hour == 9 and now_et.minute < 30)
+                        or now_et.hour >= 16
+                    )
+                    market_closed = today.weekday() >= 5 or is_market_holiday(today) or outside_hours
                     if market_closed:
                         check("Options Data", "warn",
                               f"{label} — no bid/ask (market closed — normal outside trading hours)")
