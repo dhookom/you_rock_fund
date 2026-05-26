@@ -167,11 +167,15 @@ Requires a Mac Mini or equivalent always-on hardware. Live and paper credentials
 
 #### Windows Setup (Paper)
 
-Prerequisites — install these once before cloning:
-1. **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)** — enable the WSL2 backend during install; in Settings → General check **Start Docker Desktop when you sign in to your computer**
-2. **[Git for Windows](https://git-scm.com/download/win)** — during install, select **Git from the command line and also from 3rd-party software** (adds git to PATH and includes Git Bash)
+**Prerequisite:** Install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) — enable the WSL2 backend during install; in Settings → General check **Start Docker Desktop when you sign in to your computer**.
 
-Then open **Git Bash** (search "Git Bash" in the Start menu) and run:
+`setup_docker.sh` detects the platform automatically and works from either Git Bash or WSL2 (Ubuntu). Choose whichever you prefer:
+
+---
+
+**Option A — Git Bash (simplest, recommended for most users)**
+
+Install [Git for Windows](https://git-scm.com/download/win) — during install select **Git from the command line and also from 3rd-party software**. Then open **Git Bash** (search "Git Bash" in the Start menu) and run:
 
 ```bash
 cd ~
@@ -180,15 +184,31 @@ cd you_rock_fund
 bash setup_docker.sh --paper
 ```
 
-> **Why `cd ~` first?** Git Bash opens at `/` by default, which maps to the Git installation folder — not a good place to clone. `cd ~` takes you to your Windows home directory (`C:\Users\<you>`) first. You can substitute any other Windows path (e.g. `cd /c/trading`) if you prefer a different location.
+> **Why `cd ~` first?** Git Bash opens at `/` by default, which maps to the Git install folder. `cd ~` takes you to `C:\Users\<you>` first. Substitute any other path (e.g. `cd /c/trading`) to install elsewhere.
 
-`setup_docker.sh` detects Windows automatically and handles all platform differences — the experience mirrors the Mac setup including the browser-based secrets UI at `http://localhost:8001`.
+> **Always use Git Bash, not PowerShell or cmd.exe** — the script uses Unix path handling.
 
-> **Always run from Git Bash, not PowerShell or cmd.exe.** The script uses Unix path handling that PowerShell does not support.
+---
+
+**Option B — WSL2 / Ubuntu (cleaner Linux environment)**
+
+Docker Desktop already installs WSL2. Open **Ubuntu** from the Start menu (or run `wsl` in a terminal) and run:
+
+```bash
+sudo apt-get install -y git   # if git isn't already installed
+cd ~
+git clone https://github.com/controllinghand/you_rock_fund.git
+cd you_rock_fund
+bash setup_docker.sh --paper
+```
+
+Docker Desktop's WSL2 integration makes the `docker` CLI available inside Ubuntu automatically — no extra steps needed.
+
+---
 
 > **Don't move the folder after setup.** The Task Scheduler auto-start job hardcodes the repo path at setup time. If you move the folder, re-run `bash setup_docker.sh --paper` from the new location to re-register it.
 
-> **Auto-start after reboot:** The script registers a Windows Task Scheduler job so containers restart automatically on every login. If the registration fails (requires elevated permissions on some machines), rerun Git Bash as Administrator and run `bash setup_docker.sh --paper` again.
+> **Auto-start after reboot:** The script registers a Windows Task Scheduler job so containers restart automatically on every login. If the registration fails, rerun your terminal as Administrator and run `bash setup_docker.sh --paper` again.
 
 > **VNC for 2FA:** Windows has no built-in VNC viewer. If IBKR requires 2FA on first login, install [RealVNC Viewer](https://www.realvnc.com/en/connect/download/viewer/) (free) and connect to `localhost:5900`. Most first-time logins complete automatically without needing VNC.
 

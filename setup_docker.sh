@@ -67,7 +67,9 @@ PROJ=$(cd "$(dirname "$0")" && pwd)
 # ── Platform detection ─────────────────────────────────────────
 OS=$(uname -s)
 IS_WINDOWS=false
+IS_WSL=false
 case "$OS" in MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=true ;; esac
+if [ "$OS" = "Linux" ] && grep -qi microsoft /proc/version 2>/dev/null; then IS_WSL=true; fi
 
 DOCKER_PLIST_SRC="$PROJ/com.yourockfund.docker.plist"
 DOCKER_PLIST_DEST="$HOME/Library/LaunchAgents/com.yourockfund.docker.plist"
@@ -165,8 +167,13 @@ else
     info "Opening $SECRETS_URL in your browser..."
     case "$OS" in
         Darwin)               open "$SECRETS_URL" 2>/dev/null || true ;;
-        Linux)                xdg-open "$SECRETS_URL" 2>/dev/null || true ;;
         MINGW*|MSYS*|CYGWIN*) cmd.exe /c start "$SECRETS_URL" 2>/dev/null || true ;;
+        Linux)
+            if $IS_WSL; then
+                cmd.exe /c start "$SECRETS_URL" 2>/dev/null || xdg-open "$SECRETS_URL" 2>/dev/null || true
+            else
+                xdg-open "$SECRETS_URL" 2>/dev/null || true
+            fi ;;
         *)                    info "Open $SECRETS_URL in a browser to enter secrets" ;;
     esac
 
@@ -276,6 +283,24 @@ if $IS_WINDOWS; then
         warn "Could not register Task Scheduler job — rerun Git Bash as Administrator to enable auto-start"
         info "  Batch file: $BATCH_WIN"
     fi
+elif $IS_WSL; then
+    TASK_NAME="YRVI_Docker_AutoStart"
+    WIN_HOME_WIN=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
+    WIN_HOME=$(wslpath "$WIN_HOME_WIN" 2>/dev/null || echo "$HOME")
+    BATCH="$WIN_HOME/yrvi-autostart.bat"
+    BATCH_WIN=$(wslpath -w "$BATCH" 2>/dev/null || echo "$BATCH")
+    LOGFILE="$HOME/yrvi-autostart.log"
+
+    printf '@echo off\r\nwsl.exe -- bash -c "cd %s && docker compose --env-file .env.compose up -d >> %s 2>&1"\r\n' \
+        "$PROJ" "$LOGFILE" > "$BATCH"
+
+    if schtasks.exe /create /tn "$TASK_NAME" /tr "\"$BATCH_WIN\"" /sc ONLOGON /f 2>/dev/null; then
+        ok "Task Scheduler job '$TASK_NAME' registered — containers auto-start on every login"
+        info "  Reboot log: $LOGFILE"
+    else
+        warn "Could not register Task Scheduler job — try running from a terminal with admin rights"
+        info "  Batch file: $BATCH_WIN"
+    fi
 else
     mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 
@@ -341,7 +366,7 @@ echo "  VNC (if IBKR shows a dialog at first login):"
 echo "    1. Set the VNC password at http://localhost:8001 (or use default)"
 echo "    2. docker compose --env-file .env.compose up -d --force-recreate ib_gateway"
 echo "    3. Connect a VNC client to localhost:5900"
-if $IS_WINDOWS; then
+if $IS_WINDOWS || $IS_WSL; then
 echo "    Windows: install RealVNC Viewer (free) → https://www.realvnc.com/en/connect/download/viewer/"
 else
 echo "    macOS: open vnc://localhost:5900 in Finder → Go → Connect to Server"
