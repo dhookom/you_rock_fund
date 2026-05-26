@@ -1,3 +1,9 @@
+## [2.2.8] — 2026-05-26
+### Fixed
+- **Open positions card shows actual fill yield, not screener yield** — "Yield" on the Dashboard position card was displaying the screener's projected yield (e.g., 2.21% for BE) rather than the actual collected yield at fill (e.g., 0.89%). The API now computes `fill_yield_pct = fill_price / strike × 100` from the execution record. The card label changes from "Yield" to "Act. Yield" for filled positions to make the distinction explicit. Unfilled/skipped positions still show screener yield.
+- **Position card "Delta" now shows entry-time Greek delta** — the stats grid previously showed the screener's planned delta (`pos["delta"]`). It now prefers `delta_at_entry` (the IBKR-measured delta at execution time) from the enriched execution record, falling back to the screener delta when not available. Column renamed "Entry δ" to match the dashboard IBKR Holdings table.
+- **`delta_at_entry` included in API `/api/positions` response** — was previously only written to `trade_log.json`; now also surfaced in the enriched execution data returned by the positions endpoint.
+
 ## [2.2.7] — 2026-05-26
 ### Fixed
 - **Strike upward adjustment when stock rallies** — `verify_and_adjust_strike` now handles both directions. Previously it only scanned *downward* when a stock fell and delta exceeded the 0.21 ceiling. If a stock rallied between Saturday and Monday (as with BE this week), the screener strike's delta could drop far below target (e.g., 0.13) and the system would execute there anyway. Now a `MIN_DELTA = 0.15` floor triggers an upward scan: the system walks up the option chain to find the highest strike still within the 0.21 cap, maximising premium while staying within risk limits.

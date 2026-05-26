@@ -1046,14 +1046,19 @@ def get_positions():
     enriched = []
     for p in positions:
         ex = exec_map.get(p["ticker"], {})
+        fill_price = ex.get("fill_price")
+        strike     = p.get("strike")
+        fill_yield_pct = round(fill_price / strike * 100, 4) if (fill_price and strike) else None
         enriched.append({
             **p,
             "status":            ex.get("status", "unknown"),
-            "fill_price":        ex.get("fill_price"),
+            "fill_price":        fill_price,
+            "fill_yield_pct":    fill_yield_pct,
             "order_type":        ex.get("order_type"),
             "premium_collected": ex.get("premium_collected", 0),
             "simulated":         ex.get("simulated", False),
-            "exec_timestamp":    ex.get("timestamp"),
+            "exec_timestamp":    ex.get("exec_timestamp") or ex.get("timestamp"),
+            "delta_at_entry":    ex.get("delta_at_entry"),
         })
 
     settings = load_settings()

@@ -23,6 +23,9 @@ export default function PositionCard({ position: p }) {
     ? (p.fill_price - p.premium).toFixed(2)
     : null
 
+  const displayYield = ok && p.fill_yield_pct != null ? p.fill_yield_pct : p.yield_pct
+  const yieldLabel   = ok && p.fill_yield_pct != null ? 'Act. Yield' : 'Yield'
+
   const statusLabel = (p.status || 'unknown').replace(/_/g, ' ')
 
   return (
@@ -52,8 +55,8 @@ export default function PositionCard({ position: p }) {
           { label: 'Contracts', value: p.contracts },
           { label: 'Buffer',    value: `${bufPct.toFixed(1)}%`, className: bufColor },
           { label: 'Price',     value: `$${p.latest_price?.toFixed(2) ?? '—'}` },
-          { label: 'Yield',     value: `${p.yield_pct?.toFixed(2) ?? '—'}%`, className: 'text-green-400' },
-          { label: 'Delta',     value: p.delta?.toFixed(3) ?? '—' },
+          { label: yieldLabel,  value: `${displayYield?.toFixed(2) ?? '—'}%`, className: 'text-green-400' },
+          { label: 'Entry δ',   value: p.delta_at_entry?.toFixed(3) ?? p.delta?.toFixed(3) ?? '—' },
         ].map(({ label, value, className = 'text-gray-900 dark:text-white' }) => (
           <div key={label}>
             <div className="text-gray-500 dark:text-gray-600 text-xs mb-0.5">{label}</div>
