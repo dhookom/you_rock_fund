@@ -345,11 +345,23 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
         })
         return result
 
+    def _is_permission_error(trade) -> bool:
+        """Return True if IBKR rejected with Error 201 (no options trading permissions)."""
+        return trade.orderStatus.status == "Inactive" and any(
+            getattr(e, "errorCode", 0) == 201 for e in trade.log
+        )
+
     def try_limit(price: float, label: str, wait: int) -> bool:
         log.info(f"  📤 {label}: SELL {contracts}x {ticker} PUT @ ${price:.2f}")
         order = LimitOrder("SELL", contracts, price, account=ACCOUNT, tif="DAY")
         trade = ib.placeOrder(contract, order)
-        ib.sleep(wait)
+        # Quick early-exit: IBKR permission rejections (Error 201) appear within seconds
+        ib.sleep(3)
+        if _is_permission_error(trade):
+            log.error(f"  ❌ {ticker} — IBKR rejected: no options trading permissions (Error 201)")
+            result["status"] = "failed_permissions"
+            return False
+        ib.sleep(wait - 3)
         if trade.orderStatus.status == "Filled":
             fill = trade.orderStatus.avgFillPrice
             log.info(f"  ✅ Filled {ticker} @ ${fill:.2f}")
@@ -410,7 +422,9 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
 
     if not mkt.get("use_bid_as_limit"):
         if try_limit(mkt["mid"], "limit_mid", MID_WAIT_SECS): return result
+        if result.get("status") == "failed_permissions": return result
     if try_limit(mkt["bid"], "limit_bid", BID_WAIT_SECS): return result
+    if result.get("status") == "failed_permissions": return result
 
     # Market order with polling loop — options can partially fill across multiple exchanges
     log.info(f"  📤 Market order: SELL {contracts}x {ticker} PUT")
@@ -436,6 +450,11 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
                 "premium_collected": round(filled_qty * fill * 100, 2),
                 "exec_timestamp": datetime.now().isoformat()
             })
+            return result
+
+        if _is_permission_error(trade):
+            log.error(f"  ❌ {ticker} — IBKR rejected: no options trading permissions (Error 201)")
+            result["status"] = "failed_permissions"
             return result
 
         if status == "PartiallyFilled" and filled_qty > 0:
