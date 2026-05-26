@@ -345,61 +345,61 @@ export default function StatusBar() {
         </div>
       )}
 
-      {/* ── Upgrade progress modal ─────────────────────────────── */}
+      {/* ── Upgrade full-screen overlay ────────────────────────── */}
       {upgradePhase && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-xl p-6 max-w-2xl w-full mx-4 shadow-2xl border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-3 mb-4">
-              {upgradePhase !== 'done' && upgradePhase !== 'error' && (
-                <svg className="animate-spin h-5 w-5 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10"
-                    stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+        <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[100] px-6">
+          {upgradePhase === 'done' ? (
+            <>
+              <svg className="w-12 h-12 text-green-400 mb-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <h2 className="text-white text-2xl font-bold mb-1">Upgrade complete</h2>
+              <p className="text-gray-400 text-sm">Reloading dashboard…</p>
+            </>
+          ) : upgradePhase === 'error' ? (
+            <div className="w-full max-w-2xl">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="text-2xl">⚠️</span>
+                <h2 className="text-white text-xl font-bold">Build taking longer than expected</h2>
+              </div>
+              {upgradeOutput && (
+                <pre className="bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-64 mb-5 whitespace-pre-wrap break-all">
+                  {upgradeOutput}
+                </pre>
               )}
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">
-                {upgradeModalPhaseLabel[upgradePhase]}
-              </h2>
+              <p className="text-yellow-400 text-sm mb-5">
+                The git pull succeeded — containers may still be building. Run manually if needed:{' '}
+                <code className="font-mono bg-gray-800 px-1.5 py-0.5 rounded text-yellow-300">
+                  bash scripts/yrvi-build.sh all --paper
+                </code>
+              </p>
+              <button
+                onClick={closeUpgrade}
+                className="px-5 py-2 rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm font-medium transition-colors"
+              >
+                Close
+              </button>
             </div>
-
-            {upgradeOutput && (
-              <pre className="bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-72 mb-4 whitespace-pre-wrap break-all">
-                {upgradeOutput}
-              </pre>
-            )}
-
-            {upgradePhase === 'error' && (
-              <>
-                <p className="text-sm text-yellow-400 mb-4">
-                  If the restart didn't happen, run{' '}
-                  <code className="font-mono bg-gray-800 dark:bg-gray-950 px-1.5 py-0.5 rounded text-yellow-300 text-xs">
-                    bash scripts/yrvi-build.sh all --paper
-                  </code>{' '}
-                  manually from terminal.
-                </p>
-                <div className="flex justify-end">
-                  <button
-                    onClick={closeUpgrade}
-                    className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </>
-            )}
-
-            {canCancel && (
-              <div className="flex justify-end mt-2">
+          ) : (
+            <div className="w-full max-w-2xl flex flex-col items-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mb-5" />
+              <h2 className="text-white text-xl font-semibold mb-1">Upgrading YRVI…</h2>
+              <p className="text-gray-500 text-sm mb-6">Rebuilding containers — dashboard will reload automatically</p>
+              {upgradeOutput && (
+                <pre className="w-full bg-gray-950 text-green-300 text-xs font-mono p-4 rounded-lg overflow-auto max-h-64 mb-5 whitespace-pre-wrap break-all">
+                  {upgradeOutput}
+                </pre>
+              )}
+              {canCancel && (
                 <button
                   onClick={closeUpgrade}
-                  className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  className="px-5 py-2 rounded-lg border border-gray-700 text-gray-400 hover:bg-gray-800 text-sm transition-colors"
                 >
                   Cancel
                 </button>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>
