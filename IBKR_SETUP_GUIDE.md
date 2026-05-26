@@ -108,7 +108,7 @@ Recommended answers for the YRVI strategy:
 
 **Average trade size:** $25,000 – $100,000
 
-> **Why this matters:** IBKR uses your stated experience to decide your options approval level. Level 2 is what we need (see Step 5). Stating "no experience" with options will result in denial.
+> **Why this matters:** IBKR uses your stated experience to decide your options approval level. Level 3 is what we need (see Step 5). Stating "no experience" with options will result in denial.
 
 ---
 
@@ -130,7 +130,7 @@ YRVI sells **cash-secured puts** — meaning the full capital to buy the shares 
 | Permission | Required? |
 |-----------|-----------|
 | ✅ US Stocks & ETFs | Yes — needed for stock assignments |
-| ✅ US Options (Level 2) | Yes — required for selling CSPs and CCs |
+| ✅ US Options (Level 3) | Yes — required for selling CSPs and CCs |
 | ❌ Margin | No — cash account only |
 | ❌ Futures | No |
 | ❌ Forex | No |
@@ -139,23 +139,26 @@ YRVI sells **cash-secured puts** — meaning the full capital to buy the shares 
 
 ---
 
-## Step 5 — Options Level 2 Approval
+## Step 5 — Options Level 3 Approval
 
-**Level 2 options** is the minimum required to run YRVI. It authorizes:
+**Level 3 options** is required to run YRVI. Despite being a conservative cash-secured strategy, IBKR classifies "Short Put" under Level 3 (not Level 2) because it involves a short obligation. Level 2 will result in Error 201 rejections on every order.
 
-| Strategy | Allowed at Level 2 |
-|----------|-------------------|
-| ✅ Cash-secured puts (CSPs) | Yes — core YRVI strategy |
-| ✅ Covered calls (CCs) | Yes — wheel strategy after assignment |
-| ❌ Naked puts/calls | No — and we don't want these anyway |
-| ❌ Multi-leg spreads | No |
+| Strategy | Required Level |
+|----------|---------------|
+| ✅ Cash-secured puts (CSPs) | Level 3 — core YRVI strategy |
+| ✅ Covered calls (CCs) | Level 3 — wheel strategy after assignment |
+| ❌ Naked puts/calls | Not applicable — cash account prevents this |
+| ❌ Multi-leg spreads | Not applicable |
 
-**If your options trading request is denied:**
+> **Note:** Level 2 at IBKR includes "Covered Put" which sounds similar but is actually a married put (buying a put to protect a long position) — not the same as selling a cash-secured put. Don't be fooled by the name.
 
-1. Call IBKR client services: **1-877-442-2757** (US)
-2. Tell them: *"I want to sell cash-secured puts and covered calls only. I understand these require the full cash collateral to be held in the account and there is no naked exposure."*
-3. They will frequently approve manually after a brief conversation
-4. You can also re-apply through the portal after updating your trading experience
+**If your Level 3 request is denied:**
+
+1. Update your **Financial Profile** first — IBKR requires sufficient liquid net worth and options trading experience to approve Level 3
+2. Make sure your options experience is set to **6-10+ years** and knowledge to **Extensive**
+3. Liquid net worth should accurately reflect your real assets
+4. Re-apply after the profile update is approved (usually 24-48 hours)
+5. Or call IBKR client services: **1-877-442-2757** (US) and tell them: *"I want to sell cash-secured puts and covered calls only. The full cash collateral is held in the account and there is no naked exposure."*
 
 ---
 
@@ -331,7 +334,7 @@ If you've only been using a paper trading account, you'll need a funded live acc
 1. Log into **https://www.interactivebrokers.com/portal**
 2. Go to **Account → Open Additional Account** (or apply during your original signup)
 3. Deposit funds via ACH (free, 3–5 days) or wire transfer
-4. Confirm you have **Level 2 options approval** on the live account (same as paper)
+4. Confirm you have **Level 3 options approval** on the live account (same as paper)
 
 > Your live account number starts with **`U`** (e.g., `U12345678`). Paper accounts start with `DU`.
 
@@ -389,7 +392,7 @@ When you confirm, YRVI automatically:
 | Paper account not showing | Wait 24 hours after live account approval; may need to enable via portal |
 | 2FA / authentication issues | Install the **IBKR Mobile** app and use it for login authentication |
 | Wire transfer not credited | Call IBKR with your wire confirmation number — usually credited same day |
-| Options order rejected | Verify your account has Level 2 options; check available cash collateral |
+| Options order rejected | Verify your account has Level 3 options (not Level 2); check available cash collateral |
 
 ---
 
