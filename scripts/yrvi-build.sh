@@ -288,14 +288,20 @@ else
                 warn "Could not resolve /host_repo host path — restart api manually"
             else
                 docker rm -f yrvi-api-restarter 2>/dev/null || true
+                # Pass HOST_REPO_PATH as an env var so the sidecar can give
+                # docker compose the real host path via --project-directory.
+                # Without this, compose resolves "." in volumes as /workspace
+                # (the sidecar's path), which doesn't exist on the Mac host,
+                # causing the api container to exit instantly with no logs.
                 docker run --rm -d \
                     --name yrvi-api-restarter \
                     -v /var/run/docker.sock:/var/run/docker.sock \
                     -v "${HOST_REPO_PATH}":/workspace \
+                    -e "HOST_PROJ=${HOST_REPO_PATH}" \
                     -w /workspace \
                     --entrypoint "" \
                     yrvi-api:local \
-                    bash -c "sleep 2 && docker compose --env-file .env.compose up -d --no-deps api"
+                    bash -c 'sleep 2 && docker compose --project-directory "$HOST_PROJ" --env-file "$HOST_PROJ/.env.compose" up -d --no-deps api'
                 ok "api restart handed off to sidecar — will complete in ~5s"
             fi
         else
