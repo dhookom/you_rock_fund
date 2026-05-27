@@ -66,9 +66,9 @@ Each cycle generates income whether the option expires or gets exercised.
 
 New to IBKR? See the **[IBKR Account Setup Guide](IBKR_SETUP_GUIDE.md)** for a complete walkthrough — from creating your account to paper trading your first week.
 
-> **You Rock Club members:** If you intend to trade live on IBKR, you will need a Mac Mini (or any always-on Mac). Paper trading can be done on any Mac. Windows is supported for paper trading only.
-
 > 📖 **You Rock Club Mac Mini Setup Guide:** See [MAC_MINI_SETUP.md](./MAC_MINI_SETUP.md) for a complete step-by-step walkthrough from unboxing to first trade.
+
+> 📖 **You Rock Club Windows Setup Guide:** See [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) for setup on a Windows Mini PC (GEEKOM A5 or equivalent).
 
 > ❓ **Troubleshooting:** See [FAQ.md](./FAQ.md) for common setup issues and fixes.
 
@@ -85,8 +85,9 @@ New to IBKR? See the **[IBKR Account Setup Guide](IBKR_SETUP_GUIDE.md)** for a c
 | Paper trading | Any Mac (Intel or Apple Silicon) | macOS | Encrypted secrets container (AES-256-GCM) |
 | Paper trading | Any Windows 10/11 PC | Windows | Encrypted secrets container (AES-256-GCM) |
 | Live trading | Mac Mini (recommended) | macOS | Encrypted secrets container (AES-256-GCM) |
+| Live trading | Windows Mini PC (e.g. GEEKOM A5) | Windows | Encrypted secrets container (AES-256-GCM) |
 
-> **Cross-platform**: v1.3.0 removed the macOS-only requirement. `setup_docker.sh` runs on macOS and Windows (via Git Bash) and detects the platform automatically. Mac Mini is recommended for live trading for the always-on hardware profile and IB Gateway stability.
+> **Cross-platform**: `setup_docker.sh` runs on macOS and Windows (via Git Bash) and detects the platform automatically.
 
 ### IB Gateway port reference
 
@@ -163,7 +164,7 @@ Setup polls silently until the form is submitted; the browser shows a completion
 ./setup_docker.sh --live
 ```
 
-Requires a Mac Mini or equivalent always-on hardware. Live and paper credentials are stored separately in the secrets container under `tws_password_live` and `tws_password_paper` — they're never shared between modes.
+Requires always-on hardware — a Mac Mini or a Windows Mini PC (e.g. GEEKOM A5). Live and paper credentials are stored separately in the secrets container under `tws_password_live` and `tws_password_paper` — they're never shared between modes.
 
 #### Windows Setup (Paper)
 
