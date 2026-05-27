@@ -1,6 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
+    DEPRECATED — use setup_docker.sh instead.
+
+    setup_docker.sh now handles Windows (Git Bash), macOS, and Linux with a
+    unified flow: secrets container web UI, Task Scheduler auto-start on
+    Windows, and launchd on macOS.  Run from Git Bash:
+
+        bash setup_docker.sh --paper
+
+    See WINDOWS_SETUP.md for the full guide.
+
+.SYNOPSIS (original, kept for reference)
     Windows setup script for You Rock Volatility Income Fund (YRVI).
     Mirrors setup_docker.sh for Mac but targets Windows + Rancher Desktop.
 
