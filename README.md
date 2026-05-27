@@ -591,6 +591,30 @@ cat state.json               # Full system state
 
 ## Version History
 
+### v2.2.10 (May 2026)
+- **Windows setup guide** — [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) added for GEEKOM A5 and equivalent Windows Mini PCs; covers Git Bash, Docker Desktop, auto-login, Remote Desktop, and full live trading setup
+- `setup_windows.ps1` deprecated — `setup_docker.sh` is now the single setup entry point for macOS and Windows
+- README updated: Windows Mini PC added to the live trading hardware table; "Windows paper-only" restriction removed
+
+### v2.2.9 (May 2026)
+- Fix: open position cards now show a true execution-time snapshot — Price, Buffer, Delta, and Yield all reflect the exact state when the option was sold, not Saturday's screener snapshot
+- `trader.py` fetches the live underlying price from IBKR immediately after a fill and stores it as `stock_price_at_entry`; `buffer_pct_at_entry` computed from this live price
+
+### v2.2.8 (May 2026)
+- Fix: position card "Yield" now shows actual collected yield at fill (`fill_price / strike × 100`), not screener projected yield; label changes to "Act. Yield" for filled positions
+- Fix: position card "Delta" now shows `delta_at_entry` (IBKR-measured at execution), falling back to screener delta; column renamed "Entry δ"
+
+### v2.2.7 (May 2026)
+- Fix: strike upward adjustment when stock rallies between Saturday and Monday — `verify_and_adjust_strike` now scans up the chain when delta drops below a `MIN_DELTA = 0.15` floor, maximising premium while staying within the 0.21 cap
+- Discord execution results now include `δplan→actual` format (e.g. `δ0.20→0.13`) showing screener vs execution delta for every filled trade
+- Dashboard "Delta" column renamed to "Entry δ"
+
+### v2.0.0 (May 2026)
+- **Cross-platform Windows support** — `setup_docker.sh` now detects macOS, Windows (Git Bash / MINGW), and WSL2 automatically; runs the full 6-step setup flow on all platforms
+- Windows: setup opens the secrets browser UI (`http://localhost:8001`) via `cmd.exe /c start`; Step 5 registers a Task Scheduler job (`YRVI_Docker_AutoStart`) for container auto-start on login
+- Windows live trading now fully supported — Windows Mini PC (e.g. GEEKOM A5) added as a valid always-on live trading host alongside Mac Mini
+- `setup_windows.ps1` (PowerShell, file-based secrets, Rancher Desktop) superseded by the unified bash script
+
 ### v1.24.0 (May 2026)
 - **Shutdown progress overlay** — after confirming shutdown, the dashboard shows a full-screen overlay while containers stop, then displays "YRVI is offline / restart from Desktop" once the API goes silent; prevents interaction with the dead UI during the shutdown window
 - Setup now polls silently until the browser secrets form is submitted and auto-proceeds — no CLI fallback, no manual Enter prompt; the browser shows a completion banner when done
