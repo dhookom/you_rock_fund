@@ -430,7 +430,7 @@ _LOG_RELEVANT_KEYWORDS = (
     "login", "failed", "failure", "error", "exception", "warn",
     "locked", "password", "connect", "disconnect", "starting", "started",
     "ready", "authenticated", "authentication", "2fa", "challenge",
-    "exit", "crash", "timeout", "refused",
+    "exit", "crash", "timeout", "refused", "unrecognized",
 )
 
 
@@ -549,7 +549,8 @@ def _run_gateway_log_monitor() -> None:
                     terminal = True
                     break
 
-                if "login failed" in ll or "authentication failed" in ll:
+                if ("login failed" in ll or "authentication failed" in ll
+                        or "unrecognized username or password" in ll):
                     _set_status("failed", line)
                     _send_discord_alert(
                         "❌ IB Gateway login failed — check your IBKR credentials."
