@@ -21,7 +21,7 @@ A complete walkthrough for setting up your Interactive Brokers account to run th
 
 ## Step 1 — Create Your Account
 
-1. Go to **https://www.interactivebrokers.com**
+1. Go to **https://ibkr.com/referral/sean5376** (referral link — same signup, no extra steps)
 2. Click **"Open Account"** in the top right
 3. Select **"Individual Account"**
 4. Enter your email address and create a strong password

@@ -520,7 +520,7 @@ A dedicated Mac Mini is the recommended setup for set-and-forget automated tradi
   - MicroCenter: ~$399 in store (best price if one is nearby)
 - **Ethernet cable** — ~$10 (if needed)
 - **IBKR Account** — Free (paper trading available)
-  https://www.interactivebrokers.com
+  Use referral link for signup: https://ibkr.com/referral/sean5376
 
 > 💡 **Pro Tip:** Check Amazon weekly — the M4 Mac Mini regularly goes on sale for $469-499. Also check MicroCenter if you have one nearby — they often have it for $399!
 
