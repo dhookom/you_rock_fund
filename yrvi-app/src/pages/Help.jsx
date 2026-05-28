@@ -23,6 +23,41 @@ function StatusIcon({ status }) {
   return <div className="w-[15px] h-[15px] rounded-full bg-blue-400 shrink-0" />
 }
 
+function CheckRow({ c }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasSnippet = c.log_snippet && c.log_snippet.length > 0
+  return (
+    <div className="px-4 py-3 bg-white dark:bg-gray-900">
+      <div className="flex items-center gap-3">
+        <StatusIcon status={c.status} />
+        <div className="min-w-[130px] text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
+          {c.name}
+        </div>
+        <div className="text-sm text-gray-500 dark:text-gray-500 flex-1">
+          {c.detail}
+        </div>
+        {hasSnippet && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0 transition-colors"
+            title="Show log lines"
+          >
+            <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            logs
+          </button>
+        )}
+      </div>
+      {hasSnippet && expanded && (
+        <div className="mt-2 ml-[27px] font-mono text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60 rounded-md px-3 py-2 space-y-0.5 overflow-x-auto">
+          {c.log_snippet.map((line, i) => (
+            <div key={i} className="whitespace-nowrap">{line}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OverallBadge({ overall }) {
   const styles = {
     ok:    'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400',
@@ -184,15 +219,7 @@ export default function Help() {
 
             <div className="divide-y divide-gray-100 dark:divide-gray-800 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
               {results.checks.map((c) => (
-                <div key={c.name} className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-900">
-                  <StatusIcon status={c.status} />
-                  <div className="min-w-[130px] text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
-                    {c.name}
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-500">
-                    {c.detail}
-                  </div>
-                </div>
+                <CheckRow key={c.name} c={c} />
               ))}
             </div>
 

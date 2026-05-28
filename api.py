@@ -58,6 +58,10 @@ ET  = ZoneInfo("America/New_York")
 ANNUAL_TARGET = 100_000
 CONTAINERIZED = os.environ.get("YRVI_CONTAINERIZED", "0") == "1"
 HEARTBEAT_FILE = BASE_DIR / "scheduler_heartbeat.json"
+GATEWAY_STATUS_FILE = (
+    Path("/data/gateway_status.json") if CONTAINERIZED
+    else BASE_DIR / "gateway_status.json"
+)
 SECRETS_SERVICE_URL = "http://secrets:8001"
 # Feedback webhook — configure via discord_feedback_webhook_url secret in the secrets container
 _FEEDBACK_WEBHOOK_DEFAULT = ""
@@ -75,6 +79,8 @@ _watchdog_state: dict = {
     "last_scheduler_alert": None,
 }
 _gateway_login_status: str = "unknown"
+_gateway_last_event:   str = ""
+_gateway_recent_lines: list = []   # rolling buffer of relevant log lines
 
 WATCHDOG_INTERVAL = 300   # seconds between checks
 ALERT_THRESHOLD   = 600   # seconds a failure must persist before we alert
@@ -420,9 +426,82 @@ def _run_watchdog() -> None:
         time.sleep(WATCHDOG_INTERVAL)
 
 
+_LOG_RELEVANT_KEYWORDS = (
+    "login", "failed", "failure", "error", "exception", "warn",
+    "locked", "password", "connect", "disconnect", "starting", "started",
+    "ready", "authenticated", "authentication", "2fa", "challenge",
+    "exit", "crash", "timeout", "refused",
+)
+
+
+def _write_gateway_status(status: str, event: str, lines: list) -> None:
+    """Persist gateway login status + recent log lines to disk (survives API restarts)."""
+    try:
+        GATEWAY_STATUS_FILE.write_text(json.dumps({
+            "status":       status,
+            "last_event":   event,
+            "updated":      datetime.now(PST).isoformat(),
+            "recent_lines": lines[-8:],
+        }))
+    except Exception as e:
+        print(f"[api/gateway-status] could not write status file: {e}")
+
+
+def _read_gateway_status() -> dict:
+    """Read the persisted gateway status file; returns empty dict on any error."""
+    try:
+        return json.loads(GATEWAY_STATUS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _get_docker_container_state() -> dict:
+    """
+    Return Docker container info for ib_gateway.
+    Keys: state (running|exited|restarting|not_found|unknown), exit_code
+    Only meaningful when CONTAINERIZED=True.
+    """
+    if not CONTAINERIZED:
+        return {"state": "unknown", "exit_code": None}
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        container = client.containers.get("ib_gateway")
+        container.reload()
+        s = container.attrs.get("State", {})
+        return {
+            "state":     s.get("Status", "unknown"),  # running/exited/restarting/paused/dead
+            "exit_code": s.get("ExitCode"),
+        }
+    except Exception as e:
+        err = str(e).lower()
+        if "404" in err or "no such container" in err or "not found" in err:
+            return {"state": "not_found", "exit_code": None}
+        return {"state": "unknown", "exit_code": None}
+
+
+def _get_gateway_detail(port: int) -> dict:
+    """
+    Aggregate all available gateway diagnostic info.
+    Reads persisted file first, falls back to in-memory globals.
+    """
+    persisted  = _read_gateway_status()
+    login_st   = persisted.get("status") or _gateway_login_status
+    last_event = persisted.get("last_event") or _gateway_last_event
+    lines      = persisted.get("recent_lines") or list(_gateway_recent_lines)
+    docker_st  = _get_docker_container_state()
+    return {
+        "login_status":    login_st,
+        "last_event":      last_event,
+        "recent_lines":    lines,
+        "container_state": docker_st["state"],
+        "exit_code":       docker_st["exit_code"],
+    }
+
+
 def _run_gateway_log_monitor() -> None:
     """Tail ib_gateway logs via Docker SDK and alert on login failures or lockouts."""
-    global _gateway_login_status
+    global _gateway_login_status, _gateway_last_event, _gateway_recent_lines
     import docker as docker_sdk
     time.sleep(60)  # let the gateway container finish starting
 
@@ -431,6 +510,22 @@ def _run_gateway_log_monitor() -> None:
         terminal = False
         container = None
         started_at = ""
+        _recent: list = []   # relevant lines collected this session
+
+        def _add_line(line: str) -> None:
+            """Buffer a relevant log line (keep last 20)."""
+            ll = line.lower()
+            if any(kw in ll for kw in _LOG_RELEVANT_KEYWORDS):
+                _recent.append(line[:200])   # cap line length
+                if len(_recent) > 20:
+                    _recent.pop(0)
+                _gateway_recent_lines[:] = _recent
+
+        def _set_status(status: str, event: str) -> None:
+            global _gateway_login_status, _gateway_last_event
+            _gateway_login_status = status
+            _gateway_last_event   = event
+            _write_gateway_status(status, event, _recent)
 
         try:
             client = docker_sdk.from_env()
@@ -443,9 +538,10 @@ def _run_gateway_log_monitor() -> None:
             for chunk in container.logs(stream=True, follow=True, tail=100):
                 line = chunk.decode("utf-8").strip()
                 ll = line.lower()
+                _add_line(line)
 
                 if "locked out" in ll:
-                    _gateway_login_status = "locked"
+                    _set_status("locked", line)
                     _send_discord_alert(
                         "🔒 IBKR account locked out — too many failed login attempts. "
                         "Stop the gateway and reset your password."
@@ -454,7 +550,7 @@ def _run_gateway_log_monitor() -> None:
                     break
 
                 if "login failed" in ll or "authentication failed" in ll:
-                    _gateway_login_status = "failed"
+                    _set_status("failed", line)
                     _send_discord_alert(
                         "❌ IB Gateway login failed — check your IBKR credentials."
                     )
@@ -464,7 +560,7 @@ def _run_gateway_log_monitor() -> None:
                 if "login attempt" in ll:
                     login_attempts += 1
                     if login_attempts > 3:
-                        _gateway_login_status = "failed"
+                        _set_status("failed", line)
                         _send_discord_alert(
                             "⚠️ IB Gateway repeated login failures — possible wrong password."
                         )
@@ -473,7 +569,7 @@ def _run_gateway_log_monitor() -> None:
 
                 if "login has completed" in ll or "logged in" in ll:
                     login_attempts = 0
-                    _gateway_login_status = "ok"
+                    _set_status("ok", line)
 
         except Exception as e:
             print(f"[api/gateway-log-monitor] error: {e}")
@@ -780,9 +876,12 @@ def _build_diag() -> dict:
     checks = []
     overall = "ok"
 
-    def check(name, status, detail):
+    def check(name, status, detail, log_snippet=None):
         nonlocal overall
-        checks.append({"name": name, "status": status, "detail": detail})
+        entry = {"name": name, "status": status, "detail": detail}
+        if log_snippet:
+            entry["log_snippet"] = log_snippet
+        checks.append(entry)
         if status == "error" and overall != "error":
             overall = "error"
         elif status == "warn" and overall == "ok":
@@ -810,12 +909,58 @@ def _build_diag() -> dict:
     except Exception as e:
         check("Scheduler", "error", f"Could not read heartbeat: {e}")
 
-    # ── 2. IB Gateway TCP probe ────────────────────────────────
-    if _gateway_running(port):
-        mode = "live" if port == 4001 else "paper"
-        check("IB Gateway", "ok", f"Reachable on port {port} ({mode})")
+    # ── 2. IB Gateway — port probe + container state + login status ───
+    gw_up    = _gateway_running(port)
+    gw_info  = _get_gateway_detail(port)
+    login_st = gw_info["login_status"]
+    c_state  = gw_info["container_state"]
+    c_exit   = gw_info["exit_code"]
+    snippet  = gw_info["recent_lines"] or None   # pass None when empty
+
+    if gw_up:
+        if login_st == "locked":
+            check("IB Gateway", "error",
+                  f"Port {port} open but account locked out — reset IBKR password, then restart gateway",
+                  snippet)
+        elif login_st == "failed":
+            check("IB Gateway", "error",
+                  f"Port {port} open but login failed — check IBKR credentials in Settings",
+                  snippet)
+        else:
+            mode = "live" if port in (4001, 4003) else "paper"
+            check("IB Gateway", "ok", f"Reachable on port {port} ({mode})")
     else:
-        check("IB Gateway", "error", f"Not reachable on port {port} — check that IB Gateway is running")
+        # Port not reachable — give the most specific reason we have
+        if c_state == "not_found":
+            check("IB Gateway", "error",
+                  "Container not found — run: docker compose --env-file .env.compose up -d",
+                  snippet)
+        elif c_state == "exited":
+            code_str = f" (exit code {c_exit})" if c_exit is not None else ""
+            check("IB Gateway", "error",
+                  f"Container stopped{code_str} — run: docker compose --env-file .env.compose restart ib_gateway",
+                  snippet)
+        elif c_state == "restarting":
+            check("IB Gateway", "warn",
+                  "Container is restarting — wait 60–90 s then run diagnostics again",
+                  snippet)
+        elif login_st == "locked":
+            check("IB Gateway", "error",
+                  "Account locked out — reset IBKR password in Client Portal, then restart gateway",
+                  snippet)
+        elif login_st == "failed":
+            check("IB Gateway", "error",
+                  "Login failed — check IBKR username / password in Settings",
+                  snippet)
+        elif login_st == "ok":
+            # Was logged in, now port gone — probably mid-restart
+            check("IB Gateway", "warn",
+                  f"Port {port} not reachable — gateway may be restarting (was logged in previously)",
+                  snippet)
+        else:
+            check("IB Gateway", "error",
+                  f"Not reachable on port {port} — check that IB Gateway is running",
+                  snippet)
 
     # ── 3. Last CSP execution ──────────────────────────────────
     try:
