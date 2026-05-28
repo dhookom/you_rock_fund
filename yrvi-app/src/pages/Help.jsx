@@ -24,8 +24,9 @@ function StatusIcon({ status }) {
 }
 
 function CheckRow({ c }) {
-  const hasSnippet = c.log_snippet && c.log_snippet.length > 0
-  const [expanded, setExpanded] = useState(hasSnippet)  // auto-open when logs present
+  const hasSnippet = Array.isArray(c.log_snippet)
+  const autoOpen   = hasSnippet && c.log_snippet.length > 0
+  const [expanded, setExpanded] = useState(autoOpen)
   return (
     <div className="px-4 py-3 bg-white dark:bg-gray-900">
       <div className="flex items-center gap-3">
@@ -49,9 +50,10 @@ function CheckRow({ c }) {
       </div>
       {hasSnippet && expanded && (
         <div className="mt-2 ml-[27px] font-mono text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60 rounded-md px-3 py-2 space-y-0.5 overflow-x-auto">
-          {c.log_snippet.map((line, i) => (
-            <div key={i} className="whitespace-nowrap">{line}</div>
-          ))}
+          {c.log_snippet.length > 0
+            ? c.log_snippet.map((line, i) => <div key={i} className="whitespace-nowrap">{line}</div>)
+            : <div className="italic">No log lines captured yet</div>
+          }
         </div>
       )}
     </div>

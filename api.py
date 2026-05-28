@@ -480,6 +480,23 @@ def _get_docker_container_state() -> dict:
         return {"state": "unknown", "exit_code": None}
 
 
+def _fetch_recent_gateway_logs(tail: int = 15) -> list:
+    """
+    Pull the last `tail` lines directly from the ib_gateway container.
+    Returns [] on any error (container stopped, Docker unavailable, etc.).
+    """
+    if not CONTAINERIZED:
+        return []
+    try:
+        import docker as docker_sdk
+        client    = docker_sdk.from_env()
+        container = client.containers.get("ib_gateway")
+        raw       = container.logs(tail=tail).decode("utf-8", errors="replace")
+        return [l for l in raw.splitlines() if l.strip()][-tail:]
+    except Exception:
+        return []
+
+
 def _get_gateway_detail(port: int) -> dict:
     """
     Aggregate all available gateway diagnostic info.
@@ -880,7 +897,7 @@ def _build_diag() -> dict:
     def check(name, status, detail, log_snippet=None):
         nonlocal overall
         entry = {"name": name, "status": status, "detail": detail}
-        if log_snippet:
+        if log_snippet is not None:
             entry["log_snippet"] = log_snippet
         checks.append(entry)
         if status == "error" and overall != "error":
@@ -916,7 +933,10 @@ def _build_diag() -> dict:
     login_st = gw_info["login_status"]
     c_state  = gw_info["container_state"]
     c_exit   = gw_info["exit_code"]
-    snippet  = gw_info["recent_lines"] or None   # pass None when empty
+    # Always fetch live logs so the snippet is available regardless of gateway state.
+    # Fall back to cached lines from gateway_status.json if the container isn't running.
+    live_logs = _fetch_recent_gateway_logs(15)
+    snippet   = live_logs if live_logs else (gw_info["recent_lines"] or [])
 
     if gw_up:
         if login_st == "locked":
@@ -929,7 +949,7 @@ def _build_diag() -> dict:
                   snippet)
         else:
             mode = "live" if port in (4001, 4003) else "paper"
-            check("IB Gateway", "ok", f"Reachable on port {port} ({mode})")
+            check("IB Gateway", "ok", f"Reachable on port {port} ({mode})", snippet)
     else:
         # Port not reachable — give the most specific reason we have
         if c_state == "not_found":
