@@ -1492,6 +1492,14 @@ def version_upgrade():
     # Use the HTTPS URL directly — the container has no SSH keys or agent,
     # so pulling via "origin" (which may be an SSH remote) would fail.
     _GIT_HTTPS = "https://github.com/controllinghand/you_rock_fund.git"
+
+    # Discard any local modifications to tracked files (e.g. VERSION) so the
+    # pull never aborts with "your local changes would be overwritten".
+    subprocess.run(
+        ["git", "checkout", "--", "."],
+        capture_output=True, cwd=str(host_repo),
+    )
+
     try:
         pull = subprocess.run(
             ["git", "pull", _GIT_HTTPS, "main"],
