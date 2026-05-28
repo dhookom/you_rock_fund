@@ -24,8 +24,8 @@ function StatusIcon({ status }) {
 }
 
 function CheckRow({ c }) {
-  const [expanded, setExpanded] = useState(false)
   const hasSnippet = c.log_snippet && c.log_snippet.length > 0
+  const [expanded, setExpanded] = useState(hasSnippet)  // auto-open when logs present
   return (
     <div className="px-4 py-3 bg-white dark:bg-gray-900">
       <div className="flex items-center gap-3">
