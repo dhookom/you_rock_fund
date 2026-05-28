@@ -962,6 +962,10 @@ def _build_diag() -> dict:
                   f"Not reachable on port {port} — check that IB Gateway is running",
                   snippet)
 
+    # Remember where the IB Gateway entry sits so we can downgrade it later
+    # if ib_insync fails to connect (port open but login not complete).
+    gw_check_idx = len(checks) - 1
+
     # ── 3. Last CSP execution ──────────────────────────────────
     try:
         state = load_state()
@@ -1043,7 +1047,26 @@ def _build_diag() -> dict:
             ib.reqMarketDataType(3)
             connected = True
         except Exception as e:
-            check("SPY Price",    "error", f"IBKR connect failed: {str(e)[:80]}")
+            err_str = str(e).strip() or "connection refused"
+            # Port was open but ib_insync couldn't connect — gateway is up but
+            # not logged in yet (bad password, mid-startup, stuck dialog, etc.)
+            # Downgrade the IB Gateway row with the most specific reason we have.
+            cur_login = _gateway_login_status   # re-read; log monitor may have caught up
+            if cur_login == "locked":
+                gw_msg = (f"Port {port} open but account locked out — "
+                          "reset IBKR password in Client Portal, then restart gateway")
+            elif cur_login == "failed":
+                gw_msg = (f"Port {port} open but login failed — "
+                          "check IBKR credentials in Settings")
+            else:
+                gw_msg = (f"Port {port} open but API connection failed — "
+                          "gateway may still be logging in or password is wrong")
+            checks[gw_check_idx]["status"] = "error"
+            checks[gw_check_idx]["detail"] = gw_msg
+            if snippet:
+                checks[gw_check_idx]["log_snippet"] = snippet
+            overall = "error"
+            check("SPY Price",    "error", f"IBKR connect failed: {err_str[:80]}")
             check("Options Data", "error", "Skipped — IBKR connection failed")
 
         if connected:
