@@ -25,8 +25,7 @@ function StatusIcon({ status }) {
 
 function CheckRow({ c }) {
   const hasSnippet = Array.isArray(c.log_snippet)
-  const autoOpen   = hasSnippet && c.log_snippet.length > 0
-  const [expanded, setExpanded] = useState(autoOpen)
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="px-4 py-3 bg-white dark:bg-gray-900">
       <div className="flex items-center gap-3">
