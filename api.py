@@ -1542,6 +1542,7 @@ class SettingsUpdate(BaseModel):
     execution_time:                Optional[str]   = None
     auto_restart_time:             Optional[str]   = None
     auto_restart_suppress_mins:    Optional[int]   = None
+    auto_update_enabled:           Optional[bool]  = None
 
 @app.post("/api/settings")
 def update_settings(body: SettingsUpdate):

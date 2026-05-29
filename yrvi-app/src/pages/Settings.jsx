@@ -685,6 +685,22 @@ export default function SettingsPage() {
         </button>
       </Section>
 
+      {/* Software Updates */}
+      <Section title="Software Updates" emoji="⬆️">
+        <Toggle
+          label="Auto-Update"
+          sub="Automatically apply updates Wed–Fri at 3 AM — keeps bug fixes rolling out without manual action"
+          checked={!!settings.auto_update_enabled}
+          onChange={v => set('auto_update_enabled', v)}
+        />
+        {settings.auto_update_enabled && (
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
+            Updates run at 3:00 AM Wednesday through Friday — safe even on holiday weeks when
+            Tuesday becomes the execution day. A Discord alert fires when an update is applied.
+          </p>
+        )}
+      </Section>
+
       {/* Shutdown */}
       <Section title="Shutdown" emoji="⛔">
         <div className="space-y-3">

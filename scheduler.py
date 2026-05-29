@@ -398,6 +398,91 @@ def run_pipeline():
         loop.close()
 
 
+# ── Tuesday–Friday 3AM — auto-update check ────────────────────
+
+_GITHUB_VERSION_URL = (
+    "https://raw.githubusercontent.com/controllinghand/"
+    "you_rock_fund/main/VERSION"
+)
+_GIT_HTTPS = "https://github.com/controllinghand/you_rock_fund.git"
+
+
+def run_auto_update():
+    settings = _load_settings()
+    if not settings.get("auto_update_enabled"):
+        return
+
+    import subprocess
+    from pathlib import Path
+    import requests as req
+
+    now = datetime.now(PST)
+    log.info("\n" + "=" * 65)
+    log.info(f"🔄 AUTO-UPDATE CHECK — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
+    log.info("=" * 65)
+    try:
+        version_file = Path(__file__).parent / "VERSION"
+        current = version_file.read_text().strip() if version_file.exists() else "unknown"
+
+        r = req.get(_GITHUB_VERSION_URL, params={"_": int(now.timestamp())},
+                    headers={"Cache-Control": "no-cache"}, timeout=10)
+        r.raise_for_status()
+        latest = r.text.strip()
+
+        def _parse(v): return [int(x) for x in v.lstrip("v").split(".")]
+        if _parse(current) >= _parse(latest):
+            log.info(f"✅ Already up to date ({current})")
+            return
+
+        log.info(f"⬆️  Update available: {current} → {latest}")
+
+        host_repo = Path("/host_repo")
+        if not (host_repo / ".git").exists():
+            log.error("❌ /host_repo not mounted — skipping auto-update")
+            _discord_alert("❌ **YRVI** Auto-update skipped: /host_repo not mounted")
+            return
+
+        subprocess.run(
+            ["git", "checkout", "--", "."],
+            capture_output=True, cwd=str(host_repo),
+        )
+        pull = subprocess.run(
+            ["git", "pull", _GIT_HTTPS, "main"],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(host_repo),
+        )
+        if pull.returncode != 0:
+            log.error(f"❌ git pull failed:\n{pull.stderr}")
+            _discord_alert(f"❌ **YRVI** Auto-update git pull failed: `{pull.stderr[:200]}`")
+            return
+
+        log.info("  git pull succeeded")
+        _discord_alert(f"⬆️ **YRVI** Auto-updating {current} → {latest} — rebuilding now…")
+
+        build_script = host_repo / "scripts" / "yrvi-build.sh"
+        if not build_script.exists():
+            log.error("❌ scripts/yrvi-build.sh not found")
+            _discord_alert("❌ **YRVI** Auto-update: yrvi-build.sh not found after git pull")
+            return
+
+        mode_flag = "--live" if settings.get("trading_mode") == "live" else "--paper"
+        upgrade_log = Path("/data/upgrade.log")
+        upgrade_log.write_text("")
+        log_fh = open(upgrade_log, "w")
+        subprocess.Popen(
+            ["bash", str(build_script), "all", mode_flag],
+            cwd=str(host_repo),
+            stdout=log_fh, stderr=log_fh,
+            start_new_session=True,
+        )
+        log_fh.close()
+        log.info("🚀 yrvi-build.sh launched — containers will restart momentarily")
+
+    except Exception as e:
+        log.error(f"❌ Auto-update error: {e}", exc_info=True)
+        _discord_alert(f"❌ **YRVI** Auto-update check failed: `{type(e).__name__}: {e}`")
+
+
 # ── Tuesday–Thursday 9AM — daily risk monitor ─────────────────
 
 def run_risk_monitor():
@@ -465,6 +550,11 @@ def main():
         id="daily_risk_monitor", name="Daily Risk Monitor"
     )
     scheduler.add_job(
+        run_auto_update,
+        trigger="cron", day_of_week="wed,thu,fri", hour=3, minute=0,
+        id="auto_update", name="Auto-Update Check"
+    )
+    scheduler.add_job(
         _write_heartbeat,
         trigger="interval", seconds=60,
         id="heartbeat", name="Scheduler Heartbeat"
@@ -480,6 +570,7 @@ def main():
     log.info(f"   • Mon/Tue*  {fmt(wheel_h, wheel_m):>11}  — wheel check (stop loss + CCs)")
     log.info(f"   • Mon/Tue*  {fmt(exec_h, exec_m):>11}  — CSP execution  ← configured")
     log.info("   • Tue–Thu    9:00 AM PST  — daily risk monitor (skipped on holidays)")
+    log.info("   • Wed–Fri    3:00 AM PST  — auto-update check (if enabled in settings)")
     log.info("   * Shifts to Tuesday when Monday is a market holiday")
     log.info("   Press Ctrl+C to stop")
     log.info("=" * 65 + "\n")
