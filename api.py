@@ -315,7 +315,31 @@ def _watchdog_check() -> None:
                 and _watchdog_state["last_gateway_alert"] is None):
             _watchdog_state["last_gateway_alert"] = now
             host = os.environ.get("IBKR_HOST", "ib_gateway")
-            if _in_auto_restart_window(now):
+            # Check container state for a more specific alert message
+            docker_st  = _get_docker_container_state()
+            c_state    = docker_st["state"]
+            c_exit     = docker_st["exit_code"]
+            login_st   = _gateway_login_status
+            if c_exit == 4:
+                _send_discord_alert(
+                    f"🚨 **YRVI** IB Gateway version mismatch — installed Gateway version not found "
+                    f"(exit code 4). The Docker image updated to a newer Gateway version.\n"
+                    f"🔧 **Fix:** Open the dashboard → Help → Run Diagnostics → click **Reset Installation**. "
+                    f"No CLI needed."
+                )
+            elif login_st == "locked":
+                _send_discord_alert(
+                    f"🔒 **YRVI** IB Gateway account locked out — too many failed login attempts. "
+                    f"Reset your IBKR password in Client Portal, then restart the gateway.\n"
+                    f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
+                )
+            elif login_st == "failed":
+                _send_discord_alert(
+                    f"❌ **YRVI** IB Gateway login failed — wrong IBKR username or password. "
+                    f"Update credentials in the dashboard Settings page, then restart the gateway.\n"
+                    f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
+                )
+            elif _in_auto_restart_window(now):
                 _send_discord_alert(
                     f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
                     f"(`{host}:{port}`). This is likely the scheduled daily restart — "
