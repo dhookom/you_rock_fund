@@ -11,11 +11,14 @@ An automated Python algorithmic options trading system that generates weekly inc
 | Day | Time (PST) | Action |
 |-----|-----------|--------|
 | Saturday | 6:00 PM | Screener preview — logs top 5 targets, no trades |
-| Monday | 9:50 AM | Discord preview — posts this week's sized positions |
-| Monday | 9:55 AM | Wheel check — stop losses + sell covered calls on assigned stocks |
-| Monday | 10:00 AM | CSP execution — screen → size → execute 5 positions |
+| Monday* | 9:50 AM | Discord preview — posts this week's sized positions |
+| Monday* | 9:55 AM | Wheel check — stop losses + sell covered calls on assigned stocks |
+| Monday* | 10:00 AM | CSP execution — screen → size → execute 5 positions |
 | Tuesday–Thursday | 9:00 AM | Daily risk monitor — checks stop loss thresholds, logs P&L |
 | Friday | 4:15 PM | Assignment detection — checks for newly assigned positions |
+| Wednesday–Friday | 3:00 AM | Auto-update check — pulls latest release if enabled in Settings |
+
+*Shifts to Tuesday when Monday is a market holiday.
 
 **Pipeline:**
 

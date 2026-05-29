@@ -79,6 +79,27 @@ else
         printf "  ${YELLOW}ℹ️${NC}   Running setup_docker.sh --paper to pull secrets and restart containers...\n"
         bash "$PROJ/setup_docker.sh" --paper
         echo ""
+
+        # Re-check containers after setup and correct the counters
+        PS_OUT=$(docker compose --env-file .env.compose ps 2>/dev/null || true)
+        for svc in ib_gateway api scheduler web; do
+            SVC_LINE=$(echo "$PS_OUT" | grep -i "$svc" | head -1 || true)
+            if echo "$SVC_LINE" | grep -qiE "Up|running|healthy"; then
+                # Was counted as a failure above — flip to pass
+                ((FAIL--)) || true
+                ((PASS++)) || true
+                STATUS=$(echo "$SVC_LINE" | grep -oiE "Up [^[:space:]].*|running|healthy" | head -1 || echo "Up")
+                pass "Container $svc — $STATUS  (started by setup)"
+            fi
+        done
+
+        printf "  ${YELLOW}ℹ️${NC}   Waiting for API to be ready...\n"
+        for i in $(seq 1 12); do
+            sleep 5
+            if curl -sf --max-time 3 http://localhost:8000/api/status &>/dev/null; then
+                break
+            fi
+        done
     fi
 fi
 
