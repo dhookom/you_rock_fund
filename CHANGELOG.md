@@ -1,3 +1,8 @@
+## [2.2.28] — 2026-05-29
+### Fixed
+- **Startup script no longer reports a false NO-GO on cold start** — `startup.sh` was counting 4 container-not-found failures before running `setup_docker.sh`, then never subtracting them after setup succeeded. The script now re-checks each container after setup and flips fail→pass, then waits up to 60 s for the API to be ready before the health check runs. Result: a clean cold start now shows 15 passed / 0 failed / GO instead of 5 phantom failures.
+- **Settings page "Reset to Defaults" now resets all fields** — several settings fields (e.g. Gateway restart time, suppress window) were not included in the reset payload, leaving stale values after a reset. All configurable settings are now covered.
+
 ## [2.2.9] — 2026-05-26
 ### Fixed
 - **Open position cards now show a true execution-time snapshot** — Price, Buffer, Delta, and Yield all reflect the exact state when the option was sold, not Saturday's screener snapshot.
