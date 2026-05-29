@@ -686,7 +686,16 @@ def reset_gateway_installation():
         except Exception:
             pass   # already stopped — that's fine
 
-        # ── 3. Remove the stale volume ────────────────────────────────────
+        # ── 3. Remove the stopped container to release its volume reference ─
+        # Docker won't remove a volume while any container (even stopped) still
+        # references it, so we must remove the container first.
+        try:
+            container.remove(force=True)
+        except Exception as e:
+            raise HTTPException(status_code=500,
+                                detail=f"Could not remove container: {e}")
+
+        # ── 4. Remove the stale volume ────────────────────────────────────
         try:
             vol = client.volumes.get(settings_volume)
             vol.remove()
@@ -694,13 +703,20 @@ def reset_gateway_installation():
             raise HTTPException(status_code=500,
                                 detail=f"Could not remove volume {settings_volume}: {e}")
 
-        # ── 4. Recreate empty volume with the same name ───────────────────
-        client.volumes.create(settings_volume)
+        # ── 5. Recreate container + fresh volume via docker compose ───────
+        # container.start() won't work after remove(); docker compose up
+        # recreates the container with the correct config and mounts, and
+        # Docker auto-creates the named volume fresh on first mount.
+        result = subprocess.run(
+            ["docker", "compose", "--env-file", "/host_repo/.env.compose",
+             "up", "-d", "ib_gateway"],
+            cwd="/host_repo", capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=500,
+                                detail=f"docker compose up failed: {result.stderr[:300]}")
 
-        # ── 5. Start container — mounts the fresh volume; IBC installs GW ─
-        container.start()
-
-        print(f"[api/reset-gateway] wiped {settings_volume} and restarted ib_gateway")
+        print(f"[api/reset-gateway] wiped {settings_volume} and recreated ib_gateway")
         return {"success": True,
                 "message": "Gateway installation reset — IBC is reinstalling (~2 min). "
                            "Run diagnostics again once the gateway comes back up."}
