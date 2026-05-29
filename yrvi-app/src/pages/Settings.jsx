@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
-import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power } from 'lucide-react'
+import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
 
 const PRESET_TIMES = [
@@ -135,6 +135,7 @@ export default function SettingsPage() {
   const [timezone, setTimezone]                 = useState('')
   const [timezoneOriginal, setTimezoneOriginal] = useState('')
   const [tzSaving, setTzSaving]                 = useState(false)
+  const [confirmReset, setConfirmReset]           = useState(false)
   const [showShutdownModal, setShowShutdownModal] = useState(false)
   const [shuttingDown, setShuttingDown]           = useState(false)
   const [systemOffline, setSystemOffline]         = useState(false)
@@ -304,6 +305,23 @@ export default function SettingsPage() {
 
   const isDirty = JSON.stringify(settings) !== JSON.stringify(original)
 
+  const DEFAULTS = {
+    fund_budget: 250000, num_positions: 5, min_position_size: 10000,
+    max_position_size: 70000, max_delta: 0.21, min_buffer_pct: 0.05,
+    earnings_filter_days: 7, wheel_cc_ignore_earnings_filter: false,
+    wheel_stop_loss_enabled: false, stop_loss_pct: 0.10, compound_enabled: true,
+    max_spread_pct: 0.20, min_bid_yield_pct: 0.01, max_spread_hard_cap: 0.50,
+    dry_run: false, discord_webhook_enabled: true, execution_time: '10:00',
+    auto_restart_time: '11:59 PM', auto_restart_suppress_mins: 30,
+    auto_update_enabled: false,
+  }
+
+  const resetToDefaults = () => {
+    setSettings(prev => ({ ...prev, ...DEFAULTS }))
+    setConfirmReset(false)
+    showMsg('success', 'Reset to defaults — save to apply')
+  }
+
   if (!settings) return (
     <div className="flex items-center justify-center h-64">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
@@ -319,14 +337,42 @@ export default function SettingsPage() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Settings</h1>
           <div className="text-gray-500 text-sm">Hot-reloads on every API call — no restart needed</div>
         </div>
-        <button
-          onClick={save}
-          disabled={saving || !isDirty}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <Save size={14} />
-          {saving ? 'Saving...' : isDirty ? 'Save Changes' : 'Saved'}
-        </button>
+        <div className="flex items-center gap-2">
+          {confirmReset ? (
+            <>
+              <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">Reset all to defaults?</span>
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-gray-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={resetToDefaults}
+                className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <RotateCcw size={13} />
+                Confirm Reset
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg transition-colors"
+            >
+              <RotateCcw size={13} />
+              Reset
+            </button>
+          )}
+          <button
+            onClick={save}
+            disabled={saving || !isDirty}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Save size={14} />
+            {saving ? 'Saving...' : isDirty ? 'Save Changes' : 'Saved'}
+          </button>
+        </div>
       </div>
 
       {/* Toast message */}
