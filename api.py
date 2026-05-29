@@ -293,8 +293,11 @@ def _send_discord_alert(message: str) -> None:
         webhook_url = _read_secret_or_env("discord_webhook_url", "DISCORD_WEBHOOK_URL")
         if not webhook_url:
             return
+        version_file = BASE_DIR / "VERSION"
+        version = version_file.read_text().strip() if version_file.exists() else "unknown"
+        full_message = f"{message}\n-# v{version}"
         import requests as req
-        req.post(webhook_url, json={"content": message}, timeout=5)
+        req.post(webhook_url, json={"content": full_message}, timeout=5)
     except Exception as e:
         print(f"[api/watchdog] Discord alert failed: {e}")
 

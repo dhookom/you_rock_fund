@@ -1,6 +1,6 @@
 {
   "name": "yrvi-app",
-  "version": "2.2.22",
+  "version": "2.2.23",
   "type": "module",
   "scripts": {
     "start": "vite --port 3000",
