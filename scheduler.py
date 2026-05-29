@@ -404,7 +404,6 @@ _GITHUB_VERSION_URL = (
     "https://raw.githubusercontent.com/controllinghand/"
     "you_rock_fund/main/VERSION"
 )
-_GIT_HTTPS = "https://github.com/controllinghand/you_rock_fund.git"
 
 
 def run_auto_update():
@@ -412,7 +411,6 @@ def run_auto_update():
     if not settings.get("auto_update_enabled"):
         return
 
-    import subprocess
     from pathlib import Path
     import requests as req
 
@@ -434,49 +432,18 @@ def run_auto_update():
             log.info(f"✅ Already up to date ({current})")
             return
 
-        log.info(f"⬆️  Update available: {current} → {latest}")
+        log.info(f"⬆️  Update available: {current} → {latest} — delegating to API")
 
-        host_repo = Path("/host_repo")
-        if not (host_repo / ".git").exists():
-            log.error("❌ /host_repo not mounted — skipping auto-update")
-            _discord_alert("❌ **YRVI** Auto-update skipped: /host_repo not mounted")
-            return
-
-        subprocess.run(
-            ["git", "checkout", "--", "."],
-            capture_output=True, cwd=str(host_repo),
-        )
-        pull = subprocess.run(
-            ["git", "pull", _GIT_HTTPS, "main"],
-            capture_output=True, text=True, timeout=60,
-            cwd=str(host_repo),
-        )
-        if pull.returncode != 0:
-            log.error(f"❌ git pull failed:\n{pull.stderr}")
-            _discord_alert(f"❌ **YRVI** Auto-update git pull failed: `{pull.stderr[:200]}`")
-            return
-
-        log.info("  git pull succeeded")
-        _discord_alert(f"⬆️ **YRVI** Auto-updating {current} → {latest} — rebuilding now…")
-
-        build_script = host_repo / "scripts" / "yrvi-build.sh"
-        if not build_script.exists():
-            log.error("❌ scripts/yrvi-build.sh not found")
-            _discord_alert("❌ **YRVI** Auto-update: yrvi-build.sh not found after git pull")
-            return
-
-        mode_flag = "--live" if settings.get("trading_mode") == "live" else "--paper"
-        upgrade_log = Path("/data/upgrade.log")
-        upgrade_log.write_text("")
-        log_fh = open(upgrade_log, "w")
-        subprocess.Popen(
-            ["bash", str(build_script), "all", mode_flag],
-            cwd=str(host_repo),
-            stdout=log_fh, stderr=log_fh,
-            start_new_session=True,
-        )
-        log_fh.close()
-        log.info("🚀 yrvi-build.sh launched — containers will restart momentarily")
+        # The api container has the /host_repo bind-mount and upgrade logic.
+        # Calling it keeps all git/build logic in one place.
+        res = req.post("http://api:8000/api/version/upgrade", timeout=90)
+        data = res.json()
+        if data.get("success"):
+            log.info("🚀 Upgrade launched — containers will restart momentarily")
+            _discord_alert(f"⬆️ **YRVI** Auto-updating {current} → {latest} — rebuilding now…")
+        else:
+            log.error(f"❌ Upgrade failed: {data.get('output', '')[:300]}")
+            _discord_alert(f"❌ **YRVI** Auto-update failed: `{data.get('output', '')[:200]}`")
 
     except Exception as e:
         log.error(f"❌ Auto-update error: {e}", exc_info=True)
