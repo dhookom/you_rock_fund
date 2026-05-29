@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { Activity, BookOpen, MessageSquare, CheckCircle, AlertTriangle, XCircle, RefreshCw, ExternalLink, Send, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { Activity, BookOpen, MessageSquare, CheckCircle, AlertTriangle, XCircle, RefreshCw, ExternalLink, Send, SlidersHorizontal, ChevronDown, RotateCcw } from 'lucide-react'
 
 const FAQ_URL = 'https://github.com/controllinghand/you_rock_fund/blob/main/FAQ.md'
 
@@ -25,7 +25,25 @@ function StatusIcon({ status }) {
 
 function CheckRow({ c }) {
   const hasSnippet = Array.isArray(c.log_snippet)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded,     setExpanded]     = useState(false)
+  const [resetting,    setResetting]    = useState(false)
+  const [resetMsg,     setResetMsg]     = useState(null)
+  const [resetError,   setResetError]   = useState(null)
+
+  const doReset = async () => {
+    setResetting(true)
+    setResetMsg(null)
+    setResetError(null)
+    try {
+      const res = await axios.post('/api/gateway/reset-installation')
+      setResetMsg(res.data.message)
+    } catch (err) {
+      setResetError(err.response?.data?.detail ?? err.message ?? 'Reset failed')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   return (
     <div className="px-4 py-3 bg-white dark:bg-gray-900">
       <div className="flex items-center gap-3">
@@ -36,6 +54,16 @@ function CheckRow({ c }) {
         <div className="text-sm text-gray-500 dark:text-gray-500 flex-1">
           {c.detail}
         </div>
+        {c.reset_available && !resetMsg && (
+          <button
+            onClick={doReset}
+            disabled={resetting}
+            className="flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-60 disabled:cursor-wait text-white text-xs font-medium rounded-md transition-colors shrink-0"
+          >
+            <RotateCcw size={11} className={resetting ? 'animate-spin' : ''} />
+            {resetting ? 'Resetting…' : 'Reset Installation'}
+          </button>
+        )}
         {hasSnippet && (
           <button
             onClick={() => setExpanded(v => !v)}
@@ -47,6 +75,19 @@ function CheckRow({ c }) {
           </button>
         )}
       </div>
+
+      {/* Reset feedback */}
+      {resetMsg && (
+        <div className="mt-2 ml-[27px] flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <RotateCcw size={11} />
+          {resetMsg}
+        </div>
+      )}
+      {resetError && (
+        <div className="mt-2 ml-[27px] text-xs text-red-500">{resetError}</div>
+      )}
+
+      {/* Log snippet */}
       {hasSnippet && expanded && (
         <div className="mt-2 ml-[27px] font-mono text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60 rounded-md px-3 py-2 space-y-0.5 overflow-x-auto">
           {c.log_snippet.length > 0

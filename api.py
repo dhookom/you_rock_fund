@@ -621,6 +621,69 @@ async def _startup() -> None:
         print("[api] Gateway log monitor started")
 
 
+@app.post("/api/gateway/reset-installation")
+def reset_gateway_installation():
+    """
+    Wipe the ib_gateway_settings volume and restart the container so IBC
+    reinstalls the correct Gateway version from scratch.  Only needed when
+    the Docker image updates to a new Gateway version that isn't in the volume
+    (IBC exits with code 4: "Offline TWS/Gateway version X is not installed").
+    Credentials (ibc_config.ini / .env) are host-mounted and are NOT affected.
+    """
+    if not CONTAINERIZED:
+        raise HTTPException(status_code=400, detail="Reset is only available in containerized mode")
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+
+        # ── 1. Locate the settings volume from the container's mount list ──
+        try:
+            container = client.containers.get("ib_gateway")
+        except Exception:
+            raise HTTPException(status_code=404, detail="ib_gateway container not found")
+
+        settings_volume = None
+        for mount in container.attrs.get("Mounts", []):
+            if (mount.get("Type") == "volume"
+                    and mount.get("Destination") == "/home/ibgateway/Jts"):
+                settings_volume = mount.get("Name")
+                break
+
+        if not settings_volume:
+            raise HTTPException(status_code=500,
+                                detail="Could not locate ib_gateway_settings volume in container mounts")
+
+        # ── 2. Stop the container ──────────────────────────────────────────
+        try:
+            container.stop(timeout=15)
+        except Exception:
+            pass   # already stopped — that's fine
+
+        # ── 3. Remove the stale volume ────────────────────────────────────
+        try:
+            vol = client.volumes.get(settings_volume)
+            vol.remove()
+        except Exception as e:
+            raise HTTPException(status_code=500,
+                                detail=f"Could not remove volume {settings_volume}: {e}")
+
+        # ── 4. Recreate empty volume with the same name ───────────────────
+        client.volumes.create(settings_volume)
+
+        # ── 5. Start container — mounts the fresh volume; IBC installs GW ─
+        container.start()
+
+        print(f"[api/reset-gateway] wiped {settings_volume} and restarted ib_gateway")
+        return {"success": True,
+                "message": "Gateway installation reset — IBC is reinstalling (~2 min). "
+                           "Run diagnostics again once the gateway comes back up."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/restart-scheduler")
 def restart_scheduler():
     if CONTAINERIZED:
@@ -894,11 +957,13 @@ def _build_diag() -> dict:
     checks = []
     overall = "ok"
 
-    def check(name, status, detail, log_snippet=None):
+    def check(name, status, detail, log_snippet=None, reset_available=False):
         nonlocal overall
         entry = {"name": name, "status": status, "detail": detail}
         if log_snippet is not None:
             entry["log_snippet"] = log_snippet
+        if reset_available:
+            entry["reset_available"] = True
         checks.append(entry)
         if status == "error" and overall != "error":
             overall = "error"
@@ -958,9 +1023,15 @@ def _build_diag() -> dict:
                   snippet)
         elif c_state == "exited":
             code_str = f" (exit code {c_exit})" if c_exit is not None else ""
-            check("IB Gateway", "error",
-                  f"Container stopped{code_str} — run: docker compose --env-file .env.compose restart ib_gateway",
-                  snippet)
+            if c_exit == 4:
+                check("IB Gateway", "error",
+                      f"Gateway version mismatch{code_str} — installed version not found. "
+                      "Use Reset Installation below to reinstall.",
+                      snippet, reset_available=True)
+            else:
+                check("IB Gateway", "error",
+                      f"Container stopped{code_str} — run: docker compose --env-file .env.compose restart ib_gateway",
+                      snippet)
         elif c_state == "restarting":
             check("IB Gateway", "warn",
                   "Container is restarting — wait 60–90 s then run diagnostics again",
