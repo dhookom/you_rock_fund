@@ -3,6 +3,81 @@
 - **Startup script no longer reports a false NO-GO on cold start** — `startup.sh` was counting 4 container-not-found failures before running `setup_docker.sh`, then never subtracting them after setup succeeded. The script now re-checks each container after setup and flips fail→pass, then waits up to 60 s for the API to be ready before the health check runs. Result: a clean cold start now shows 15 passed / 0 failed / GO instead of 5 phantom failures.
 - **Settings page "Reset to Defaults" now resets all fields** — several settings fields (e.g. Gateway restart time, suppress window) were not included in the reset payload, leaving stale values after a reset. All configurable settings are now covered.
 
+## [2.2.27] — 2026-05-28
+### Changed
+- **Auto-update test bump** — version bump used to verify end-to-end auto-update flow.
+
+## [2.2.26] — 2026-05-28
+### Changed
+- **Auto-update delegates git pull + rebuild to API** — scheduler-triggered auto-update now calls `POST /api/version/upgrade` instead of running git and Docker commands in-process, keeping the upgrade path consistent with the manual upgrade button.
+
+## [2.2.25] — 2026-05-28
+### Added
+- **Scheduled auto-update (opt-in)** — new Settings toggle to automatically pull and rebuild the latest version on Wednesday–Friday at 3 AM; off by default. `auto_update_enabled` added to `settings_default.json`. Scheduler checks at startup and registers/removes the nightly job accordingly.
+
+## [2.2.24] — 2026-05-28
+### Fixed
+- **Reset Installation no longer fails with volume-in-use error** — the API now stops dependent containers before removing volumes, then removes the gateway container last, preventing Docker "volume is in use" errors during a reset.
+
+## [2.2.23] — 2026-05-28
+### Changed
+- **Version number appended to all Discord alerts** — every outgoing Discord notification (watchdog, trade, weekly summary) now includes the running version so it's easy to correlate alerts with releases in the log.
+
+## [2.2.22] — 2026-05-28
+### Fixed
+- **Smarter watchdog Discord alerts for gateway failures** — watchdog now inspects the gateway container state before alerting; distinguishes between container-stopped vs. IBKR-connection-lost scenarios and sends appropriately worded messages for each.
+
+## [2.2.21] — 2026-05-28
+### Added
+- **One-click Reset Installation** — new button in the System Diagnostics panel (Help page) that stops all containers, removes the `yrvi_data` volume, and re-runs setup; designed to recover from IB Gateway version-mismatch errors that require a clean reinstall of the gateway image.
+- `POST /api/reset-installation` endpoint orchestrates the full teardown and delegates to `setup_docker.sh`.
+
+## [2.2.20] — 2026-05-28
+### Fixed
+- **Diagnostics log snippet chevron defaults to closed** — the expandable log snippet in the Help → System Diagnostics section now starts collapsed so it doesn't push other content off-screen on load.
+
+## [2.2.19] — 2026-05-28
+### Fixed
+- **Gateway logs always shown in diagnostics** — the `GET /api/diag` endpoint now always fetches the last 30 lines of the gateway container log, regardless of whether the gateway appears healthy, so login errors and version-mismatch messages are visible in the Help page even when the container is running.
+
+## [2.2.18] — 2026-05-28
+### Changed
+- **Auto-expand log snippet when present** — if `GET /api/diag` returns a gateway log snippet, the Help page now expands the log accordion automatically so members see the relevant lines immediately without an extra click.
+
+## [2.2.17] — 2026-05-28
+### Fixed
+- **Detect IBC's actual bad-password dialog string** — gateway entrypoint log scan now matches the exact string IBC emits for a wrong password (`"Invalid password"`) in addition to the previously detected lockout strings, so password errors are caught before a lockout occurs.
+
+## [2.2.16] — 2026-05-28
+### Fixed
+- **IB Gateway check gracefully handles ib_insync connect failures** — `GET /api/diag` now catches `ConnectionRefusedError` and similar exceptions when probing the IBKR API port and downgrades the result to a warning rather than a 500 error, so diagnostics still return usable status when the gateway is mid-restart.
+
+## [2.2.15] — 2026-05-28
+### Added
+- **Richer IB Gateway diagnostics** — `GET /api/diag` now returns `gateway_container_state` (running/exited/missing), `gateway_log_snippet` (last 30 log lines), and `ibkr_login_status` (connected/login_failed/no_data). Help page renders these with color-coded badges and an expandable log panel.
+
+## [2.2.14] — 2026-05-27
+### Fixed
+- **Upgrade endpoint resets tracked files before git pull** — `POST /api/version/upgrade` now runs `git checkout -- .` before pulling so stale local modifications to `VERSION` or other tracked files never cause the pull to abort with "local changes would be overwritten".
+
+## [2.2.13] — 2026-05-27
+### Fixed
+- Version bump (no functional change — internal release tracking).
+
+## [2.2.12] — 2026-05-27
+### Fixed
+- Version bump (no functional change — internal release tracking).
+
+## [2.2.11] — 2026-05-27
+### Fixed
+- Version bump (no functional change — internal release tracking).
+
+## [2.2.10] — 2026-05-27
+### Added
+- **Windows setup guide** — [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) added for GEEKOM A5 and equivalent Windows Mini PCs; covers Git Bash, Docker Desktop, auto-login, Remote Desktop, and full live trading setup.
+- `setup_windows.ps1` deprecated — `setup_docker.sh` is now the single setup entry point for macOS and Windows.
+- Windows Mini PC added to the live trading hardware table in README; "Windows paper-only" restriction removed.
+
 ## [2.2.9] — 2026-05-26
 ### Fixed
 - **Open position cards now show a true execution-time snapshot** — Price, Buffer, Delta, and Yield all reflect the exact state when the option was sold, not Saturday's screener snapshot.
