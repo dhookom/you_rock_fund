@@ -1,3 +1,20 @@
+## [3.0.0] — 2026-05-30
+### Added
+- **Live trading support** — YRVI now connects to real IBKR live accounts in addition to paper trading. Switch between modes from the Settings page with a single toggle.
+- **Paper ↔ Live toggle** — Settings page toggle with CONFIRM dialog, masked account preview, and Discord alert on every mode switch. Gateway restarts automatically with the correct credentials for the selected mode.
+- **Live credentials via secrets container** — `tws_userid_live`, `tws_password_live`, and `account_live` are stored in the encrypted secrets container alongside paper credentials. No `.env` file changes required.
+- **Green live mode indicator** — header pill and Settings badge turn green + pulse when live trading is active. "Switch to Live" button remains red as a deliberate warning for the action.
+- **Amber live mode warning bar** — Settings page shows "Live mode active — all trades use real money" in high-contrast amber (light and dark mode).
+- **Reset Installation button always visible** — moved from diagnostics-only to a permanent button in Settings → IB Gateway section for easy access during recovery.
+- **Account-scoped positions** — dashboard IBKR Holdings now filters by the configured account, preventing positions from other accounts under the same IBKR login from appearing.
+- **Unrealized/Realized P&L display fix** — zero values now show as `+$0.00` instead of "Live account only."
+
+### Fixed
+- **Live password read from secrets, not env var** — `IBKR_PASSWORD_LIVE` env var check replaced with `get_secret("tws_password_live")` for consistency with all other credentials.
+- **Gateway restart uses docker, not launchctl** — `_restart_ibgateway()` now calls `docker restart ib_gateway` (works inside the API container) instead of `launchctl` (macOS host only).
+- **Trading mode written to shared volume** — gateway entrypoint reads `/data/gw_trading_mode` override so the correct account credentials are fetched on restart without rebuilding the image.
+- **IBKR port uses socat ports** — API connects on 4003 (live) and 4004 (paper) — the socat listener ports — not the raw Gateway ports 4001/4002.
+
 ## [2.2.28] — 2026-05-29
 ### Fixed
 - **Startup script no longer reports a false NO-GO on cold start** — `startup.sh` was counting 4 container-not-found failures before running `setup_docker.sh`, then never subtracting them after setup succeeded. The script now re-checks each container after setup and flips fail→pass, then waits up to 60 s for the API to be ready before the health check runs. Result: a clean cold start now shows 15 passed / 0 failed / GO instead of 5 phantom failures.
