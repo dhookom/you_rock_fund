@@ -132,6 +132,8 @@ export default function SettingsPage() {
   const [restartResult, setRestartResult]   = useState(null)
   const [patching, setPatching]             = useState(false)
   const [patchResult, setPatchResult]       = useState(null)
+  const [resettingGw, setResettingGw]       = useState(false)
+  const [resetGwResult, setResetGwResult]   = useState(null)
   const [timezone, setTimezone]                 = useState('')
   const [timezoneOriginal, setTimezoneOriginal] = useState('')
   const [tzSaving, setTzSaving]                 = useState(false)
@@ -269,7 +271,7 @@ export default function SettingsPage() {
     setSwitching(true)
     try {
       await axios.post('/api/trading-mode', { mode: target, confirmation: 'CONFIRM' })
-      setSettings(prev => ({ ...prev, trading_mode: target, ibkr_port: target === 'live' ? 4001 : 4002 }))
+      setSettings(prev => ({ ...prev, trading_mode: target, ibkr_port: target === 'live' ? 4003 : 4004 }))
       setOriginal(prev => ({ ...prev, trading_mode: target }))
       setShowModal(false)
       setConfirm('')
@@ -300,6 +302,20 @@ export default function SettingsPage() {
       setPatchResult({ ok: false, text: err.response?.data?.detail ?? 'Patch failed' })
     } finally {
       setPatching(false)
+    }
+  }
+
+  const resetGateway = async () => {
+    if (!window.confirm('Reset IB Gateway installation? This wipes the settings volume and reinstalls (~2 min). Gateway will be unavailable during reset.')) return
+    setResettingGw(true)
+    setResetGwResult(null)
+    try {
+      const res = await axios.post('/api/gateway/reset-installation')
+      setResetGwResult({ ok: true, text: res.data.message })
+    } catch (err) {
+      setResetGwResult({ ok: false, text: err.response?.data?.detail ?? 'Reset failed' })
+    } finally {
+      setResettingGw(false)
     }
   }
 
@@ -600,6 +616,25 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
+          <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
+            <strong className="text-gray-700 dark:text-gray-400">Reset Installation</strong> wipes the Gateway settings volume and reinstalls from scratch. Use this if Gateway is stuck or failing to connect after a version mismatch. Gateway will be unavailable for ~2 minutes.
+          </div>
+          <button
+            onClick={resetGateway}
+            disabled={resettingGw}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-600 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-wait transition-colors"
+          >
+            <RefreshCw size={11} className={resettingGw ? 'animate-spin' : ''} />
+            {resettingGw ? 'Resetting…' : 'Reset Installation'}
+          </button>
+          {resetGwResult && (
+            <div className={`text-xs font-medium ${resetGwResult.ok ? 'text-green-500' : 'text-red-400'}`}>
+              {resetGwResult.ok ? '✅' : '❌'} {resetGwResult.text}
+            </div>
+          )}
+        </div>
       </Section>
 
       {/* Timezone */}
@@ -688,7 +723,7 @@ export default function SettingsPage() {
               {isLive ? '🔴 LIVE TRADING' : '📄 PAPER TRADING'}
             </span>
             <div className="text-gray-500 dark:text-gray-600 text-xs mt-2">
-              IBKR port: {settings.ibkr_port} ({isLive ? '4001 = live' : '4002 = paper'})
+              IBKR port: {settings.ibkr_port} ({isLive ? '4003 = live' : '4004 = paper'})
             </div>
           </div>
           <button
@@ -913,7 +948,7 @@ export default function SettingsPage() {
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Switch to Paper Trading</h3>
                 </div>
                 <p className="text-gray-600 dark:text-gray-300 text-sm mb-5">
-                  This will switch back to IBKR port 4002 (paper gateway). No real trades will be placed.
+                  This will switch back to IBKR port 4004 (paper gateway). No real trades will be placed.
                 </p>
                 <div className="mb-5">
                   <label className="text-gray-600 dark:text-gray-400 text-sm block mb-2">

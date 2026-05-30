@@ -8,6 +8,15 @@ VNC_DEFAULT="ibgateway123!test"
 
 TRADING_MODE="${TRADING_MODE:-paper}"
 
+# Allow the YRVI API to override TRADING_MODE via a file on the shared volume.
+if [ -f "/data/gw_trading_mode" ]; then
+    _tm_override=$(cat "/data/gw_trading_mode" 2>/dev/null | tr -d '\n\r' || true)
+    if [ "$_tm_override" = "live" ] || [ "$_tm_override" = "paper" ]; then
+        TRADING_MODE="$_tm_override"
+        echo "yrvi-gw-entrypoint: TRADING_MODE overridden from /data: $TRADING_MODE"
+    fi
+fi
+
 if [ "$TRADING_MODE" = "live" ]; then
     PASSWORD_KEY="tws_password_live"
     USERID_KEY="tws_userid_live"
