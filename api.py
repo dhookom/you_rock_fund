@@ -45,10 +45,12 @@ SETTINGS_DEFAULT_FILE = BASE_DIR / "settings_default.json"
 IBC_CONFIG_FILE = BASE_DIR / "ibc_config.ini"
 TRADE_LOG_FILE = BASE_DIR / "trade_log.json"
 
+LIVE_PLACEHOLDERS = {
+    "IBKR_PASSWORD_LIVE": "your_live_ibkr_password",
+}
 LIVE_REQUIRED_SECRETS = {
     "account_live":    "your_live_account_number (starts with U)",
     "tws_userid_live": "your_live_ibkr_username",
-    "tws_password_live": "your_live_ibkr_password",
 }
 
 PST = ZoneInfo("America/Los_Angeles")
@@ -253,6 +255,10 @@ def _safe_float(val, ndigits: int = 2):
 
 def _live_ready() -> dict:
     missing = []
+    for var, placeholder in LIVE_PLACEHOLDERS.items():
+        val = os.environ.get(var, "")
+        if not val or val == placeholder:
+            missing.append(var)
     for secret_name, placeholder in LIVE_REQUIRED_SECRETS.items():
         val = get_secret(secret_name)
         if not val or val == placeholder:
@@ -273,9 +279,10 @@ def _update_ibc_config(username: str, password: str, mode: str, port: int) -> No
     IBC_CONFIG_FILE.write_text(content)
 
 def _restart_ibgateway() -> None:
+    uid = os.getuid()
     subprocess.run(
-        ["docker", "restart", "ib_gateway"],
-        capture_output=True, text=True, timeout=60,
+        ["launchctl", "kickstart", "-k", f"gui/{uid}/com.yourockfund.ibgateway"],
+        capture_output=True, text=True, timeout=10,
     )
 
 # ── Watchdog helpers ───────────────────────────────────────────
@@ -1656,26 +1663,22 @@ def set_trading_mode(body: TradingModeRequest):
             missing_str = ", ".join(ready["missing"])
             raise HTTPException(
                 status_code=400,
-                detail=f"Live credentials not configured. Add these in the Secrets page: {missing_str}",
+                detail=f"Live credentials not configured. Add these to your .env file and restart YRVI: {missing_str}",
             )
 
     current = load_settings()
     current["trading_mode"] = body.mode
     current["ibkr_port"]    = 4001 if body.mode == "live" else 4002
 
-    # Write trading mode to shared volume so ib_gateway entrypoint picks it up on restart.
-    gw_mode_file = Path("/data/gw_trading_mode")
-    try:
-        gw_mode_file.write_text(body.mode)
-    except Exception as e:
-        print(f"[api/trading-mode] failed to write gw_trading_mode: {e}")
-
     if body.mode == "live":
         current["account"] = get_secret("account_live")
-    else:
-        current["account"] = get_secret("account_paper")
-
-    _restart_ibgateway()
+        _update_ibc_config(
+            username=get_secret("tws_userid_live"),
+            password=os.environ.get("IBKR_PASSWORD_LIVE", ""),
+            mode="live",
+            port=4001,
+        )
+        _restart_ibgateway()
 
     save_settings(current)
 

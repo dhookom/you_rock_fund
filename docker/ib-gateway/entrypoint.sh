@@ -8,15 +8,6 @@ VNC_DEFAULT="ibgateway123!test"
 
 TRADING_MODE="${TRADING_MODE:-paper}"
 
-# Allow the YRVI API to override TRADING_MODE via a file on the shared volume.
-if [ -f "/data/gw_trading_mode" ]; then
-    _tm_override=$(cat "/data/gw_trading_mode" 2>/dev/null | tr -d '\n\r' || true)
-    if [ "$_tm_override" = "live" ] || [ "$_tm_override" = "paper" ]; then
-        TRADING_MODE="$_tm_override"
-        echo "yrvi-gw-entrypoint: TRADING_MODE overridden from /data: $TRADING_MODE"
-    fi
-fi
-
 if [ "$TRADING_MODE" = "live" ]; then
     PASSWORD_KEY="tws_password_live"
     USERID_KEY="tws_userid_live"
@@ -128,32 +119,6 @@ fi
 # ── Patch IBC config and prepare env ─────────────────────────────
 
 patch_ibc_login_failed
-
-# Ensure Gateway binds on port 4002 (socat forwards 4004→4002→Gateway).
-# The base image only creates jts.ini from template if it doesn't exist, so we must
-# patch it directly. apply_settings() in run.sh overwrites config.ini from its template,
-# so OverrideTwsApiPort in config.ini gets wiped — patching jts.ini is the reliable fix.
-_jts="/home/ibgateway/Jts/jts.ini"
-if [ -f "$_jts" ]; then
-    sed -i 's/^LocalServerPort=.*/LocalServerPort=4002/' "$_jts"
-    echo "yrvi-gw-entrypoint: set LocalServerPort=4002 in $_jts (patched existing)"
-else
-    mkdir -p "$(dirname "$_jts")"
-    printf '[IBGateway]\nLocalServerPort=4002\nApiOnly=true\n' > "$_jts"
-    echo "yrvi-gw-entrypoint: created $_jts with LocalServerPort=4002"
-fi
-
-# The base image's socat connects to 127.0.0.1:4002 (IPv4) but Gateway binds on
-# :::4002 (IPv6 only). Kill the base image socat and replace it with one that
-# connects to [::1]:4002 so the IPv6 socket is reached correctly.
-_fix_socat() {
-    sleep 5  # wait for base image socat to start
-    pkill -f "socat TCP-LISTEN:4004" 2>/dev/null || true
-    sleep 1
-    socat TCP-LISTEN:4004,fork,reuseaddr TCP6:[::1]:4002 &
-    echo "yrvi-gw-entrypoint: replaced socat with IPv6 target [::1]:4002"
-}
-_fix_socat &
 
 # Allow the YRVI API to override AUTO_RESTART_TIME via a file on the shared volume
 # without requiring a .env.compose edit + full stack restart.
