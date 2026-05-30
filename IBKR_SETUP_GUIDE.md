@@ -327,6 +327,25 @@ If you're using the original launchd-based setup instead of Docker:
 
 Once you've run paper trading for at least 4 weeks and are ready to use real money, follow these steps to switch YRVI to live trading via the dashboard.
 
+### ⚠️ Required: Enable IB Key Before Going Live
+
+YRVI requires **IB Key** (push notification via the IBKR Mobile app) for two-factor authentication. **SMS 2FA is not supported** — it requires someone to be physically present to enter a code every time IB Gateway restarts, which breaks the unattended automation.
+
+**Before switching to live, set up IB Key:**
+
+1. Download the **IBKR Mobile** app on your phone (iOS or Android)
+2. Log into the app with your live account credentials
+3. Go to **More → Security → Secure Login System**
+4. Enable **IB Key** and follow the activation steps
+5. In the IBKR Client Portal → **Settings → Security → Secure Login System**, confirm IB Key is your active 2FA method
+
+> If you are currently using SMS 2FA, switch to IB Key before going live. SMS requires manual code entry on every restart and cannot be automated.
+
+**How 2FA works with YRVI:**
+- On **first live login**, IB Gateway will show a 2FA prompt in VNC — approve the IB Key push notification on your phone
+- After that, IB Gateway **auto-restarts nightly** and only requires a fresh 2FA approval **once per week** (Sunday evening when IBKR resets the weekly session token)
+- The weekly approval takes seconds — you'll get a push notification, tap approve, done
+
 ### Step 1 — Open a Live IBKR Account
 
 If you've only been using a paper trading account, you'll need a funded live account:
@@ -338,45 +357,34 @@ If you've only been using a paper trading account, you'll need a funded live acc
 
 > Your live account number starts with **`U`** (e.g., `U12345678`). Paper accounts start with `DU`.
 
-### Step 2 — Add Live Credentials to .env
+### Step 2 — Add Live Credentials in the Secrets Page
 
-Open your `.env` file and add the live-specific credentials at the bottom:
+Open the YRVI dashboard → **Secrets** and add the three live credentials:
 
-```env
-IBKR_USERNAME_LIVE=your_live_ibkr_username
-IBKR_PASSWORD_LIVE=your_live_ibkr_password
-ACCOUNT_LIVE=U12345678
-```
+| Secret | Value |
+|--------|-------|
+| IBKR Live Account ID | Your live account number (e.g. `U12345678`) |
+| IBKR Live Username | Your live IBKR username |
+| IBKR Live Password | Your live IBKR password |
 
-These are kept separate from your paper credentials (`IBKR_USERNAME`, `IBKR_PASSWORD`, `ACCOUNT`) so you can switch back and forth safely.
+These are stored in the same encrypted secrets container as your paper credentials — no `.env` file editing required.
 
-> **Security note:** Your `.env` file is excluded from git (never uploaded to GitHub). Keep it on your local machine only.
-
-### Step 3 — Restart YRVI
-
-After editing `.env`, restart the YRVI API so it picks up the new environment variables:
-
-```bash
-# In the YRVI app, use the restart option
-# Or from terminal:
-launchctl stop com.yourockfund.api
-launchctl start com.yourockfund.api
-```
-
-### Step 4 — Switch to Live in the Dashboard
+### Step 3 — Switch to Live in the Dashboard
 
 1. Open the YRVI dashboard → **Settings**
-2. Click **"Switch to Live"**
-3. The dashboard checks that all three live credentials are set
-4. If any are missing, a warning is shown with exactly which variables to add
-5. If all credentials are configured, a confirmation modal shows your account number (masked) — type `CONFIRM` to proceed
+2. Scroll to **Trading Mode** and click **"Switch to Live"**
+3. The dashboard checks that all three live credentials are configured
+4. If any are missing, a warning shows exactly which secrets to add in the Secrets page
+5. If all credentials are present, a confirmation modal shows your live account number (masked) — type `CONFIRM` to proceed
 
 When you confirm, YRVI automatically:
-- Updates IB Gateway configuration with your live credentials
-- Restarts IB Gateway pointed at port 4001 (live)
+- Writes the trading mode to the shared volume
+- Restarts IB Gateway with your live credentials
 - Posts a Discord alert (if webhook is enabled)
 
-> You do **not** need to manually edit `ibc_config.ini` or restart IB Gateway — the dashboard handles it.
+**Watch VNC during the first live login** — IB Gateway will show the 2FA screen. Approve the IB Key push notification on your phone. After that, the nightly auto-restart handles everything without intervention (except the weekly Sunday re-auth).
+
+> You do **not** need to manually edit any config files or restart IB Gateway — the dashboard handles everything.
 
 ---
 
@@ -390,7 +398,7 @@ When you confirm, YRVI automatically:
 | Account stuck "In Review" | Upload clearer ID photos; check spam folder for document requests |
 | Can't find account number | Portal → Account → Account Summary (top of page) |
 | Paper account not showing | Wait 24 hours after live account approval; may need to enable via portal |
-| 2FA / authentication issues | Install the **IBKR Mobile** app and use it for login authentication |
+| 2FA / authentication issues | Enable **IB Key** in IBKR Mobile — SMS 2FA is not supported for unattended automation |
 | Wire transfer not credited | Call IBKR with your wire confirmation number — usually credited same day |
 | Options order rejected | Verify your account has Level 3 options (not Level 2); check available cash collateral |
 
@@ -398,7 +406,7 @@ When you confirm, YRVI automatically:
 
 ## ⚠️ Important Notes
 
-- **Never share your password.** YRVI stores credentials only in your local `.env` file, which is excluded from git (never uploaded to GitHub).
+- **Never share your password.** YRVI stores credentials in an encrypted secrets container on your machine — never in a config file or uploaded to GitHub.
 - **Start with paper trading** for at least 4 weeks to validate the system before risking real capital.
 - **Only use money you can afford to have tied up.** CSPs tie up collateral for the duration of the contract (typically 1 week). Stop losses are set at 10% below strike — this is the maximum per-position loss in a bad week.
 - **Keep IB Gateway running.** YRVI connects to IB Gateway to place orders. If IB Gateway is closed, trades won't execute. With Docker, `setup_docker.sh` handles this automatically. With the legacy launchd setup, `setup_ibc.sh` configures it to start automatically on login.

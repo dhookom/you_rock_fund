@@ -101,6 +101,19 @@ New to IBKR? See the **[IBKR Account Setup Guide](IBKR_SETUP_GUIDE.md)** for a c
 
 These are the ports the Python containers use to reach IB Gateway inside the Compose network. They differ from the standalone IB Gateway defaults (4002/4001) used in the legacy launchd setup.
 
+### ⚠️ Live Trading: IB Key Required
+
+YRVI requires **IB Key** (IBKR Mobile push notification) for two-factor authentication when running live. **SMS 2FA is not supported** — it requires manual code entry on every Gateway restart, which breaks unattended automation.
+
+**Before switching to live:**
+1. Install the **IBKR Mobile** app and enable **IB Key** in your account security settings
+2. Add live credentials (account ID, username, password) in the YRVI dashboard → Secrets page
+3. Switch to live from Settings → Trading Mode → Switch to Live
+4. Approve the IB Key push notification on first login (watch VNC)
+5. After that, only one approval per week is needed (Sunday session reset)
+
+See the [IBKR Setup Guide](IBKR_SETUP_GUIDE.md#-required-enable-ib-key-before-going-live) for the full walkthrough.
+
 ## Installation
 
 ```bash

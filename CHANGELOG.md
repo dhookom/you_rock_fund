@@ -9,6 +9,9 @@
 - **Account-scoped positions** — dashboard IBKR Holdings now filters by the configured account, preventing positions from other accounts under the same IBKR login from appearing.
 - **Unrealized/Realized P&L display fix** — zero values now show as `+$0.00` instead of "Live account only."
 
+### Requirements
+- **IB Key required for live trading** — SMS 2FA is not supported for unattended automation. Enable IB Key (push notification) via the IBKR Mobile app before switching to live. First live login requires a one-time phone approval via VNC; nightly auto-restarts need fresh approval only once per week (Sunday session reset).
+
 ### Fixed
 - **Live password read from secrets, not env var** — `IBKR_PASSWORD_LIVE` env var check replaced with `get_secret("tws_password_live")` for consistency with all other credentials.
 - **Gateway restart uses docker, not launchctl** — `_restart_ibgateway()` now calls `docker restart ib_gateway` (works inside the API container) instead of `launchctl` (macOS host only).
