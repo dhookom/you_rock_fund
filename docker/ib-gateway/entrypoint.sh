@@ -138,12 +138,22 @@ if [ -f "$_jts" ]; then
     sed -i 's/^LocalServerPort=.*/LocalServerPort=4002/' "$_jts"
     echo "yrvi-gw-entrypoint: set LocalServerPort=4002 in $_jts (patched existing)"
 else
-    # File doesn't exist yet — create it with the port set so the base image
-    # skips writing the template (which defaults to 4000).
     mkdir -p "$(dirname "$_jts")"
     printf '[IBGateway]\nLocalServerPort=4002\nApiOnly=true\n' > "$_jts"
     echo "yrvi-gw-entrypoint: created $_jts with LocalServerPort=4002"
 fi
+
+# The base image's socat connects to 127.0.0.1:4002 (IPv4) but Gateway binds on
+# :::4002 (IPv6 only). Kill the base image socat and replace it with one that
+# connects to [::1]:4002 so the IPv6 socket is reached correctly.
+_fix_socat() {
+    sleep 5  # wait for base image socat to start
+    pkill -f "socat TCP-LISTEN:4004" 2>/dev/null || true
+    sleep 1
+    socat TCP-LISTEN:4004,fork,reuseaddr TCP6:[::1]:4002 &
+    echo "yrvi-gw-entrypoint: replaced socat with IPv6 target [::1]:4002"
+}
+_fix_socat &
 
 # Allow the YRVI API to override AUTO_RESTART_TIME via a file on the shared volume
 # without requiring a .env.compose edit + full stack restart.
