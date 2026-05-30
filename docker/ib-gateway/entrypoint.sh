@@ -129,14 +129,21 @@ fi
 
 patch_ibc_login_failed
 
-# Set the API port override so IBC tells Gateway to listen on 4002 (socat forwards 4004→4002).
-for _ini in /opt/ibc/config.ini /home/ibgateway/ibc/config.ini /root/ibc/config.ini; do
-    if [ -f "$_ini" ] && [ -w "$_ini" ]; then
-        sed -i 's/^OverrideTwsApiPort=.*/OverrideTwsApiPort=4002/' "$_ini"
-        echo "yrvi-gw-entrypoint: set OverrideTwsApiPort=4002 in $_ini"
-        break
-    fi
-done
+# Ensure Gateway binds on port 4002 (socat forwards 4004→4002→Gateway).
+# The base image only creates jts.ini from template if it doesn't exist, so we must
+# patch it directly. apply_settings() in run.sh overwrites config.ini from its template,
+# so OverrideTwsApiPort in config.ini gets wiped — patching jts.ini is the reliable fix.
+_jts="/home/ibgateway/Jts/jts.ini"
+if [ -f "$_jts" ]; then
+    sed -i 's/^LocalServerPort=.*/LocalServerPort=4002/' "$_jts"
+    echo "yrvi-gw-entrypoint: set LocalServerPort=4002 in $_jts (patched existing)"
+else
+    # File doesn't exist yet — create it with the port set so the base image
+    # skips writing the template (which defaults to 4000).
+    mkdir -p "$(dirname "$_jts")"
+    printf '[IBGateway]\nLocalServerPort=4002\nApiOnly=true\n' > "$_jts"
+    echo "yrvi-gw-entrypoint: created $_jts with LocalServerPort=4002"
+fi
 
 # Allow the YRVI API to override AUTO_RESTART_TIME via a file on the shared volume
 # without requiring a .env.compose edit + full stack restart.
