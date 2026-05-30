@@ -45,12 +45,10 @@ SETTINGS_DEFAULT_FILE = BASE_DIR / "settings_default.json"
 IBC_CONFIG_FILE = BASE_DIR / "ibc_config.ini"
 TRADE_LOG_FILE = BASE_DIR / "trade_log.json"
 
-LIVE_PLACEHOLDERS = {
-    "IBKR_PASSWORD_LIVE": "your_live_ibkr_password",
-}
 LIVE_REQUIRED_SECRETS = {
     "account_live":    "your_live_account_number (starts with U)",
     "tws_userid_live": "your_live_ibkr_username",
+    "tws_password_live": "your_live_ibkr_password",
 }
 
 PST = ZoneInfo("America/Los_Angeles")
@@ -255,10 +253,6 @@ def _safe_float(val, ndigits: int = 2):
 
 def _live_ready() -> dict:
     missing = []
-    for var, placeholder in LIVE_PLACEHOLDERS.items():
-        val = os.environ.get(var, "")
-        if not val or val == placeholder:
-            missing.append(var)
     for secret_name, placeholder in LIVE_REQUIRED_SECRETS.items():
         val = get_secret(secret_name)
         if not val or val == placeholder:
@@ -1663,7 +1657,7 @@ def set_trading_mode(body: TradingModeRequest):
             missing_str = ", ".join(ready["missing"])
             raise HTTPException(
                 status_code=400,
-                detail=f"Live credentials not configured. Add these to your .env file and restart YRVI: {missing_str}",
+                detail=f"Live credentials not configured. Add these in the Secrets page: {missing_str}",
             )
 
     current = load_settings()
@@ -1674,7 +1668,7 @@ def set_trading_mode(body: TradingModeRequest):
         current["account"] = get_secret("account_live")
         _update_ibc_config(
             username=get_secret("tws_userid_live"),
-            password=os.environ.get("IBKR_PASSWORD_LIVE", ""),
+            password=get_secret("tws_password_live"),
             mode="live",
             port=4001,
         )
