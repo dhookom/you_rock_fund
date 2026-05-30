@@ -887,6 +887,8 @@ def _get_ibkr_data(settings: dict) -> dict:
 
                 portfolio = []
                 for pos in raw_positions:
+                    if account_env and pos.account != account_env:
+                        continue
                     c        = pos.contract
                     is_opt   = c.secType == "OPT"
                     pnl_data = portfolio_lookup.get(c.conId, {})

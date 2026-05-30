@@ -171,7 +171,7 @@ export default function Dashboard() {
             ].map(({ label, value, pnl, liveOnly }) => (
               <div key={label} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
                 <div className="text-gray-500 text-xs mb-1.5">{label}</div>
-                {liveOnly && !value ? (
+                {liveOnly && value == null ? (
                   <div className="text-xs text-gray-400 dark:text-gray-600 italic leading-tight">Live account only</div>
                 ) : (
                   <div className={`text-lg font-bold font-mono ${pnl ? pnlColor(value) : 'text-gray-900 dark:text-white'}`}>
