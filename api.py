@@ -1663,15 +1663,19 @@ def set_trading_mode(body: TradingModeRequest):
     current["trading_mode"] = body.mode
     current["ibkr_port"]    = 4001 if body.mode == "live" else 4002
 
+    # Write trading mode to shared volume so ib_gateway entrypoint picks it up on restart.
+    gw_mode_file = Path("/data/gw_trading_mode")
+    try:
+        gw_mode_file.write_text(body.mode)
+    except Exception as e:
+        print(f"[api/trading-mode] failed to write gw_trading_mode: {e}")
+
     if body.mode == "live":
         current["account"] = get_secret("account_live")
-        _update_ibc_config(
-            username=get_secret("tws_userid_live"),
-            password=get_secret("tws_password_live"),
-            mode="live",
-            port=4001,
-        )
-        _restart_ibgateway()
+    else:
+        current["account"] = get_secret("account_paper")
+
+    _restart_ibgateway()
 
     save_settings(current)
 
