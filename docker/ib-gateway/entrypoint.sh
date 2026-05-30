@@ -129,6 +129,15 @@ fi
 
 patch_ibc_login_failed
 
+# Set the API port override so IBC tells Gateway to listen on 4002 (socat forwards 4004→4002).
+for _ini in /opt/ibc/config.ini /home/ibgateway/ibc/config.ini /root/ibc/config.ini; do
+    if [ -f "$_ini" ] && [ -w "$_ini" ]; then
+        sed -i 's/^OverrideTwsApiPort=.*/OverrideTwsApiPort=4002/' "$_ini"
+        echo "yrvi-gw-entrypoint: set OverrideTwsApiPort=4002 in $_ini"
+        break
+    fi
+done
+
 # Allow the YRVI API to override AUTO_RESTART_TIME via a file on the shared volume
 # without requiring a .env.compose edit + full stack restart.
 if [ -f "/data/gw_auto_restart_time" ]; then
