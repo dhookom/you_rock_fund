@@ -739,9 +739,9 @@ export default function SettingsPage() {
         </div>
 
         {isLive && (
-          <div className="flex items-center gap-2 bg-amber-900/20 border border-amber-700 rounded-lg px-3 py-2">
-            <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-            <span className="text-amber-400 text-xs">
+          <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-400 dark:border-amber-700 rounded-lg px-3 py-2">
+            <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="text-amber-700 dark:text-amber-400 text-xs font-medium">
               Live mode active — all trades use real money
             </span>
           </div>
