@@ -273,10 +273,9 @@ def _update_ibc_config(username: str, password: str, mode: str, port: int) -> No
     IBC_CONFIG_FILE.write_text(content)
 
 def _restart_ibgateway() -> None:
-    uid = os.getuid()
     subprocess.run(
-        ["launchctl", "kickstart", "-k", f"gui/{uid}/com.yourockfund.ibgateway"],
-        capture_output=True, text=True, timeout=10,
+        ["docker", "restart", "ib_gateway"],
+        capture_output=True, text=True, timeout=60,
     )
 
 # ── Watchdog helpers ───────────────────────────────────────────
