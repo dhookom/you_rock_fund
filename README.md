@@ -607,6 +607,15 @@ cat state.json               # Full system state
 
 ## Version History
 
+### v3.0.0 (May 2026) 🚀
+- **Live trading support** — full paper ↔ live toggle from the Settings page. IB Gateway restarts automatically with the correct account credentials. No config file edits required.
+- **IB Key required for live** — SMS 2FA not supported for unattended automation. Enable IB Key (IBKR Mobile push notification) before going live. First login requires a one-time VNC approval; nightly restarts need re-auth once per week.
+- **Secure live credentials** — `tws_userid_live`, `tws_password_live`, and `account_live` stored in the encrypted secrets container alongside paper credentials
+- **Green live mode indicator** — header pill and Settings badge turn green + pulse when live is active; amber warning bar shows "Live mode active — all trades use real money"
+- **Reset Installation button** — always accessible in Settings → IB Gateway (previously only visible on specific error conditions)
+- **Account-scoped positions** — dashboard filters IBKR Holdings to the configured account only
+- **Unrealized/Realized P&L** — now displays correctly on the live account dashboard
+
 ### v2.2.10 (May 2026)
 - **Windows setup guide** — [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) added for GEEKOM A5 and equivalent Windows Mini PCs; covers Git Bash, Docker Desktop, auto-login, Remote Desktop, and full live trading setup
 - `setup_windows.ps1` deprecated — `setup_docker.sh` is now the single setup entry point for macOS and Windows
