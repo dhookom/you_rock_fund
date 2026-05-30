@@ -323,10 +323,10 @@ export default function StatusBar() {
         {/* Mode badge */}
         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
           isLive
-            ? 'bg-red-900/50 text-red-400 border-red-700 animate-pulse'
+            ? 'bg-green-900/50 text-green-400 border-green-700 animate-pulse'
             : 'bg-blue-900/40 text-blue-400 border-blue-800'
         }`}>
-          {isLive ? '🔴 LIVE' : '📄 PAPER'}
+          {isLive ? '🟢 LIVE' : '📄 PAPER'}
         </span>
 
         {status?.account && (

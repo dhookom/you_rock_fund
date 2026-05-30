@@ -706,7 +706,7 @@ export default function SettingsPage() {
 
       {/* Trading Mode — prominent */}
       <div className={`border-2 rounded-xl p-5 space-y-4 ${
-        isLive ? 'border-red-700 bg-red-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
+        isLive ? 'border-green-700 bg-green-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
       }`}>
         <div className="text-gray-900 dark:text-white font-semibold text-sm flex items-center gap-2">
           <span>🔄</span> Trading Mode
@@ -717,10 +717,10 @@ export default function SettingsPage() {
             <div className="text-gray-500 text-sm mb-1">Current mode</div>
             <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold border ${
               isLive
-                ? 'bg-red-900/50 text-red-400 border-red-700'
+                ? 'bg-green-900/50 text-green-400 border-green-700 animate-pulse'
                 : 'bg-blue-900/40 text-blue-400 border-blue-800'
             }`}>
-              {isLive ? '🔴 LIVE TRADING' : '📄 PAPER TRADING'}
+              {isLive ? '🟢 LIVE TRADING' : '📄 PAPER TRADING'}
             </span>
             <div className="text-gray-500 dark:text-gray-600 text-xs mt-2">
               IBKR port: {settings.ibkr_port} ({isLive ? '4003 = live' : '4004 = paper'})
@@ -739,9 +739,9 @@ export default function SettingsPage() {
         </div>
 
         {isLive && (
-          <div className="flex items-center gap-2 bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">
-            <AlertTriangle size={14} className="text-red-400 shrink-0" />
-            <span className="text-red-400 text-xs">
+          <div className="flex items-center gap-2 bg-amber-900/20 border border-amber-700 rounded-lg px-3 py-2">
+            <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+            <span className="text-amber-400 text-xs">
               Live mode active — all trades use real money
             </span>
           </div>
