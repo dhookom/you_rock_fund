@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
-from config import MAX_PER_POSITION, TRADING_MODE
+from config import MAX_PER_POSITION, TRADING_MODE, ACCOUNT
 from secrets_client import get_secret
 
 load_dotenv()
@@ -272,7 +272,8 @@ def post_weekly_plan(positions: list):
     now = datetime.now(PST)
     days_to_monday = (7 - now.weekday()) % 7 or 7
     next_monday = (now + timedelta(days=days_to_monday)).strftime("%b %d, %Y")
-    mode_label = "🔴 LIVE" if TRADING_MODE == "live" else "📄 Paper"
+    acct_suffix = f"···{ACCOUNT[-4:]}" if ACCOUNT and len(ACCOUNT) >= 4 else ACCOUNT
+    mode_label = f"🔴 LIVE {acct_suffix}" if TRADING_MODE == "live" else f"📄 Paper {acct_suffix}"
 
     lines = []
     total_capital = 0.0
