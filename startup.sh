@@ -76,8 +76,8 @@ else
 
     if [ "$ALL_UP" = "false" ]; then
         echo ""
-        printf "  ${YELLOW}ℹ️${NC}   Running setup_docker.sh --paper to pull secrets and restart containers...\n"
-        bash "$PROJ/setup_docker.sh" --paper
+        printf "  ${YELLOW}ℹ️${NC}   Running setup_docker.sh to pull secrets and restart containers...\n"
+        bash "$PROJ/setup_docker.sh"
         echo ""
 
         # Re-check containers after setup and correct the counters

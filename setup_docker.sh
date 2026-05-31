@@ -45,6 +45,8 @@ usage() {
     echo ""
 }
 
+LAST_MODE_FILE="$HOME/.yrvi_last_mode"
+
 TRADING_MODE=""
 for arg in "$@"; do
     case "$arg" in
@@ -56,9 +58,21 @@ for arg in "$@"; do
 done
 
 if [ -z "$TRADING_MODE" ]; then
-    usage
+    if [ -f "$LAST_MODE_FILE" ]; then
+        TRADING_MODE=$(cat "$LAST_MODE_FILE")
+        printf "  No mode flag given — resuming last mode: %s\n" "$TRADING_MODE"
+    else
+        usage
+        exit 1
+    fi
+fi
+
+if [ "$TRADING_MODE" != "paper" ] && [ "$TRADING_MODE" != "live" ]; then
+    printf "Invalid mode in %s: '%s' — run with --paper or --live to reset\n" "$LAST_MODE_FILE" "$TRADING_MODE" >&2
     exit 1
 fi
+
+echo "$TRADING_MODE" > "$LAST_MODE_FILE"
 
 # ── Globals ────────────────────────────────────────────────────
 
