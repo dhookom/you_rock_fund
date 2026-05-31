@@ -369,6 +369,36 @@ patch_var "JAVA_PATH"          ""                      "$STARTGW"
 chmod +x "$STARTGW"
 ok "gatewaystartmacos.sh configured"
 
+# ── Patch jts.ini: bypass API order precautions ───────────────
+# IB Gateway stores per-user GUI settings in jts.ini. The "Bypass Order
+# Precautions for API Orders" checkbox must be set or Gateway will block
+# automated orders with an interactive confirmation dialog the scheduler
+# cannot respond to.
+patch_jts_ini() {
+    local jts_ini="$GATEWAY_CONF/jts.ini"
+    mkdir -p "$GATEWAY_CONF"
+    if [ ! -f "$jts_ini" ]; then
+        # Create minimal jts.ini if Gateway hasn't written one yet
+        printf "[IBGateway]\nApiOrderPrecautionsIgnored=true\n" > "$jts_ini"
+        ok "jts.ini created with ApiOrderPrecautionsIgnored=true"
+        return
+    fi
+    if grep -q "^ApiOrderPrecautionsIgnored=" "$jts_ini"; then
+        sed -i '' "s/^ApiOrderPrecautionsIgnored=.*/ApiOrderPrecautionsIgnored=true/" "$jts_ini"
+        ok "jts.ini: ApiOrderPrecautionsIgnored set to true (updated existing)"
+    else
+        # Append inside [IBGateway] section if present, else append at end
+        if grep -q "^\[IBGateway\]" "$jts_ini"; then
+            sed -i '' "/^\[IBGateway\]/a\\
+ApiOrderPrecautionsIgnored=true" "$jts_ini"
+        else
+            printf "\n[IBGateway]\nApiOrderPrecautionsIgnored=true\n" >> "$jts_ini"
+        fi
+        ok "jts.ini: ApiOrderPrecautionsIgnored=true appended"
+    fi
+}
+patch_jts_ini
+
 # ── Step 5: Install and load launchd plist ────────────────────
 echo ""
 echo "${BOLD}Step 5 / 7   Install launchd service${NC}"
