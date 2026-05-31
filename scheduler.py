@@ -222,9 +222,10 @@ def run_reconcile_job():
     log.info("=" * 65)
     try:
         from reconciler import run_reconcile
-        run_reconcile()
+        run_reconcile(alert=_discord_alert)
     except Exception as e:
         log.error(f"❌ Reconcile error: {e}", exc_info=True)
+        _discord_alert(f"🚨 **YRVI** Friday reconcile failed: `{type(e).__name__}: {e}`")
     finally:
         loop.close()
 

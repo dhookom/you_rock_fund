@@ -51,7 +51,7 @@ def _fetch_fills(ib: IB) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=10)
     f = ExecutionFilter(
         acctCode=ACCOUNT,
-        time=cutoff.strftime("%Y%m%d %H:%M:%S"),
+        time=cutoff.strftime("%Y%m%d-%H:%M:%S"),   # IBKR requires yyyymmdd-HH:MM:SS UTC
     )
     return ib.reqExecutions(f)
 
@@ -114,7 +114,7 @@ def _upsert_weeks(tracker: dict, new_weeks: dict) -> dict:
     }
 
 
-def run_reconcile() -> dict:
+def run_reconcile(alert=None) -> dict:
     log.info("=" * 65)
     log.info(f"🔁 FRIDAY RECONCILE — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     log.info("=" * 65)
@@ -128,7 +128,9 @@ def run_reconcile() -> dict:
         log.info(f"   Fetched {len(fills)} fills from IBKR (last 10 days)")
 
         if not fills:
-            log.info("   No fills — nothing to reconcile")
+            log.warning("   ⚠️  No fills returned — Gateway may have restarted mid-week")
+            if alert:
+                alert("⚠️ **YRVI** Friday reconcile found 0 fills — Gateway may have restarted mid-week. YTD tracker not updated.")
             return _load_ytd()
 
         new_weeks = _parse_fills(fills)
