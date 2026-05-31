@@ -68,24 +68,39 @@ def _discord_alert(message: str) -> None:
         log.warning(f"Discord alert failed: {e}")
 
 
-def _fetch_net_liq(fallback: float) -> float:
-    """Fetch IBKR account NetLiquidation. Returns fallback on any failure."""
+def _fetch_account_summary(fallback: float) -> tuple[float, float]:
+    """
+    Fetch IBKR BuyingPower and NetLiquidation.
+    Returns (buying_power, net_liq); falls back to (fallback, fallback) on any failure.
+    BuyingPower already reflects all open positions (including manual trades outside the app),
+    so it is the correct base budget for new CSPs.
+    """
     try:
         from ib_insync import IB
         ib = IB()
         ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID, readonly=True)
         summary = ib.accountSummary(ACCOUNT)
         ib.disconnect()
-        net_liq = next(
-            (float(v.value) for v in summary if v.tag == "NetLiquidation"),
-            None,
-        )
-        if net_liq and net_liq > 0:
-            log.info(f"  💹 Compound mode: IBKR net liquidation = ${net_liq:,.0f}")
-            return net_liq
-        log.warning("  ⚠️  NetLiquidation not found in account summary — using initial fund budget")
+        by_tag  = {v.tag: float(v.value) for v in summary if v.tag in ("BuyingPower", "NetLiquidation")}
+        bp      = by_tag.get("BuyingPower")
+        net_liq = by_tag.get("NetLiquidation")
+        if bp and bp > 0 and net_liq and net_liq > 0:
+            # Use the lesser of the two: for cash/Roth accounts BuyingPower < NetLiq (correct);
+            # for margin/paper accounts BuyingPower is inflated (4x+), so NetLiq wins.
+            effective = min(bp, net_liq)
+            log.info(f"  💹 Compound mode: net_liq=${net_liq:,.0f}  buying_power=${bp:,.0f}  "
+                     f"using=${effective:,.0f}")
+            return effective, net_liq
+        log.warning("  ⚠️  Account summary incomplete — using fund budget fallback")
     except Exception as e:
-        log.warning(f"  ⚠️  Could not fetch net liq from IBKR ({e}) — using initial fund budget")
+        log.warning(f"  ⚠️  Could not fetch account summary from IBKR ({e}) — using fund budget fallback")
+    return fallback, fallback
+
+
+def _fetch_net_liq(fallback: float) -> float:
+    """Legacy wrapper — returns NetLiquidation only."""
+    _, net_liq = _fetch_account_summary(fallback)
+    return net_liq
     return fallback
 
 
@@ -168,11 +183,20 @@ def run_screener_preview():
             else:
                 csp_targets.append(t)
 
-        budget       = TOTAL_FUND_BUDGET - reserved
+        settings         = _load_settings()
+        compound_enabled = settings.get("compound_enabled", True)
+        if compound_enabled:
+            # BuyingPower from IBKR already reflects all open positions (including manual
+            # trades outside the app and wheel stock), so use it directly as the CSP budget.
+            buying_power, _ = _fetch_account_summary(TOTAL_FUND_BUDGET)
+            budget          = buying_power
+        else:
+            budget = TOTAL_FUND_BUDGET - reserved
         positions    = size_all(csp_targets, budget=budget, num_positions=NUM_POSITIONS,
                                 cc_targets=cc_targets)
-        exec_time    = _load_settings().get("execution_time", "10:00")
-        log.info(f"\n📋 {len(positions)} positions queued for Monday {exec_time} PST")
+        exec_time    = settings.get("execution_time", "10:00")
+        log.info(f"\n📋 {len(positions)} positions queued for Monday {exec_time} PST  "
+                 f"(budget=${budget:,.0f}{'  compounding ON' if compound_enabled else ''})")
 
         from discord_poster import is_plan_enabled, post_weekly_plan
         if is_plan_enabled():
@@ -180,6 +204,27 @@ def run_screener_preview():
             log.info("✅ Weekly plan posted to Discord")
     except Exception as e:
         log.error(f"❌ Preview error: {e}", exc_info=True)
+    finally:
+        loop.close()
+
+
+# ── Friday 4:30PM — YTD reconcile ─────────────────────────────
+
+def run_reconcile_job():
+    loop = _new_loop()
+    now  = datetime.now(PST)
+    if is_market_holiday(now.date()):
+        log.info(f"⏭️  FRIDAY RECONCILE skipped — market holiday ({now.strftime('%Y-%m-%d')})")
+        loop.close()
+        return
+    log.info("\n" + "=" * 65)
+    log.info(f"🔁 FRIDAY RECONCILE — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
+    log.info("=" * 65)
+    try:
+        from reconciler import run_reconcile
+        run_reconcile()
+    except Exception as e:
+        log.error(f"❌ Reconcile error: {e}", exc_info=True)
     finally:
         loop.close()
 
@@ -337,11 +382,18 @@ def run_pipeline():
 
         settings         = get_settings()
         compound_enabled = settings.get("compound_enabled", True)
-        base_budget      = _fetch_net_liq(TOTAL_FUND_BUDGET) if compound_enabled else TOTAL_FUND_BUDGET
-        effective_budget = base_budget + freed_capital - reserved_capital
-        log.info(f"  📊 Budget: base=${base_budget:,.0f}  freed=${freed_capital:,.0f}  "
-                 f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}"
-                 f"{'  (compounding ON)' if compound_enabled else '  (compounding OFF)'}")
+        if compound_enabled:
+            # BuyingPower already reflects all open positions (manual trades, wheel stock,
+            # open CSPs) so it is the true available cash. Add freed_capital as a safety net
+            # in case the 9:55AM wheel stock sales haven't settled in IBKR yet.
+            buying_power, net_liq = _fetch_account_summary(TOTAL_FUND_BUDGET)
+            effective_budget      = buying_power + freed_capital
+            log.info(f"  📊 Budget: buying_power=${buying_power:,.0f}  net_liq=${net_liq:,.0f}  "
+                     f"freed=${freed_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding ON)")
+        else:
+            effective_budget = TOTAL_FUND_BUDGET + freed_capital - reserved_capital
+            log.info(f"  📊 Budget: base=${TOTAL_FUND_BUDGET:,.0f}  freed=${freed_capital:,.0f}  "
+                     f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding OFF)")
         target_fills     = max(1, NUM_POSITIONS - active_wheel_count)
         if target_fills < NUM_POSITIONS:
             log.info(f"  🔢 Targeting {target_fills} CSP(s) "
@@ -497,6 +549,11 @@ def main():
         id="friday_assignment", name="Friday Assignment Detection"
     )
     scheduler.add_job(
+        run_reconcile_job,
+        trigger="cron", day_of_week="fri", hour=16, minute=30,
+        id="friday_reconcile", name="Friday YTD Reconcile"
+    )
+    scheduler.add_job(
         run_discord_preview,
         trigger="cron", day_of_week="mon,tue", hour=prev_h, minute=prev_m,
         id="monday_discord_preview", name="Weekly Discord Preview"
@@ -532,6 +589,7 @@ def main():
     log.info("🗓️  YOU ROCK FUND SCHEDULER — Running")
     log.info(f"   Current time : {datetime.now(PST).strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("   • Friday     4:15 PM PST  — assignment detection (skipped on Good Friday)")
+    log.info("   • Friday     4:30 PM PST  — YTD reconcile (sync fills from IBKR)")
     log.info("   • Saturday   6:00 PM PST  — screener preview")
     log.info(f"   • Mon/Tue*  {fmt(prev_h, prev_m):>11}  — Discord preview (if webhook set)")
     log.info(f"   • Mon/Tue*  {fmt(wheel_h, wheel_m):>11}  — wheel check (stop loss + CCs)")

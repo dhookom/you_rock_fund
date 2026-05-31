@@ -1452,21 +1452,29 @@ def run_screener():
         compound_enabled     = settings.get("compound_enabled", True)
 
         if compound_enabled:
-            cached   = _ibkr_cache.get("data")
-            net_liq  = cached.get("account_value") if cached else None
-            budget   = net_liq if net_liq else initial_fund_budget
+            # Use min(buying_power, net_liq): for cash/Roth accounts buying_power < net_liq
+            # (reflects reserved CSP cash); for margin/paper accounts buying_power is inflated
+            # (4x+) so net_liq wins. min() gives the correct deployable budget in both cases.
+            cached       = _ibkr_cache.get("data")
+            buying_power = cached.get("buying_power") if cached else None
+            net_liq      = cached.get("account_value") if cached else None
+            if buying_power and net_liq:
+                budget = min(buying_power, net_liq)
+            else:
+                budget = buying_power or net_liq or initial_fund_budget
         else:
             budget = initial_fund_budget
 
-        # Deduct capital reserved for active wheel holdings
-        state          = load_state()
-        wheel_holdings = state.get("wheel_holdings", [])
+        # When compounding, BuyingPower already accounts for wheel holdings and open CSPs,
+        # so no manual deduction is needed. When not compounding, subtract reserved capital.
+        state           = load_state()
+        wheel_holdings  = state.get("wheel_holdings", [])
         active_holdings = [h for h in wheel_holdings if h.get("shares", 0) > 0]
         reserved_capital   = round(sum(
             h["shares"] * h.get("assigned_strike", 0.0) for h in active_holdings
         ), 2)
         active_wheel_count = len(active_holdings)
-        adjusted_budget    = budget - reserved_capital
+        adjusted_budget    = budget if compound_enabled else budget - reserved_capital
         target_fills       = n
         held_map           = {h["ticker"]: h for h in active_holdings}
 

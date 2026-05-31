@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
-from config import MAX_PER_POSITION
+from config import MAX_PER_POSITION, TRADING_MODE
 from secrets_client import get_secret
 
 load_dotenv()
@@ -272,6 +272,7 @@ def post_weekly_plan(positions: list):
     now = datetime.now(PST)
     days_to_monday = (7 - now.weekday()) % 7 or 7
     next_monday = (now + timedelta(days=days_to_monday)).strftime("%b %d, %Y")
+    mode_label = "🔴 LIVE" if TRADING_MODE == "live" else "📄 Paper"
 
     lines = []
     total_capital = 0.0
@@ -306,7 +307,7 @@ def post_weekly_plan(positions: list):
     run_time = now.strftime("%I:%M %p %Z").lstrip("0")
 
     _post_plan({"embeds": [{
-        "title":       f"📋 YRVI Week of {next_monday} — Trading Plan",
+        "title":       f"📋 YRVI Week of {next_monday} — Trading Plan [{mode_label}]",
         "description": "\n".join(lines) if lines else "No positions sized.",
         "color":       0x0099FF,
         "fields": [
@@ -316,7 +317,7 @@ def post_weekly_plan(positions: list):
             {"name": "​",           "value": "Results posted Monday after execution ✅",
              "inline": False},
         ],
-        "footer":    {"text": f"Screener run {run_time} · {_VERSION}"},
+        "footer":    {"text": f"Screener run {run_time} · {_VERSION} · {mode_label}"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})
 
