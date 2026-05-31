@@ -208,28 +208,6 @@ def run_screener_preview():
         loop.close()
 
 
-# ── Friday 4:30PM — YTD reconcile ─────────────────────────────
-
-def run_reconcile_job():
-    loop = _new_loop()
-    now  = datetime.now(PST)
-    if is_market_holiday(now.date()):
-        log.info(f"⏭️  FRIDAY RECONCILE skipped — market holiday ({now.strftime('%Y-%m-%d')})")
-        loop.close()
-        return
-    log.info("\n" + "=" * 65)
-    log.info(f"🔁 FRIDAY RECONCILE — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
-    log.info("=" * 65)
-    try:
-        from reconciler import run_reconcile
-        run_reconcile(alert=_discord_alert)
-    except Exception as e:
-        log.error(f"❌ Reconcile error: {e}", exc_info=True)
-        _discord_alert(f"🚨 **YRVI** Friday reconcile failed: `{type(e).__name__}: {e}`")
-    finally:
-        loop.close()
-
-
 # ── Friday 4:15PM — assignment detection ──────────────────────
 
 def run_assignment_detection():
@@ -550,11 +528,6 @@ def main():
         id="friday_assignment", name="Friday Assignment Detection"
     )
     scheduler.add_job(
-        run_reconcile_job,
-        trigger="cron", day_of_week="fri", hour=16, minute=30,
-        id="friday_reconcile", name="Friday YTD Reconcile"
-    )
-    scheduler.add_job(
         run_discord_preview,
         trigger="cron", day_of_week="mon,tue", hour=prev_h, minute=prev_m,
         id="monday_discord_preview", name="Weekly Discord Preview"
@@ -590,7 +563,6 @@ def main():
     log.info("🗓️  YOU ROCK FUND SCHEDULER — Running")
     log.info(f"   Current time : {datetime.now(PST).strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("   • Friday     4:15 PM PST  — assignment detection (skipped on Good Friday)")
-    log.info("   • Friday     4:30 PM PST  — YTD reconcile (sync fills from IBKR)")
     log.info("   • Saturday   6:00 PM PST  — screener preview")
     log.info(f"   • Mon/Tue*  {fmt(prev_h, prev_m):>11}  — Discord preview (if webhook set)")
     log.info(f"   • Mon/Tue*  {fmt(wheel_h, wheel_m):>11}  — wheel check (stop loss + CCs)")
