@@ -1425,7 +1425,18 @@ def get_positions():
 def get_performance():
     settings = load_settings()
     ytd = load_ytd()
-    budget = settings.get("fund_budget", 250_000)
+    initial_fund_budget = settings.get("fund_budget", 250_000)
+    compound_enabled    = settings.get("compound_enabled", True)
+    if compound_enabled:
+        cached       = _ibkr_cache.get("data")
+        buying_power = cached.get("buying_power") if cached else None
+        net_liq      = cached.get("account_value") if cached else None
+        if buying_power and net_liq:
+            budget = min(buying_power, net_liq)
+        else:
+            budget = buying_power or net_liq or initial_fund_budget
+    else:
+        budget = initial_fund_budget
 
     raw_weeks = ytd.get("weeks", [])
     # Normalize: ensure every week has premium_collected (backwards-compat with old realized field)
