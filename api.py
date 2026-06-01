@@ -1881,15 +1881,16 @@ def version_upgrade():
     try:
         upgrade_log.write_text("")  # clear any previous run
         log_fh = open(upgrade_log, "w")
+        _mode_flag = "--live" if load_settings().get("trading_mode") == "live" else "--paper"
         subprocess.Popen(
-            ["bash", str(build_script), "all", "--paper"],
+            ["bash", str(build_script), "all", _mode_flag],
             cwd=str(host_repo),
             stdout=log_fh,
             stderr=log_fh,
             start_new_session=True,
         )
         log_fh.close()  # parent closes; child retains its own fd copy
-        output_parts.append("$ bash scripts/yrvi-build.sh all --paper\n(launched)")
+        output_parts.append(f"$ bash scripts/yrvi-build.sh all {_mode_flag}\n(launched)")
         return {"success": True, "output": "\n\n".join(output_parts)}
     except Exception as e:
         output_parts.append(
