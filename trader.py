@@ -406,10 +406,20 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
         return result
 
     def _is_permission_error(trade) -> bool:
-        """Return True if IBKR rejected with Error 201 (no options trading permissions)."""
-        return trade.orderStatus.status == "Inactive" and any(
-            getattr(e, "errorCode", 0) == 201 for e in trade.log
-        )
+        """Return True if IBKR rejected with Error 201 due to missing options permissions.
+        Error 201 also fires for insufficient funds — check message to distinguish."""
+        if trade.orderStatus.status != "Inactive":
+            return False
+        for e in trade.log:
+            if getattr(e, "errorCode", 0) == 201:
+                msg = (getattr(e, "message", "") or "").lower()
+                # Insufficient funds messages mention margin/funds/equity — not a permissions issue
+                if any(w in msg for w in ("available funds", "margin", "equity", "insufficient")):
+                    log.error(f"  ❌ {ticker} — IBKR rejected: insufficient funds (Error 201)")
+                    result["status"] = "failed_funds"
+                    return False
+                return True  # genuine permissions rejection
+        return False
 
     def try_limit(price: float, label: str, wait: int) -> bool:
         log.info(f"  📤 {label}: SELL {contracts}x {ticker} PUT @ ${price:.2f}")
@@ -482,9 +492,9 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
 
     if not mkt.get("use_bid_as_limit"):
         if try_limit(mkt["mid"], "limit_mid", MID_WAIT_SECS): return result
-        if result.get("status") == "failed_permissions": return result
+        if result.get("status") in ("failed_permissions", "failed_funds"): return result
     if try_limit(mkt["bid"], "limit_bid", BID_WAIT_SECS): return result
-    if result.get("status") == "failed_permissions": return result
+    if result.get("status") in ("failed_permissions", "failed_funds"): return result
 
     # Market order with polling loop — options can partially fill across multiple exchanges
     log.info(f"  📤 Market order: SELL {contracts}x {ticker} PUT")
@@ -515,6 +525,8 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
         if _is_permission_error(trade):
             log.error(f"  ❌ {ticker} — IBKR rejected: no options trading permissions (Error 201)")
             result["status"] = "failed_permissions"
+            return result
+        if result.get("status") == "failed_funds":
             return result
 
         if status == "PartiallyFilled" and filled_qty > 0:
