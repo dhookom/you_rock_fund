@@ -198,8 +198,8 @@ def run_screener_preview():
         log.info(f"\n📋 {len(positions)} positions queued for Monday {exec_time} PST  "
                  f"(budget=${budget:,.0f}{'  compounding ON' if compound_enabled else ''})")
 
-        from discord_poster import is_plan_enabled, post_weekly_plan
-        if is_plan_enabled():
+        from discord_poster import is_enabled, post_weekly_plan
+        if is_enabled():
             post_weekly_plan(positions)
             log.info("✅ Weekly plan posted to Discord")
     except Exception as e:

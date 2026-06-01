@@ -16,8 +16,7 @@ from secrets_client import get_secret
 
 load_dotenv()
 
-WEBHOOK_URL             = get_secret("discord_webhook_url", "DISCORD_WEBHOOK_URL")
-WEBHOOK_URL_WEEKLY_PLAN = get_secret("discord_webhook_weekly_plan", "DISCORD_WEBHOOK_WEEKLY_PLAN")
+WEBHOOK_URL = get_secret("discord_webhook_url", "DISCORD_WEBHOOK_URL")
 YTD_FILE      = "ytd_tracker.json"
 PST           = ZoneInfo("America/Los_Angeles")
 ANNUAL_TARGET = 100_000
@@ -38,10 +37,6 @@ def is_enabled() -> bool:
     return bool(WEBHOOK_URL)
 
 
-def is_plan_enabled() -> bool:
-    return bool(WEBHOOK_URL_WEEKLY_PLAN)
-
-
 def _post(payload: dict) -> bool:
     try:
         r = requests.post(WEBHOOK_URL, json=payload, timeout=10)
@@ -49,16 +44,6 @@ def _post(payload: dict) -> bool:
         return True
     except Exception as e:
         print(f"[discord] post failed: {e}")
-        return False
-
-
-def _post_plan(payload: dict) -> bool:
-    try:
-        r = requests.post(WEBHOOK_URL_WEEKLY_PLAN, json=payload, timeout=10)
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"[discord] weekly plan post failed: {e}")
         return False
 
 
@@ -268,8 +253,8 @@ def _yield_emoji(yield_pct: float) -> str:
 
 
 def post_weekly_plan(positions: list):
-    """Post Saturday evening weekly trading plan to the #yrvi-weekly-plan channel."""
-    if not WEBHOOK_URL_WEEKLY_PLAN:
+    """Post Saturday evening weekly trading plan to Discord."""
+    if not WEBHOOK_URL:
         return
 
     from datetime import timedelta
@@ -311,7 +296,7 @@ def post_weekly_plan(positions: list):
     blended_yield = (total_premium / total_capital * 100) if total_capital else 0.0
     run_time = now.strftime("%I:%M %p %Z").lstrip("0")
 
-    _post_plan({"embeds": [{
+    _post({"embeds": [{
         "title":       f"📋 YRVI Week of {next_monday} — Trading Plan [{mode_label}]",
         "description": "\n".join(lines) if lines else "No positions sized.",
         "color":       0x0099FF,
