@@ -1930,12 +1930,32 @@ def test_discord():
 
 
 # In-memory run status — shared between manual_run thread and /api/run-status
-_run_status: dict = {"executing": False, "started_at": None, "result": None, "error": None}
+_run_status: dict = {
+    "executing":      False,
+    "started_at":     None,
+    "result":         None,
+    "error":          None,
+    "current_ticker": None,
+    "current_stage":  None,
+    "ticker_results": [],
+}
 
 
 @app.get("/api/run-status")
 def get_run_status():
-    """Poll this to check if a manual run is in progress or just completed."""
+    """Poll this to check if a manual or scheduled run is in progress or just completed."""
+    # If manual run is active, it owns the status
+    if _run_status.get("executing"):
+        return _run_status
+    # Check if scheduler wrote a progress file (scheduled run)
+    progress_file = Path("/data/run_progress.json")
+    try:
+        if progress_file.exists():
+            sched = json.loads(progress_file.read_text())
+            if sched.get("executing"):
+                return {**_run_status, **sched, "source": "scheduler"}
+    except Exception:
+        pass
     return _run_status
 
 
@@ -1982,9 +2002,20 @@ def manual_run():
             ), 2)
             effective_budget = budget if compound_enabled else budget - reserved_capital
 
-            all_targets = get_top_targets(n * 2)
-            positions   = size_all(all_targets[:n], budget=effective_budget)
-            execute_positions(positions, extra_targets=all_targets)
+            all_targets    = get_top_targets(n * 2)
+            positions      = size_all(all_targets[:n], budget=effective_budget)
+            _ticker_results = []
+
+            def _progress(ticker=None, stage=None, result=None):
+                if result:
+                    _ticker_results.append(result)
+                _run_status["current_ticker"] = ticker
+                _run_status["current_stage"]  = stage
+                _run_status["ticker_results"] = list(_ticker_results)
+
+            execute_positions(positions, extra_targets=all_targets, status_callback=_progress)
+            _run_status["current_ticker"] = None
+            _run_status["current_stage"]  = None
 
             # Update weekly_pnl and post to Discord
             state       = load_state()

@@ -554,7 +554,7 @@ def place_order_with_escalation(ib: IB, contract, contracts: int,
 
 
 def execute_positions(sized_positions: list, extra_targets: list = None,
-                      target_fills: int = None) -> list:
+                      target_fills: int = None, status_callback=None) -> list:
     """
     Execute up to target_fills fills (defaults to NUM_POSITIONS). If a candidate
     fails qualification, market data, or liquidity, the next-ranked screener target
@@ -585,10 +585,18 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
         log.info("⏳ Near market open — waiting 60s for delayed options data to populate...")
         ib.sleep(60)
 
+    def _status(ticker=None, stage=None, result=None):
+        if status_callback:
+            try:
+                status_callback(ticker=ticker, stage=stage, result=result)
+            except Exception:
+                pass
+
     results          = []
     filled_count     = 0
     capital_deployed = 0
     attempted        = set()
+    ticker_results   = []  # running list of per-ticker outcomes for status
     # Track all sized candidates attempted (primaries + fallbacks) for state.json
     all_sized        = list(sized_positions)
 
@@ -641,6 +649,7 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
 
         log.info(f"\n[attempt {slot}  fill {filled_count + 1}/{_target}] "
                  f"{ticker} — {contracts} contracts @ ${strike:.2f} (screener strike)")
+        _status(ticker=ticker, stage="qualifying")
 
         try:
             # Verify delta at execution time — auto-adjust if stock moved since Saturday
@@ -660,18 +669,22 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
                 pos          = {**pos, "strike": strike, "capital_used": new_capital}
                 log.info(f"  ⚡ Capital adjusted: ${old_capital:,.0f} → ${new_capital:,.0f}")
 
+            _status(ticker=ticker, stage="fetching market data")
             mkt = get_market_data(ib, contract, screener_premium=premium)
             if not mkt:
                 log.info(f"  🔄 {ticker} — no market data, trying next candidate")
                 results.append({"ticker": ticker, "status": "failed_market_data"})
+                _status(ticker=ticker, stage=None, result={"ticker": ticker, "status": "failed_market_data"})
                 continue
 
             skip_info = check_liquidity(mkt, ticker)
             if skip_info:
                 log.info(f"  🔄 {ticker} — failed liquidity, trying next candidate")
                 results.append({"ticker": ticker, "status": "skipped_liquidity", **skip_info})
+                _status(ticker=ticker, stage=None, result={"ticker": ticker, "status": "skipped_liquidity"})
                 continue
 
+            _status(ticker=ticker, stage="placing order — limit mid")
             result = place_order_with_escalation(ib, contract, contracts, mkt, ticker)
         except Exception as e:
             log.error(f"  ❌ {ticker} — IBKR error: {e}")
@@ -689,6 +702,15 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
 
         result["delta_at_entry"] = round(final_delta, 4) if final_delta is not None else None
         results.append(result)
+
+        # Report result back to status callback
+        _status(ticker=ticker, stage=None, result={
+            "ticker": ticker,
+            "status": result["status"],
+            "fill_price": result.get("fill_price"),
+            "premium_collected": result.get("premium_collected"),
+            "order_type": result.get("order_type"),
+        })
 
         if result["status"] in ("filled", "dry_run", "partial_fill"):
             filled_count     += 1

@@ -382,8 +382,34 @@ def run_pipeline():
         if not positions:
             log.error("❌ No positions sized — aborting"); return
 
+        # Write executing status to shared file so API can expose it
+        import json as _json
+        _progress_file = "/data/run_progress.json"
+        _ticker_results = []
+
+        def _sched_progress(ticker=None, stage=None, result=None):
+            if result:
+                _ticker_results.append(result)
+            try:
+                _json.dump({
+                    "executing": True,
+                    "current_ticker": ticker,
+                    "current_stage": stage,
+                    "ticker_results": list(_ticker_results),
+                }, open(_progress_file, "w"))
+            except Exception:
+                pass
+
+        _sched_progress(ticker=None, stage="starting")
         results = execute_positions(positions, extra_targets=filtered_targets,
-                                    target_fills=target_fills)
+                                    target_fills=target_fills, status_callback=_sched_progress)
+
+        # Clear progress file now that execution is done
+        try:
+            _json.dump({"executing": False, "current_ticker": None, "current_stage": None,
+                        "ticker_results": _ticker_results}, open(_progress_file, "w"))
+        except Exception:
+            pass
 
         # ── Systemic market data failure alert ────────────────
         actionable = [r for r in results if r.get("status") not in

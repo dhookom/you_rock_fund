@@ -153,9 +153,43 @@ export default function ThisWeek() {
 
       {/* Executing banner */}
       {isExecuting && (
-        <div className="rounded-xl px-4 py-3 text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 flex items-center gap-3">
-          <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent flex-shrink-0" />
-          <span>Pipeline executing — placing orders with IBKR. This takes 3–5 minutes. Results will appear here when done.</span>
+        <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 space-y-3">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent flex-shrink-0" />
+            <div className="text-sm font-medium text-blue-700 dark:text-blue-400">
+              {runStatus?.current_ticker
+                ? <>Working on <span className="font-bold">{runStatus.current_ticker}</span>
+                    {runStatus.current_stage ? <span className="font-normal opacity-75"> — {runStatus.current_stage}</span> : ''}</>
+                : 'Pipeline executing — connecting to IBKR...'}
+            </div>
+          </div>
+
+          {/* Per-ticker results so far */}
+          {runStatus?.ticker_results?.length > 0 && (
+            <div className="space-y-1">
+              {runStatus.ticker_results.map((r, i) => {
+                const filled = r.status === 'filled' || r.status === 'partial_fill' || r.status === 'dry_run'
+                const skipped = r.status?.startsWith('skipped')
+                const emoji = filled ? '✅' : skipped ? '⚠️' : '❌'
+                const detail = filled
+                  ? `filled @ $${r.fill_price?.toFixed(2)} via ${r.order_type?.replace('_',' ')} — $${r.premium_collected?.toFixed(0)}`
+                  : r.status?.replace(/_/g, ' ')
+                return (
+                  <div key={i} className="text-xs font-mono text-blue-800 dark:text-blue-300 flex gap-2">
+                    <span>{emoji}</span>
+                    <span className="font-bold">{r.ticker}</span>
+                    <span className="opacity-75">{detail}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Footer note */}
+          <div className="text-xs text-blue-600 dark:text-blue-500 opacity-75">
+            Check the <span className="font-medium">Dashboard</span> for live holdings and final results.
+          </div>
         </div>
       )}
 
