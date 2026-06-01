@@ -6,14 +6,14 @@ export default function PositionCard({ position: p }) {
   const fail = FAILED.has(p.status)
   const skip = p.status === 'skipped_liquidity'
 
-  const borderClass = ok   ? 'border-green-800/60 bg-green-900/10'
-    : fail ? 'border-red-800/60 bg-red-900/10'
-    : skip ? 'border-yellow-800/60 bg-yellow-900/10'
+  const borderClass = ok   ? 'border-green-300 bg-green-50 dark:border-green-800/60 dark:bg-green-900/10'
+    : fail ? 'border-red-300 bg-red-50 dark:border-red-800/60 dark:bg-red-900/10'
+    : skip ? 'border-yellow-300 bg-yellow-50 dark:border-yellow-800/60 dark:bg-yellow-900/10'
     : 'border-gray-200 dark:border-gray-800'
 
-  const badgeClass = ok   ? 'bg-green-900/50 text-green-400 border-green-800'
-    : fail ? 'bg-red-900/50 text-red-400 border-red-800'
-    : skip ? 'bg-yellow-900/50 text-yellow-400 border-yellow-800'
+  const badgeClass = ok   ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-400 dark:border-green-800'
+    : fail ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/50 dark:text-red-400 dark:border-red-800'
+    : skip ? 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/50 dark:text-yellow-400 dark:border-yellow-800'
     : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
 
   const slip = p.fill_price != null && p.premium != null
@@ -25,7 +25,7 @@ export default function PositionCard({ position: p }) {
   const displayPrice  = p.stock_price_at_entry ?? p.latest_price
   const displayBuf    = p.buffer_pct_at_entry  ?? p.buffer_pct
   const bufPctDisplay = typeof displayBuf === 'number' ? displayBuf : 0
-  const bufColor2     = bufPctDisplay >= 10 ? 'text-green-400' : bufPctDisplay >= 5 ? 'text-yellow-400' : 'text-red-400'
+  const bufColor2     = bufPctDisplay >= 10 ? 'text-green-600 dark:text-green-400' : bufPctDisplay >= 5 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
 
   const statusLabel = (p.status || 'unknown').replace(/_/g, ' ')
 
@@ -37,7 +37,7 @@ export default function PositionCard({ position: p }) {
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-xl font-bold text-gray-900 dark:text-white">{p.ticker}</span>
             {p.buyzone && (
-              <span className="text-xs bg-blue-900/50 text-blue-400 border border-blue-800 px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-900/50 dark:text-blue-400 dark:border-blue-800 px-2 py-0.5 rounded-full">
                 buyzone
               </span>
             )}
@@ -56,7 +56,7 @@ export default function PositionCard({ position: p }) {
           { label: 'Contracts', value: p.contracts },
           { label: 'Buffer',    value: `${bufPctDisplay.toFixed(1)}%`, className: bufColor2 },
           { label: 'Price',     value: displayPrice != null ? `$${displayPrice.toFixed(2)}` : '—' },
-          { label: yieldLabel,  value: `${displayYield?.toFixed(2) ?? '—'}%`, className: 'text-green-400' },
+          { label: yieldLabel,  value: `${displayYield?.toFixed(2) ?? '—'}%`, className: 'text-green-600 dark:text-green-400' },
           { label: 'Entry δ',   value: p.delta_at_entry?.toFixed(3) ?? p.delta?.toFixed(3) ?? '—' },
         ].map(({ label, value, className = 'text-gray-900 dark:text-white' }) => (
           <div key={label}>
@@ -74,7 +74,7 @@ export default function PositionCard({ position: p }) {
             <div className="text-gray-900 dark:text-white font-semibold">
               ${p.fill_price?.toFixed(2) ?? '—'}
               {slip != null && (
-                <span className={`ml-2 text-xs ${parseFloat(slip) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`ml-2 text-xs ${parseFloat(slip) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                   ({parseFloat(slip) >= 0 ? '+' : ''}{slip} vs screener)
                 </span>
               )}
