@@ -126,11 +126,15 @@ if [ ! -f ".env.compose" ]; then
 fi
 
 if [ "$TRADING_MODE" = "live" ] && [ "${YRVI_ENV:-}" != "live" ]; then
-    printf "  ${RED}❌${NC}  --live requires YRVI_ENV=live in your environment\n" >&2
-    printf "  ${BLUE}ℹ️${NC}   Set it and retry:\n" >&2
-    printf "         export YRVI_ENV=live\n" >&2
-    printf "         ./scripts/yrvi-build.sh %s --live\n" "$CONTAINER" >&2
-    exit 1
+    # Skip the env-var safety check when called from inside Docker (upgrade button).
+    # The user already confirmed live mode by clicking Upgrade in the dashboard.
+    if [ ! -f "/.dockerenv" ]; then
+        printf "  ${RED}❌${NC}  --live requires YRVI_ENV=live in your environment\n" >&2
+        printf "  ${BLUE}ℹ️${NC}   Set it and retry:\n" >&2
+        printf "         export YRVI_ENV=live\n" >&2
+        printf "         ./scripts/yrvi-build.sh %s --live\n" "$CONTAINER" >&2
+        exit 1
+    fi
 fi
 
 if [ "$DRY_RUN" = true ]; then
