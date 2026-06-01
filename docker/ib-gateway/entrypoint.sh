@@ -139,6 +139,25 @@ if [ -f "/data/gw_auto_restart_time" ]; then
     fi
 fi
 
+# Patch jts.ini to bypass API order precautions confirmation dialog.
+# Runs on every startup so the setting survives Reset Installation (which wipes the Jts volume).
+GATEWAY_CONF="/home/ibgateway/Jts"
+mkdir -p "$GATEWAY_CONF"
+jts_ini="$GATEWAY_CONF/jts.ini"
+if [ ! -f "$jts_ini" ]; then
+    printf "[IBGateway]\nApiOrderPrecautionsIgnored=true\n" > "$jts_ini"
+    echo "yrvi-gw-entrypoint: jts.ini created with ApiOrderPrecautionsIgnored=true"
+elif grep -q "^ApiOrderPrecautionsIgnored=" "$jts_ini"; then
+    sed -i "s/^ApiOrderPrecautionsIgnored=.*/ApiOrderPrecautionsIgnored=true/" "$jts_ini"
+    echo "yrvi-gw-entrypoint: jts.ini ApiOrderPrecautionsIgnored updated to true"
+elif grep -q "^\[IBGateway\]" "$jts_ini"; then
+    sed -i "/^\[IBGateway\]/a ApiOrderPrecautionsIgnored=true" "$jts_ini"
+    echo "yrvi-gw-entrypoint: jts.ini ApiOrderPrecautionsIgnored appended under [IBGateway]"
+else
+    printf "\n[IBGateway]\nApiOrderPrecautionsIgnored=true\n" >> "$jts_ini"
+    echo "yrvi-gw-entrypoint: jts.ini [IBGateway] section + ApiOrderPrecautionsIgnored appended"
+fi
+
 # The image's common.sh errors if both TWS_PASSWORD and TWS_PASSWORD_FILE are set.
 # Pass the password as TWS_PASSWORD and clear the file path.
 unset TWS_PASSWORD_FILE
