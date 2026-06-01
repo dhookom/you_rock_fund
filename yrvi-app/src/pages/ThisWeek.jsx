@@ -37,10 +37,32 @@ export default function ThisWeek() {
   const [runAt, setRunAt]             = useState(null)
   const [manualRunning, setManualRunning] = useState(false)
   const [manualMsg, setManualMsg]     = useState(null)
+  const [runStatus, setRunStatus]     = useState(null)
 
   useEffect(() => {
     axios.get('/api/status').then(r => setStatus(r.data)).catch(() => {})
+    axios.get('/api/run-status').then(r => setRunStatus(r.data)).catch(() => {})
   }, [])
+
+  // Poll run-status every 5s while executing
+  useEffect(() => {
+    if (!runStatus?.executing) return
+    const t = setInterval(() => {
+      axios.get('/api/run-status').then(r => {
+        setRunStatus(r.data)
+        if (!r.data.executing) {
+          // Run just finished — show result
+          if (r.data.result) {
+            const { fills, premium } = r.data.result
+            setManualMsg({ ok: true, text: `✅ Run complete — ${fills} fill(s), $${premium.toLocaleString()} premium collected` })
+          } else if (r.data.error) {
+            setManualMsg({ ok: false, text: `Run failed: ${r.data.error}` })
+          }
+        }
+      }).catch(() => {})
+    }, 5000)
+    return () => clearInterval(t)
+  }, [runStatus?.executing])
 
   const countdown = useCountdown(status?.next_execution)
 
@@ -53,13 +75,16 @@ export default function ThisWeek() {
     return `${day} ${pst} PST (${et} ET)`
   })()
 
+  const isExecuting = runStatus?.executing || manualRunning
+
   const triggerManualRun = useCallback(async () => {
     if (!window.confirm('Run the CSP pipeline now?\n\nOnly use this if the scheduled run failed or you need a mid-week re-run. This will place real orders in your IBKR account immediately.')) return
     setManualRunning(true)
     setManualMsg(null)
     try {
-      const res = await axios.post('/api/manual-run', {}, { timeout: 15000 })
-      setManualMsg({ ok: true, text: res.data.message ?? 'Pipeline started — check trade log for progress.' })
+      await axios.post('/api/manual-run', {}, { timeout: 15000 })
+      setRunStatus({ executing: true, started_at: new Date().toISOString(), result: null, error: null })
+      setManualMsg(null)
     } catch (err) {
       setManualMsg({ ok: false, text: err.response?.data?.detail ?? err.message })
     } finally {
@@ -112,12 +137,12 @@ export default function ThisWeek() {
               <div className="flex flex-col items-end gap-1">
                 <button
                   onClick={triggerManualRun}
-                  disabled={manualRunning}
+                  disabled={isExecuting}
                   className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
                   title="Run the full CSP pipeline now and place orders"
                 >
-                  <Play size={14} className={manualRunning ? 'animate-pulse' : ''} />
-                  {manualRunning ? 'Starting...' : 'Run Now'}
+                  <Play size={14} className={isExecuting ? 'animate-pulse' : ''} />
+                  {isExecuting ? 'Executing...' : 'Run Now'}
                 </button>
                 <div className="text-xs text-gray-400 dark:text-gray-600 text-right">Only if schedule failed or mid-week re-run</div>
               </div>
@@ -125,6 +150,14 @@ export default function ThisWeek() {
           </div>
         </div>
       </div>
+
+      {/* Executing banner */}
+      {isExecuting && (
+        <div className="rounded-xl px-4 py-3 text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 flex items-center gap-3">
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent flex-shrink-0" />
+          <span>Pipeline executing — placing orders with IBKR. This takes 3–5 minutes. Results will appear here when done.</span>
+        </div>
+      )}
 
       {/* Manual run feedback */}
       {manualMsg && (

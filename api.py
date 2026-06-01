@@ -1928,12 +1928,26 @@ def test_discord():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# In-memory run status — shared between manual_run thread and /api/run-status
+_run_status: dict = {"executing": False, "started_at": None, "result": None, "error": None}
+
+
+@app.get("/api/run-status")
+def get_run_status():
+    """Poll this to check if a manual run is in progress or just completed."""
+    return _run_status
+
+
 @app.post("/api/manual-run")
 def manual_run():
     """Trigger a CSP pipeline run immediately, outside the normal schedule."""
     import threading
 
+    if _run_status["executing"]:
+        raise HTTPException(status_code=409, detail="A run is already in progress")
+
     def _run():
+        _run_status.update({"executing": True, "started_at": datetime.now().isoformat(), "result": None, "error": None})
         try:
             import importlib, sys
             for mod in ["config", "screener", "position_sizer", "trader"]:
@@ -1948,7 +1962,6 @@ def manual_run():
             initial_fund_budget  = settings.get("fund_budget", 250_000)
             compound_enabled     = settings.get("compound_enabled", True)
 
-            # Use same budget logic as the screener endpoint
             if compound_enabled:
                 cached       = _ibkr_cache.get("data")
                 buying_power = cached.get("buying_power") if cached else None
@@ -1960,7 +1973,7 @@ def manual_run():
             else:
                 budget = initial_fund_budget
 
-            state           = _load_state()
+            state           = load_state()
             wheel_holdings  = state.get("wheel_holdings", [])
             active_holdings = [h for h in wheel_holdings if h.get("shares", 0) > 0]
             reserved_capital   = round(sum(
@@ -1973,30 +1986,40 @@ def manual_run():
             execute_positions(positions, extra_targets=all_targets)
 
             # Update weekly_pnl and post to Discord
-            state = _load_state()
-            results = state.get("executions", [])
-            csp_premium = sum(r.get("premium_collected", 0) for r in results
-                              if r.get("status") in ("filled", "partial_fill", "dry_run"))
-            pnl = state.get("weekly_pnl", {})
+            state       = load_state()
+            results     = state.get("executions", [])
+            filled      = [r for r in results if r.get("status") in ("filled", "partial_fill", "dry_run")]
+            csp_premium = sum(r.get("premium_collected", 0) for r in filled)
+            pnl         = state.get("weekly_pnl", {})
             state["weekly_pnl"] = {
                 **pnl,
-                "week_start":    datetime.now(PST).strftime("%Y-%m-%d"),
-                "csp_premium":   round(csp_premium, 2),
+                "week_start":     datetime.now(PST).strftime("%Y-%m-%d"),
+                "csp_premium":    round(csp_premium, 2),
                 "total_realized": round(csp_premium + pnl.get("cc_premium", 0) + pnl.get("shares_sold_pnl", 0), 2),
-                "last_updated":  datetime.now().isoformat(),
+                "last_updated":   datetime.now().isoformat(),
             }
             with open(STATE_FILE, "w") as f:
                 json.dump(state, f, indent=2)
 
             from discord_poster import is_enabled, post_weekly_results
             if is_enabled():
-                post_weekly_results(_load_state(), fund_budget=settings.get("fund_budget", 250_000))
+                post_weekly_results(load_state(), fund_budget=effective_budget)
+
+            _run_status.update({
+                "executing": False,
+                "result": {
+                    "fills":     len(filled),
+                    "premium":   round(csp_premium, 2),
+                    "completed": datetime.now().isoformat(),
+                }
+            })
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Manual run failed: {e}", exc_info=True)
+            _run_status.update({"executing": False, "error": str(e), "result": None})
 
     threading.Thread(target=_run, daemon=True).start()
-    return {"success": True, "message": "Pipeline started — check trade_log.txt for progress"}
+    return {"success": True, "message": "Pipeline started"}
 
 
 @app.post("/api/feedback")
