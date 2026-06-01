@@ -4,7 +4,7 @@ import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, 
 import { useThemeContext } from '../ThemeProvider.jsx'
 
 const PRESET_TIMES = [
-  { value: '06:30', et: '9:30 AM ET',  note: 'Market Open' },
+  { value: '06:30', et: '9:30 AM ET',  note: 'Market Open — live only' },
   { value: '07:00', et: '10:00 AM ET', note: '30 min after open' },
   { value: '07:30', et: '10:30 AM ET', note: '1 hr after open' },
   { value: '08:00', et: '11:00 AM ET', note: '' },
@@ -530,6 +530,11 @@ export default function SettingsPage() {
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
             Earlier = less liquidity and wider spreads.
             10:00 AM PST (1:00 PM ET) recommended for best fill prices.
+            {settings.execution_time === '06:30' && (
+              <span className="block mt-1 text-amber-600 dark:text-amber-500">
+                ⚠ 6:30 AM (market open) requires a live account — paper accounts use delayed data that isn't available at open.
+              </span>
+            )}
           </div>
           {settings.execution_time !== original?.execution_time && (
             <div className="mt-2 flex items-center gap-3 flex-wrap">

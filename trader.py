@@ -269,7 +269,7 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
     Falls back to screener premium if market is closed.
     """
     ticker = ib.reqMktData(contract, genericTickList="101", snapshot=False)
-    ib.sleep(4)
+    ib.sleep(10)
 
     bid    = ticker.bid
     ask    = ticker.ask
@@ -566,6 +566,13 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
     log.info("=" * 65)
 
     ib               = connect()
+
+    # At market open, delayed options data needs time to populate after usopt connects
+    exec_hour, exec_min = map(int, get_settings().get('execution_time', '10:00').split(':'))
+    if exec_hour < 7:  # 6:30 AM PST or earlier = running at/near open
+        log.info("⏳ Near market open — waiting 60s for delayed options data to populate...")
+        ib.sleep(60)
+
     results          = []
     filled_count     = 0
     capital_deployed = 0
