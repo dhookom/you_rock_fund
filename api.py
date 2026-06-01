@@ -1893,12 +1893,16 @@ def version_upgrade():
         upgrade_log.write_text("")  # clear any previous run
         log_fh = open(upgrade_log, "w")
         _mode_flag = "--live" if load_settings().get("trading_mode") == "live" else "--paper"
+        _env = os.environ.copy()
+        if _mode_flag == "--live":
+            _env["YRVI_ENV"] = "live"
         subprocess.Popen(
             ["bash", str(build_script), "all", _mode_flag],
             cwd=str(host_repo),
             stdout=log_fh,
             stderr=log_fh,
             start_new_session=True,
+            env=_env,
         )
         log_fh.close()  # parent closes; child retains its own fd copy
         output_parts.append(f"$ bash scripts/yrvi-build.sh all {_mode_flag}\n(launched)")
