@@ -54,7 +54,7 @@ export default function ThisWeek() {
   })()
 
   const triggerManualRun = useCallback(async () => {
-    if (!window.confirm('Run the CSP pipeline now? This will place real orders in your IBKR account.')) return
+    if (!window.confirm('Run the CSP pipeline now?\n\nOnly use this if the scheduled run failed or you need a mid-week re-run. This will place real orders in your IBKR account immediately.')) return
     setManualRunning(true)
     setManualMsg(null)
     try {
@@ -109,15 +109,18 @@ export default function ThisWeek() {
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
                 {loading ? 'Running...' : 'Run Screener'}
               </button>
-              <button
-                onClick={triggerManualRun}
-                disabled={manualRunning}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
-                title="Run the full CSP pipeline now and place orders"
-              >
-                <Play size={14} className={manualRunning ? 'animate-pulse' : ''} />
-                {manualRunning ? 'Starting...' : 'Run Now'}
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                <button
+                  onClick={triggerManualRun}
+                  disabled={manualRunning}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
+                  title="Run the full CSP pipeline now and place orders"
+                >
+                  <Play size={14} className={manualRunning ? 'animate-pulse' : ''} />
+                  {manualRunning ? 'Starting...' : 'Run Now'}
+                </button>
+                <div className="text-xs text-gray-400 dark:text-gray-600 text-right">Only if schedule failed or mid-week re-run</div>
+              </div>
             </div>
           </div>
         </div>
