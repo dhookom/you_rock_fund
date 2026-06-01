@@ -1428,22 +1428,25 @@ def get_performance():
     initial_fund_budget = settings.get("fund_budget", 250_000)
     compound_enabled    = settings.get("compound_enabled", True)
     if compound_enabled:
-        cached       = _ibkr_cache.get("data")
-        buying_power = cached.get("buying_power") if cached else None
-        net_liq      = cached.get("account_value") if cached else None
-        if buying_power and net_liq:
-            budget = min(buying_power, net_liq)
-        else:
-            budget = buying_power or net_liq or initial_fund_budget
+        # Use net_liq for yield display — buying_power reflects only undeployed cash
+        # and is misleading as a fund-size denominator when capital is tied up in CSPs.
+        cached  = _ibkr_cache.get("data")
+        net_liq = cached.get("account_value") if cached else None
+        budget  = net_liq or initial_fund_budget
     else:
         budget = initial_fund_budget
 
     raw_weeks = ytd.get("weeks", [])
-    # Normalize: ensure every week has premium_collected (backwards-compat with old realized field)
+    # Normalize and recompute yield_pct against current budget so stale stored
+    # values (computed with old/default fund_budget) are always corrected.
     weeks = [
-        {**w, "premium_collected": w.get("premium_collected", w.get("realized", 0)),
-               "shares_sold_pnl":  w.get("shares_sold_pnl", 0),
-               "total_realized":   w.get("total_realized", w.get("realized", 0))}
+        {**w,
+         "premium_collected": w.get("premium_collected", w.get("realized", 0)),
+         "shares_sold_pnl":   w.get("shares_sold_pnl", 0),
+         "total_realized":    w.get("total_realized", w.get("realized", 0)),
+         "yield_pct":         round(
+             w.get("premium_collected", w.get("realized", 0)) / budget * 100, 3
+         ) if budget else w.get("yield_pct", 0)}
         for w in raw_weeks
     ]
     total = ytd.get("total_premium", 0.0)
@@ -1452,14 +1455,20 @@ def get_performance():
     avg_yield = (total / weeks_traded / budget * 100) if weeks_traded and budget else 0.0
     progress_pct = (total / ANNUAL_TARGET * 100) if ANNUAL_TARGET else 0.0
 
+    def _fix_week_yield(w):
+        if not w:
+            return w
+        prem = w.get("premium_collected", w.get("realized", 0))
+        return {**w, "yield_pct": round(prem / budget * 100, 3) if budget else w.get("yield_pct", 0)}
+
     return {
         "weeks":          weeks,
         "total_premium":  total,
         "total_realized": total_realized,
         "weeks_traded":   weeks_traded,
         "avg_yield_pct":  round(avg_yield, 3),
-        "best_week":      ytd.get("best_week"),
-        "worst_week":     ytd.get("worst_week"),
+        "best_week":      _fix_week_yield(ytd.get("best_week")),
+        "worst_week":     _fix_week_yield(ytd.get("worst_week")),
         "annual_target":  ANNUAL_TARGET,
         "progress_pct":   round(progress_pct, 1),
     }
@@ -1759,6 +1768,16 @@ def set_trading_mode(body: TradingModeRequest):
 def get_trade_history():
     state = load_state()
     ytd = load_ytd()
+    settings = load_settings()
+
+    initial_fund_budget = settings.get("fund_budget", 250_000)
+    compound_enabled    = settings.get("compound_enabled", True)
+    if compound_enabled:
+        cached  = _ibkr_cache.get("data")
+        net_liq = cached.get("account_value") if cached else None
+        budget  = net_liq or initial_fund_budget
+    else:
+        budget = initial_fund_budget
 
     positions = state.get("positions", [])
     executions = state.get("executions", [])
@@ -1777,13 +1796,22 @@ def get_trade_history():
             "capital_used":     pos.get("capital_used"),
         })
 
+    weekly_summaries = [
+        {**w,
+         "premium_collected": w.get("premium_collected", w.get("realized", 0)),
+         "yield_pct": round(
+             w.get("premium_collected", w.get("realized", 0)) / budget * 100, 3
+         ) if budget else w.get("yield_pct", 0)}
+        for w in ytd.get("weeks", [])
+    ]
+
     return {
         "current_week": {
             "run_date":   state.get("run_date"),
             "executions": enriched,
             "weekly_pnl": state.get("weekly_pnl", {}),
         },
-        "weekly_summaries": ytd.get("weeks", []),
+        "weekly_summaries": weekly_summaries,
         "total_premium":    ytd.get("total_premium", 0),
     }
 
