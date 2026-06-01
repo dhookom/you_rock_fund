@@ -1943,10 +1943,33 @@ def manual_run():
             from position_sizer import size_all
             from trader import execute_positions
 
-            settings    = load_settings()
-            n           = settings.get("num_positions", 5)
+            settings             = load_settings()
+            n                    = settings.get("num_positions", 5)
+            initial_fund_budget  = settings.get("fund_budget", 250_000)
+            compound_enabled     = settings.get("compound_enabled", True)
+
+            # Use same budget logic as the screener endpoint
+            if compound_enabled:
+                cached       = _ibkr_cache.get("data")
+                buying_power = cached.get("buying_power") if cached else None
+                net_liq      = cached.get("account_value") if cached else None
+                if buying_power and net_liq:
+                    budget = min(buying_power, net_liq)
+                else:
+                    budget = buying_power or net_liq or initial_fund_budget
+            else:
+                budget = initial_fund_budget
+
+            state           = _load_state()
+            wheel_holdings  = state.get("wheel_holdings", [])
+            active_holdings = [h for h in wheel_holdings if h.get("shares", 0) > 0]
+            reserved_capital   = round(sum(
+                h["shares"] * h.get("assigned_strike", 0.0) for h in active_holdings
+            ), 2)
+            effective_budget = budget if compound_enabled else budget - reserved_capital
+
             all_targets = get_top_targets(n * 2)
-            positions   = size_all(all_targets[:n])
+            positions   = size_all(all_targets[:n], budget=effective_budget)
             execute_positions(positions, extra_targets=all_targets)
 
             # Update weekly_pnl and post to Discord
