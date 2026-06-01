@@ -76,8 +76,17 @@ else
 
     if [ "$ALL_UP" = "false" ]; then
         echo ""
+        # Determine trading mode: prefer saved mode file, fall back to settings.json, then default paper
+        _MODE_FLAG="--paper"
+        if [ -f "$HOME/.yrvi_last_mode" ]; then
+            _SAVED=$(cat "$HOME/.yrvi_last_mode" | tr -d '[:space:]')
+            [ "$_SAVED" = "live" ] && _MODE_FLAG="--live"
+        elif [ -f "$PROJ/data/settings.json" ]; then
+            _SAVED=$(python3 -c "import json; d=json.load(open('$PROJ/data/settings.json')); print(d.get('trading_mode','paper'))" 2>/dev/null || echo "paper")
+            [ "$_SAVED" = "live" ] && _MODE_FLAG="--live"
+        fi
         printf "  ${YELLOW}ℹ️${NC}   Running setup_docker.sh to pull secrets and restart containers...\n"
-        bash "$PROJ/setup_docker.sh"
+        bash "$PROJ/setup_docker.sh" "$_MODE_FLAG"
         echo ""
 
         # Re-check containers after setup and correct the counters
