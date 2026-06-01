@@ -74,6 +74,16 @@ fi
 
 echo "$TRADING_MODE" > "$LAST_MODE_FILE"
 
+# Keep .env.compose in sync with the chosen trading mode
+IBKR_PORT_VAL=4004
+[ "$TRADING_MODE" = "live" ] && IBKR_PORT_VAL=4003
+if [ -f "$PROJ/.env.compose" ]; then
+    sed -i.bak "s/^TRADING_MODE=.*/TRADING_MODE=$TRADING_MODE/" "$PROJ/.env.compose"
+    sed -i.bak "s/^IBKR_PORT=.*/IBKR_PORT=$IBKR_PORT_VAL/" "$PROJ/.env.compose"
+    rm -f "$PROJ/.env.compose.bak"
+    printf "  ✅  .env.compose updated: TRADING_MODE=%s  IBKR_PORT=%s\n" "$TRADING_MODE" "$IBKR_PORT_VAL"
+fi
+
 # ── Globals ────────────────────────────────────────────────────
 
 PROJ=$(cd "$(dirname "$0")" && pwd)

@@ -1691,7 +1691,8 @@ def set_trading_mode(body: TradingModeRequest):
 
     current = load_settings()
     current["trading_mode"] = body.mode
-    current["ibkr_port"]    = 4003 if body.mode == "live" else 4004
+    ibkr_port = 4003 if body.mode == "live" else 4004
+    current["ibkr_port"]    = ibkr_port
 
     # Write trading mode to shared volume so ib_gateway entrypoint picks it up on restart.
     gw_mode_file = Path("/data/gw_trading_mode")
@@ -1699,6 +1700,24 @@ def set_trading_mode(body: TradingModeRequest):
         gw_mode_file.write_text(body.mode)
     except Exception as e:
         print(f"[api/trading-mode] failed to write gw_trading_mode: {e}")
+
+    # Keep .env.compose in sync so containers always get the right port on restart.
+    env_file = BASE_DIR / ".env.compose"
+    try:
+        if env_file.exists():
+            lines = env_file.read_text().splitlines()
+            updated = []
+            for line in lines:
+                if line.startswith("TRADING_MODE="):
+                    updated.append(f"TRADING_MODE={body.mode}")
+                elif line.startswith("IBKR_PORT="):
+                    updated.append(f"IBKR_PORT={ibkr_port}")
+                else:
+                    updated.append(line)
+            env_file.write_text("\n".join(updated) + "\n")
+            print(f"[api/trading-mode] updated .env.compose: TRADING_MODE={body.mode} IBKR_PORT={ibkr_port}")
+    except Exception as e:
+        print(f"[api/trading-mode] failed to update .env.compose: {e}")
 
     if body.mode == "live":
         current["account"] = get_secret("account_live")
