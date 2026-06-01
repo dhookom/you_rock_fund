@@ -53,11 +53,30 @@ def _append_trade_log(record: dict) -> None:
 def connect() -> IB:
     ib = IB()
     ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID)
-    # Request delayed data globally — works without market data subscription
     ib.reqMarketDataType(3)  # 1=live, 2=frozen, 3=delayed, 4=delayed-frozen
     log.info(f"✅ Connected to IBKR — Account: {ib.managedAccounts()}")
-    log.info(f"   Market data type: DELAYED (type 3)")
+    _wait_for_usopt(ib)
     return ib
+
+
+def _wait_for_usopt(ib: IB, timeout: int = 30) -> None:
+    """Block until the usopt options data farm reports OK (code 2104), or timeout."""
+    ready = False
+
+    def on_error(reqId, errorCode, errorString, contract):
+        nonlocal ready
+        if errorCode == 2104 and "usopt" in errorString:
+            ready = True
+
+    ib.errorEvent += on_error
+    deadline = time.time() + timeout
+    while not ready and time.time() < deadline:
+        ib.sleep(0.5)
+    ib.errorEvent -= on_error
+    if ready:
+        log.info("✅ usopt options data farm ready")
+    else:
+        log.warning(f"⚠️  usopt not confirmed ready after {timeout}s — proceeding anyway")
 
 
 def _reconnect(ib: IB) -> IB:
