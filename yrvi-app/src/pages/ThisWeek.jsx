@@ -44,14 +44,14 @@ export default function ThisWeek() {
     axios.get('/api/run-status').then(r => setRunStatus(r.data)).catch(() => {})
   }, [])
 
-  // Poll run-status every 5s while executing
+  // Always poll run-status every 5s so we catch both manual and scheduled runs
   useEffect(() => {
-    if (!runStatus?.executing) return
     const t = setInterval(() => {
       axios.get('/api/run-status').then(r => {
+        const wasExecuting = runStatus?.executing
         setRunStatus(r.data)
-        if (!r.data.executing) {
-          // Run just finished — show result
+        // Run just finished — show result
+        if (wasExecuting && !r.data.executing) {
           if (r.data.result) {
             const { fills, premium } = r.data.result
             setManualMsg({ ok: true, text: `✅ Run complete — ${fills} fill(s), $${premium.toLocaleString()} premium collected` })

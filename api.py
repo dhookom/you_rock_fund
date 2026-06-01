@@ -2054,6 +2054,60 @@ def manual_run():
     return {"success": True, "message": "Pipeline started"}
 
 
+@app.post("/api/test-run")
+def test_run():
+    """Trigger a DRY RUN of the CSP pipeline — no real orders placed. For testing status UI."""
+    import threading, os
+
+    if _run_status["executing"]:
+        raise HTTPException(status_code=409, detail="A run is already in progress")
+
+    def _run():
+        _run_status.update({"executing": True, "started_at": datetime.now().isoformat(),
+                            "result": None, "error": None, "ticker_results": [],
+                            "current_ticker": None, "current_stage": None})
+        # Temporarily force DRY_RUN on
+        os.environ["DRY_RUN"] = "true"
+        try:
+            import importlib, sys
+            for mod in ["config", "screener", "position_sizer", "trader"]:
+                if mod in sys.modules:
+                    importlib.reload(sys.modules[mod])
+            from screener import get_top_targets
+            from position_sizer import size_all
+            from trader import execute_positions
+
+            settings    = load_settings()
+            n           = settings.get("num_positions", 5)
+            all_targets = get_top_targets(n * 2)
+            positions   = size_all(all_targets[:n])
+            _ticker_results = []
+
+            def _progress(ticker=None, stage=None, result=None):
+                if result:
+                    _ticker_results.append(result)
+                _run_status["current_ticker"] = ticker
+                _run_status["current_stage"]  = stage
+                _run_status["ticker_results"] = list(_ticker_results)
+
+            execute_positions(positions, extra_targets=all_targets, status_callback=_progress)
+            _run_status["current_ticker"] = None
+            _run_status["current_stage"]  = None
+
+            filled = [r for r in _ticker_results if r.get("status") in ("filled", "partial_fill", "dry_run")]
+            _run_status.update({"executing": False,
+                                "result": {"fills": len(filled), "premium": 0, "completed": datetime.now().isoformat(), "dry_run": True}})
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Test run failed: {e}", exc_info=True)
+            _run_status.update({"executing": False, "error": str(e), "result": None})
+        finally:
+            os.environ.pop("DRY_RUN", None)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"success": True, "message": "Dry run started — no real orders will be placed"}
+
+
 @app.post("/api/feedback")
 def submit_feedback(body: FeedbackRequest):
     webhook_url = _read_secret_or_env("discord_feedback_webhook_url", "DISCORD_FEEDBACK_WEBHOOK_URL") or _FEEDBACK_WEBHOOK_DEFAULT
