@@ -235,7 +235,8 @@ export default function SettingsPage() {
     setRestartResult(null)
     try {
       const res = await axios.post('/api/restart-scheduler')
-      setRestartResult({ ok: true, text: `Scheduler restarted (PID ${res.data.pid})` })
+      const detail = res.data.container ?? (res.data.pid ? `PID ${res.data.pid}` : 'success')
+      setRestartResult({ ok: true, text: `Scheduler restarted (${detail})` })
     } catch (err) {
       setRestartResult({ ok: false, text: err.response?.data?.detail ?? 'Restart failed — check logs' })
     } finally {
