@@ -1889,6 +1889,54 @@ def test_discord():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/manual-run")
+def manual_run():
+    """Trigger a CSP pipeline run immediately, outside the normal schedule."""
+    import threading
+
+    def _run():
+        try:
+            import importlib, sys
+            for mod in ["config", "screener", "position_sizer", "trader"]:
+                if mod in sys.modules:
+                    importlib.reload(sys.modules[mod])
+            from screener import get_top_targets
+            from position_sizer import size_all
+            from trader import execute_positions
+
+            settings    = load_settings()
+            n           = settings.get("num_positions", 5)
+            all_targets = get_top_targets(n * 2)
+            positions   = size_all(all_targets[:n])
+            execute_positions(positions, extra_targets=all_targets)
+
+            # Update weekly_pnl and post to Discord
+            state = _load_state()
+            results = state.get("executions", [])
+            csp_premium = sum(r.get("premium_collected", 0) for r in results
+                              if r.get("status") in ("filled", "partial_fill", "dry_run"))
+            pnl = state.get("weekly_pnl", {})
+            state["weekly_pnl"] = {
+                **pnl,
+                "week_start":    datetime.now(PST).strftime("%Y-%m-%d"),
+                "csp_premium":   round(csp_premium, 2),
+                "total_realized": round(csp_premium + pnl.get("cc_premium", 0) + pnl.get("shares_sold_pnl", 0), 2),
+                "last_updated":  datetime.now().isoformat(),
+            }
+            with open(STATE_FILE, "w") as f:
+                json.dump(state, f, indent=2)
+
+            from discord_poster import is_enabled, post_weekly_results
+            if is_enabled():
+                post_weekly_results(_load_state(), fund_budget=settings.get("fund_budget", 250_000))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Manual run failed: {e}", exc_info=True)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"success": True, "message": "Pipeline started — check trade_log.txt for progress"}
+
+
 @app.post("/api/feedback")
 def submit_feedback(body: FeedbackRequest):
     webhook_url = _read_secret_or_env("discord_feedback_webhook_url", "DISCORD_FEEDBACK_WEBHOOK_URL") or _FEEDBACK_WEBHOOK_DEFAULT

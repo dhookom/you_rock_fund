@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { RefreshCw, Clock, TrendingUp, AlertCircle } from 'lucide-react'
+import { RefreshCw, Clock, TrendingUp, AlertCircle, Play } from 'lucide-react'
 
 function useCountdown(isoStr) {
   const [label, setLabel] = useState('')
@@ -30,11 +30,13 @@ function fmtDate(s) {
 }
 
 export default function ThisWeek() {
-  const [screener, setScreener] = useState(null)
-  const [status, setStatus]     = useState(null)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState(null)
-  const [runAt, setRunAt]       = useState(null)
+  const [screener, setScreener]       = useState(null)
+  const [status, setStatus]           = useState(null)
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState(null)
+  const [runAt, setRunAt]             = useState(null)
+  const [manualRunning, setManualRunning] = useState(false)
+  const [manualMsg, setManualMsg]     = useState(null)
 
   useEffect(() => {
     axios.get('/api/status').then(r => setStatus(r.data)).catch(() => {})
@@ -50,6 +52,20 @@ export default function ThisWeek() {
     const et  = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' })
     return `${day} ${pst} PST (${et} ET)`
   })()
+
+  const triggerManualRun = useCallback(async () => {
+    if (!window.confirm('Run the CSP pipeline now? This will place real orders in your IBKR account.')) return
+    setManualRunning(true)
+    setManualMsg(null)
+    try {
+      const res = await axios.post('/api/manual-run', {}, { timeout: 15000 })
+      setManualMsg({ ok: true, text: res.data.message ?? 'Pipeline started — check trade log for progress.' })
+    } catch (err) {
+      setManualMsg({ ok: false, text: err.response?.data?.detail ?? err.message })
+    } finally {
+      setManualRunning(false)
+    }
+  }, [])
 
   const runScreener = useCallback(async () => {
     setLoading(true)
@@ -84,17 +100,35 @@ export default function ThisWeek() {
           </div>
           <div className="flex flex-col items-end gap-3">
             <Clock size={40} className="text-blue-600/30" />
-            <button
-              onClick={runScreener}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              {loading ? 'Running...' : 'Run Screener'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={runScreener}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                {loading ? 'Running...' : 'Run Screener'}
+              </button>
+              <button
+                onClick={triggerManualRun}
+                disabled={manualRunning}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
+                title="Run the full CSP pipeline now and place orders"
+              >
+                <Play size={14} className={manualRunning ? 'animate-pulse' : ''} />
+                {manualRunning ? 'Starting...' : 'Run Now'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Manual run feedback */}
+      {manualMsg && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium ${manualMsg.ok ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'}`}>
+          {manualMsg.ok ? '✅' : '❌'} {manualMsg.text}
+        </div>
+      )}
 
       {/* Loading state */}
       {loading && (

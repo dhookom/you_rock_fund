@@ -78,22 +78,26 @@ def _save_ytd(ytd: dict):
 
 def _update_ytd(week_start: str, premium_collected: float, shares_sold_pnl: float, fund_budget: float) -> dict:
     ytd = _load_ytd()
-    if not any(w["week_start"] == week_start for w in ytd["weeks"]):
-        ytd["weeks"].append({
-            "week_start":        week_start,
-            "premium_collected": premium_collected,
-            "shares_sold_pnl":   shares_sold_pnl,
-            "total_realized":    round(premium_collected + shares_sold_pnl, 2),
-            "yield_pct":         round(premium_collected / fund_budget * 100, 3) if fund_budget else 0,
-        })
-        ytd["total_premium"] = round(
-            sum(w.get("premium_collected", w.get("realized", 0)) for w in ytd["weeks"]), 2
-        )
-        ytd["weeks_traded"]  = len(ytd["weeks"])
-        by_premium        = sorted(ytd["weeks"], key=lambda w: w.get("premium_collected", w.get("realized", 0)))
-        ytd["worst_week"]  = by_premium[0]
-        ytd["best_week"]   = by_premium[-1]
-        _save_ytd(ytd)
+    entry = {
+        "week_start":        week_start,
+        "premium_collected": premium_collected,
+        "shares_sold_pnl":   shares_sold_pnl,
+        "total_realized":    round(premium_collected + shares_sold_pnl, 2),
+        "yield_pct":         round(premium_collected / fund_budget * 100, 3) if fund_budget else 0,
+    }
+    existing_idx = next((i for i, w in enumerate(ytd["weeks"]) if w["week_start"] == week_start), None)
+    if existing_idx is not None:
+        ytd["weeks"][existing_idx] = entry
+    else:
+        ytd["weeks"].append(entry)
+    ytd["total_premium"] = round(
+        sum(w.get("premium_collected", w.get("realized", 0)) for w in ytd["weeks"]), 2
+    )
+    ytd["weeks_traded"]  = len(ytd["weeks"])
+    by_premium        = sorted(ytd["weeks"], key=lambda w: w.get("premium_collected", w.get("realized", 0)))
+    ytd["worst_week"]  = by_premium[0]
+    ytd["best_week"]   = by_premium[-1]
+    _save_ytd(ytd)
     return ytd
 
 
