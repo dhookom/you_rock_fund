@@ -162,6 +162,22 @@ docker compose --env-file .env.compose <command>
 
 ---
 
+### Q: All trades show error 10197 "No market data during competing live session"
+
+**A:** Your live IB Gateway (or TWS) is open somewhere — on another machine, the IBKR desktop app, or a second terminal. When a live account session is active, IBKR gives it market data priority and blocks the paper account's quotes entirely. Every ticker returns 10197 and 0 fills result.
+
+**How to confirm:** Run System Diagnostics from the Help page. If SPY Price shows "No price data" and Options Data shows "no bid/ask", this is the cause — not a subscription issue.
+
+**The fix:**
+
+1. Close the live IB Gateway or TWS app on every device
+2. Restart the paper IB Gateway from the Help page (or wait ~30 seconds for it to detect the session is clear)
+3. Re-run the pipeline using the **Run Now** button on the This Week page
+
+> **Note:** You can't run paper and live gateways simultaneously on the same IBKR account — the live session always wins. If you need both running at the same time, you would need separate IBKR accounts.
+
+---
+
 ### Q: Orders never fill — stuck on "failed" or "order unfilled" even when market data works
 
 **A:** IB Gateway is blocking API orders behind a confirmation dialog that no one is clicking. When **Bypass Order Precautions for API Orders** is not enabled, IBKR pops up a warning dialog before submitting each order. Since the system runs headlessly, nothing dismisses it and the order times out.
