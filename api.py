@@ -1096,6 +1096,26 @@ def _build_diag() -> dict:
     # if ib_insync fails to connect (port open but login not complete).
     gw_check_idx = len(checks) - 1
 
+    # ── 2b. Scheduler port vs settings port mismatch ───────────
+    try:
+        import subprocess as _sp
+        _sched_port_raw = _sp.run(
+            ["docker", "exec", "yrvi-scheduler-1", "sh", "-c", "echo $IBKR_PORT"],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        if _sched_port_raw:
+            _sched_port = int(_sched_port_raw)
+            if _sched_port != port:
+                _sched_mode = "live" if _sched_port in (4001, 4003) else "paper"
+                _settings_mode = "live" if port in (4001, 4003) else "paper"
+                check("Port Mismatch", "error",
+                      f"Scheduler is using port {_sched_port} ({_sched_mode}) but settings say port {port} ({_settings_mode}) — "
+                      f"containers need restart: docker compose --env-file .env.compose up -d")
+            else:
+                check("Port Config", "ok", f"Scheduler and settings both on port {port}")
+    except Exception:
+        pass  # non-fatal — skip if docker CLI unavailable
+
     # ── 3. Last CSP execution ──────────────────────────────────
     try:
         state = load_state()
