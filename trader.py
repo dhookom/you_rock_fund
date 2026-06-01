@@ -51,12 +51,23 @@ def _append_trade_log(record: dict) -> None:
 
 
 def connect() -> IB:
-    ib = IB()
-    ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID)
-    ib.reqMarketDataType(3)  # 1=live, 2=frozen, 3=delayed, 4=delayed-frozen
-    log.info(f"✅ Connected to IBKR — Account: {ib.managedAccounts()}")
-    _wait_for_usopt(ib)
-    return ib
+    account_type = "paper" if IBKR_PORT == 4002 else "live"
+    for attempt in range(1, 4):
+        try:
+            ib = IB()
+            ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID)
+            ib.reqMarketDataType(3)  # 1=live, 2=frozen, 3=delayed, 4=delayed-frozen
+            log.info(f"✅ Connected to IBKR — Account: {ib.managedAccounts()}")
+            _wait_for_usopt(ib)
+            return ib
+        except TimeoutError:
+            log.warning(f"⚠️  IBKR connect attempt {attempt}/3 timed out ({account_type}, {IBKR_HOST}:{IBKR_PORT})")
+            if attempt < 3:
+                time.sleep(10)
+    raise TimeoutError(
+        f"IB Gateway unreachable at {IBKR_HOST}:{IBKR_PORT} ({account_type} account) — "
+        f"is IB Gateway running? {'No 2FA needed for paper.' if account_type == 'paper' else 'Check 2FA login.'}"
+    )
 
 
 def _wait_for_usopt(ib: IB, timeout: int = 30) -> None:

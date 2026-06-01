@@ -17,6 +17,7 @@ run_wheel_check() — Monday 9:55AM PST (runs before CSP pipeline)
 """
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
@@ -80,11 +81,22 @@ def _save_state(state: dict):
 # ── IBKR ───────────────────────────────────────────────────────
 
 def _connect() -> IB:
-    ib = IB()
-    ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID_WHEEL)
-    ib.reqMarketDataType(3)
-    log.info(f"✅ Connected to IBKR (clientId={IBKR_CLIENT_ID_WHEEL})")
-    return ib
+    account_type = "paper" if IBKR_PORT == 4002 else "live"
+    for attempt in range(1, 4):
+        try:
+            ib = IB()
+            ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID_WHEEL)
+            ib.reqMarketDataType(3)
+            log.info(f"✅ Connected to IBKR (clientId={IBKR_CLIENT_ID_WHEEL})")
+            return ib
+        except TimeoutError:
+            log.warning(f"⚠️  IBKR connect attempt {attempt}/3 timed out ({account_type}, {IBKR_HOST}:{IBKR_PORT})")
+            if attempt < 3:
+                time.sleep(10)
+    raise TimeoutError(
+        f"IB Gateway unreachable at {IBKR_HOST}:{IBKR_PORT} ({account_type} account) — "
+        f"is IB Gateway running? {'No 2FA needed for paper.' if account_type == 'paper' else 'Check 2FA login.'}"
+    )
 
 
 def _is_nan(val) -> bool:
