@@ -365,13 +365,25 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-2xl space-y-5">
-      {/* Hidden file input at top of DOM so the browser doesn't scroll to it */}
+      {/* Hidden file input pinned to the viewport origin. Fixed positioning
+          (no clip / negative margin) means the browser's "scroll focused
+          element into view" is a no-op — the page never jumps when the
+          native file dialog opens. */}
       <input
         ref={fileInputRef}
         type="file"
         accept=".xml,text/xml"
-        className="sr-only"
-        style={{ position: 'fixed', top: 0, left: 0 }}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: 1,
+          height: 1,
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
         onChange={e => {
           const file = e.target.files?.[0]
           if (!file) return
@@ -916,7 +928,19 @@ export default function SettingsPage() {
             />
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                // Safety net: if the browser still nudges the <main> scroll
+                // when the native dialog opens/closes, snap it back. Reads
+                // main.scrollTop (the real scroll container) — not window.
+                const main = fileInputRef.current?.closest('main')
+                const y = main ? main.scrollTop : 0
+                const restore = () => {
+                  if (main) main.scrollTop = y
+                  window.removeEventListener('focus', restore)
+                }
+                window.addEventListener('focus', restore)
+                fileInputRef.current?.click()
+              }}
               className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-400"
             >
               <Upload size={12} /> Or click to select a .xml file
