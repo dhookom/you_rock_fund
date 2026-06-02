@@ -906,11 +906,12 @@ export default function SettingsPage() {
                 onChange={e => {
                   const file = e.target.files?.[0]
                   if (!file) return
+                  e.target.blur()
+                  const y = window.scrollY
                   const reader = new FileReader()
                   reader.onload = ev => {
-                    const y = window.scrollY
                     setReconXml(ev.target.result)
-                    requestAnimationFrame(() => window.scrollTo(0, y))
+                    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)))
                   }
                   reader.readAsText(file)
                   e.target.value = ''
