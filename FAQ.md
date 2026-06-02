@@ -224,9 +224,9 @@ Then in YRVI:
 
 **A:** This lets YRVI fetch your trade history directly from IBKR on demand — no manual export needed. It requires a one-time setup of a Flex Token and Query ID in your Secrets page.
 
-**Step 1 — Create the Flex Query (if you haven't already)**
+**Step 1 — Create the Flex Query and get the Query ID**
 
-Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query with the **Executions** sub-type, XML format. Note the **Query ID** shown in the query list (a 6–9 digit number).
+Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query with the **Executions** sub-type, XML format. To find your **Query ID**, click the **ℹ️ icon** to the left of your query name on the Flex Queries page — it shows the Query ID in the details popup (e.g. `1529200`).
 
 **Step 2 — Get your Flex Web Service Token**
 
