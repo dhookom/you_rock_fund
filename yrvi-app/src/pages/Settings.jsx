@@ -1146,10 +1146,7 @@ export default function SettingsPage() {
                 setReconCommitting(true)
                 setReconMsg(null)
                 try {
-                  const body = { dry_run: false, date_from: reconDateFrom || undefined, date_to: reconDateTo || undefined }
-                  const url = reconMode === 'upload' ? '/api/reconcile/upload' : '/api/reconcile/flex'
-                  if (reconMode === 'upload') body.xml = reconXml
-                  const r = await axios.post(url, body)
+                  const r = await axios.post('/api/reconcile/commit', { weeks: reconPreview.weeks })
                   setReconMsg({ type: 'success', text: `Committed — ${r.data.weeks_found} weeks, $${r.data.total_premium?.toLocaleString()} total premium written to ytd_tracker.json` })
                   setReconPreview(null)
                 } catch (e) {

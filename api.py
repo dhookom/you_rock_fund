@@ -785,6 +785,9 @@ class YtdWeekRequest(BaseModel):
     week_start: str        # YYYY-MM-DD
     premium_collected: float
 
+class ReconcileCommitRequest(BaseModel):
+    weeks: list  # list of week dicts from a previous preview
+
 class FeedbackRequest(BaseModel):
     type: str    # "bug" | "feature"
     message: str
@@ -2237,6 +2240,26 @@ def delete_ytd_week(week_start: str):
     ytd = _finalize_ytd(weeks)
     YTD_FILE.write_text(json.dumps(ytd, indent=2))
     return {"committed": True, "weeks_total": ytd["weeks_traded"], "total_premium": ytd["total_premium"]}
+
+@app.post("/api/reconcile/commit")
+def reconcile_commit(body: ReconcileCommitRequest):
+    """Write a previously previewed weeks list into ytd_tracker.json without re-fetching."""
+    from reconciler import _load_existing_weeks, _finalize_ytd
+    if not body.weeks:
+        raise HTTPException(status_code=400, detail="weeks list is empty")
+    merged = _load_existing_weeks()
+    for w in body.weeks:
+        ws = w.get("week_start")
+        if not ws:
+            continue
+        merged[ws] = {
+            "week_start":        ws,
+            "premium_collected": round(w.get("premium_collected", w.get("realized", 0)), 2),
+            "total_realized":    round(w.get("total_realized", w.get("premium_collected", w.get("realized", 0))), 2),
+        }
+    ytd = _finalize_ytd(merged)
+    YTD_FILE.write_text(json.dumps(ytd, indent=2))
+    return {"committed": True, "weeks_found": len(body.weeks), "total_premium": ytd["total_premium"], "weeks": ytd["weeks"]}
 
 @app.post("/api/reconcile/upload")
 def reconcile_upload(body: ReconcileUploadRequest):
