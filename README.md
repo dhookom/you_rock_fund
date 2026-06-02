@@ -282,6 +282,8 @@ Before switching to a live IBKR account, review these risks:
 
 > **Auto-login vs. FileVault:** The default setup uses auto-login for hands-free reboots. FileVault disables auto-login. For live trading, the recommended posture is: enable FileVault, accept that a reboot requires a manual login to restart the stack, and treat that as a feature (no unattended access).
 
+> **⭐ Real-time market data:** Paper accounts get real-time data for free, but a **live account needs paid subscriptions** — without them YRVI falls back to delayed data and System Diagnostics shows Options Data ❌ "no bid/ask". In Client Portal → Market Data Subscriptions → Level I (NBBO), enable **OPRA (US Options Exchanges)** for options, plus **NYSE (Network A)**, **Network B (ARCA/BATS/IEX — covers SPY)**, and **NASDAQ (Network C)** for real-time stock quotes (strike selection + stop-loss). All NP/L1, $1.50/mo each, waived at $20 monthly commissions. See [Step 3 of the live-trading section in IBKR_SETUP_GUIDE.md](IBKR_SETUP_GUIDE.md#preparing-for-live-trading).
+
 ## Mac Startup (after any reboot)
 
 **Double-click `YRVI Startup` on your Desktop** to run the pre-flight check. It verifies the Docker containers are running and prints a full GO/NO-GO status table.

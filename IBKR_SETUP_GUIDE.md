@@ -236,9 +236,11 @@ Without this step, YRVI will connect to IBKR successfully but fail to retrieve o
    | **Market Data Subscriber Status** | Select **Non-Professional** — you're trading your own account, not redistributing data commercially. Keeps fees at $0. |
    | **Non-Commercial Form** | Confirm personal/non-commercial use |
 
-> **You do not need a separate OPRA subscription.** IBKR's free delayed market data (type 3) is sufficient for YRVI to execute options trades. The API Acknowledgement is the key unlock — once signed, delayed options bid/ask will flow through automatically.
+> **Paper vs. live — this is the part that trips people up:**
+> - **Paper trading:** IBKR provides **real-time** option data for free. No OPRA subscription needed — the API Acknowledgement above is the only unlock. This is why YRVI "just works" in paper.
+> - **Live trading:** the live account needs a **paid OPRA subscription** for real-time option data. Without it, requests fall back to IBKR's free **delayed** data (type 3), which only populates ~15–30 minutes after the open and is not reliable for the dashboard diagnostic or earlier-time execution. See [Preparing for Live Trading](#preparing-for-live-trading) for the exact subscription.
 
-> **Propagation time:** Changes made today may take overnight to fully activate. Run your first test the following morning between 10–10:30 AM ET — the market needs to have been open at least 15–30 minutes for delayed quotes to be populated.
+> **Propagation time:** Changes made today may take a few minutes to overnight to fully activate. On delayed data, run your first test the following morning between 10–10:30 AM ET (market open ≥15–30 min). With a live OPRA subscription, real-time quotes flow as soon as the market opens.
 
 > **Why the live account?** IBKR paper accounts inherit market data subscriptions from your live account. The IBKR mobile app and TWS explicitly disable Market Data management for paper accounts — the web Client Portal on your live account is the only place to configure this.
 
@@ -369,7 +371,29 @@ Open the YRVI dashboard → **Secrets** and add the three live credentials:
 
 These are stored in the same encrypted secrets container as your paper credentials — no `.env` file editing required.
 
-### Step 3 — Switch to Live in the Dashboard
+### Step 3 — Subscribe to Real-Time Options Data (OPRA) ⭐ CRITICAL
+
+Paper trading gets real-time data for free, but a **live account does not** — it needs a paid subscription, or YRVI silently falls back to delayed data (Options Data shows ❌ "no bid/ask" in System Diagnostics even with the market open).
+
+1. Log into the IBKR **Client Portal** on your **live account** (close IB Gateway first — a running Gateway and a Client Portal login conflict over the same session)
+2. **Settings → Market Data Subscriptions → ⚙️ Configure → Level I (NBBO)**
+3. Check these four (all **NP, L1** — Non-Professional, top-of-book, which is all YRVI uses):
+
+   | Subscription | Covers | Needed for |
+   |---|---|---|
+   | **OPRA (US Options Exchanges)** | Options on NYSE, CBOE, BOX, Nasdaq, MIAX, MEMX | Covered calls + CSPs (bid/ask + greeks) |
+   | **NYSE (Network A/CTA)** | NYSE-listed stocks | Strike selection + stop-loss price |
+   | **NYSE American, BATS, ARCA, IEX, Regional (Network B)** | ETFs incl. **SPY**, ARCA/BATS/IEX names | Strike selection + stop-loss price |
+   | **NASDAQ (Network C/UTP)** | NASDAQ-listed stocks | Strike selection + stop-loss price |
+
+   - Each is **USD 1.50/month, waived once monthly commissions reach USD 20** — effectively free at YRVI's trading volume.
+   - OPRA is the only one strictly required for *options*; the three network feeds give real-time *stock* quotes for any ticker the screener surfaces and accurate stop-loss triggers. The free "US Real-Time Non Consolidated Streaming Quotes" does **not** satisfy the API's consolidated request (you'll see `error 10089 — SPY ARCA/TOP`).
+   - **Skip:** NYMEX (futures), NEO/Canadian exchanges, OTC Markets — not traded by YRVI.
+4. Restart IB Gateway afterward (the dashboard does this on mode switch) so it pulls the new entitlements. Activation is usually minutes but can take until the next session.
+
+> **Why this matters:** delayed data only populates 15–30 min after the open, so the system can't screen, price, or run at earlier times. Real-time OPRA removes that constraint.
+
+### Step 4 — Switch to Live in the Dashboard
 
 1. Open the YRVI dashboard → **Settings**
 2. Scroll to **Trading Mode** and click **"Switch to Live"**

@@ -154,11 +154,34 @@ docker compose --env-file .env.compose <command>
 4. Allow overnight for the acknowledgement to fully propagate — changes made today will be active by the next morning
 5. Re-run the test the **following morning between 10–10:30 AM ET** — the market needs to have been open at least 15–30 minutes for delayed quotes to be populated
 
-> **You do not need a separate OPRA subscription.** IBKR's free delayed market data (type 3) is sufficient for YRVI to execute. The API Acknowledgement is the key unlock — once signed and propagated, delayed options bid/ask will flow through automatically.
+> **Paper vs. live:** On a **paper** account this is all you need — IBKR provides real-time data for free. A **live** account also needs paid data subscriptions (OPRA for options + US stock networks) — see the next question.
 
 > **Important:** You cannot fix this through the IBKR mobile app or TWS — IBKR explicitly disables Market Data management for paper accounts in those interfaces ("When logging in through TWS or Mobile Apps, all Market Data and Trading functionality is disabled"). The web Client Portal on your live account is the only path.
 
 > **Note:** If the Client Portal warns about an existing session (IB Gateway is running), use a different browser or browser profile to avoid disconnecting your Gateway session.
+
+---
+
+### Q: I went live and System Diagnostics shows Options Data ❌ "no bid/ask" — Market Data Subscriptions
+
+**A:** **Paper accounts get real-time market data for free; live accounts do not.** When you switch to live, options (and stock) requests fall back to IBKR's free **delayed** feed — which only populates 15–30 min after the open and isn't reliable — and the diagnostic flags "no bid/ask." You need to subscribe to real-time data on the live account.
+
+**How to confirm:** The gateway is logged in (IBKR ✅, IB Gateway ✅) but Options Data shows ❌. Manual probes show error `10089`/`10091`/`10167` ("requires additional subscription … Displaying delayed market data").
+
+**The fix — subscribe in the live account's Client Portal** → **Settings → Market Data Subscriptions → ⚙️ Configure → Level I (NBBO)**, check all four (all **NP, L1**; $1.50/mo each, **waived once monthly commissions reach $20**):
+
+| Subscription | Covers |
+|---|---|
+| **OPRA (US Options Exchanges)** | Option bid/ask + greeks — covered calls & CSPs (required) |
+| **NYSE (Network A/CTA)** | NYSE-listed stocks |
+| **NYSE American, BATS, ARCA, IEX, Regional (Network B)** | ETFs incl. **SPY**, ARCA/BATS/IEX names |
+| **NASDAQ (Network C/UTP)** | NASDAQ-listed stocks |
+
+Skip NYMEX (futures), Canadian exchanges, and OTC Markets — YRVI doesn't trade those.
+
+> **Propagation lag — expect this:** After subscribing, data often does **not** start flowing immediately, even though the portal says "confirmed" and the subscription errors disappear. IBKR's entitlement can take from a few minutes up to the **next session / overnight** to activate. Re-run System Diagnostics later; if still empty after ~an hour, restart the IB Gateway (forces a fresh entitlement pull — you'll get a new IB Key 2FA push to approve). If it's still dark the next morning, contact IBKR.
+
+> **2FA after restart:** Restarting the live gateway triggers an **IB Key push to your phone** — approve it within ~3 minutes or login times out and the API never comes up.
 
 ---
 

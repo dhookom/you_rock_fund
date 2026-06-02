@@ -1340,8 +1340,8 @@ def _build_diag() -> dict:
                               f"{label} — no bid/ask (market closed — normal outside trading hours)")
                     else:
                         check("Options Data", "error",
-                              f"{label} — no bid/ask — market data subscription may be pending "
-                              f"(IBKR Client Portal → Market Data Subscriptions)")
+                              f"{label} — no bid/ask. Live accounts need a paid OPRA + US stock "
+                              f"data subscription (paper is free). See FAQ → \"Market Data Subscriptions\".")
             except Exception as e:
                 check("Options Data", "error", str(e)[:120])
 
