@@ -230,9 +230,11 @@ Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query 
 
 **Step 2 — Get your Flex Web Service Token**
 
-1. In the IBKR Client Portal, go to **Performance & Reports → Flex Queries → Flex Web Service Configuration**
-   (alternatively: top-left Menu → Reporting → Flex Queries → Flex Web Service Configuration)
-2. Make sure **Flex Web Service Status** is checked (enabled)
+1. In the IBKR Client Portal, go to **Performance & Reports → Flex Queries**
+2. Click **Select Account(s)** at the top and make sure **all your accounts are selected** — the Flex Web Service Configuration panel only appears when multiple accounts are selected
+3. Scroll down — you should now see a **Flex Web Service Configuration** panel in the bottom right
+4. Click the **gear icon (⚙)** on that panel
+5. Make sure **Flex Web Service Status** is checked (enabled)
 3. Copy the **Current Token** shown on the page — it's a long alphanumeric string
 4. If no token exists yet, click **Generate Token** to create one
 
