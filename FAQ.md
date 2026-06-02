@@ -231,9 +231,10 @@ Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query 
 **Step 2 — Get your Flex Web Service Token**
 
 1. In the IBKR Client Portal, go to **Performance & Reports → Flex Queries**
-2. Click the **gear icon (⚙)** in the top right of the Flex Queries page
-3. Under **Flex Web Service**, click **Generate Token** (or copy your existing token if one exists)
-4. Copy the token — it's a long alphanumeric string
+2. Click the **gear icon (⚙)** in the top right of the **Flex Queries Delivery** panel (right side of the page) — this opens the Flex Queries Delivery page
+3. On the Flex Queries Delivery page, look for a **Configure** or **Flex Web Service** option to generate your token
+4. Click **Generate Token** (or copy your existing token if one exists)
+5. Copy the token — it's a long alphanumeric string
 
 **Step 3 — Enter the secrets in YRVI**
 
