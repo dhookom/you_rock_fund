@@ -202,7 +202,7 @@ Without this, the scheduler will connect, get market data, size positions, submi
 3. Click **Activity Flex Query** → then the **+** button to create a new query (or edit an existing one)
 4. Configure the query:
    - **Query Name:** Give it a name like `YRVI Reconciler`
-   - **Sections:** Click **Trades** — then click **Select All** to include all fields, and make sure the **Executions** sub-type is checked
+   - **Sections:** Click **Trades** — then click **Select All** to include all fields, make sure the **Executions** sub-type is checked, then click **Save**
    - **Period:** Choose *Last 365 Calendar Days* (or a custom date range)
    - **Format:** XML
    - **Date Format:** `yyyyMMdd`
