@@ -902,7 +902,11 @@ export default function SettingsPage() {
                   const file = e.target.files?.[0]
                   if (!file) return
                   const reader = new FileReader()
-                  reader.onload = ev => setReconXml(ev.target.result)
+                  reader.onload = ev => {
+                    const y = window.scrollY
+                    setReconXml(ev.target.result)
+                    requestAnimationFrame(() => window.scrollTo(0, y))
+                  }
                   reader.readAsText(file)
                   e.target.value = ''
                 }}
