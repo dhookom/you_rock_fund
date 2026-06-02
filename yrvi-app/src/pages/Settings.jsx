@@ -366,13 +366,16 @@ export default function SettingsPage() {
     }
   }
 
-  // Format an ISO timestamp like "Sun Jun 1 at 9:30 PM" in the local timezone.
-  const fmtTokenTime = (iso) => {
+  // Format an ISO timestamp like "Sun, Jun 1 at 9:30 PM". Pass tz (e.g.
+  // 'America/New_York') to render in a specific zone — used for the weekly reset,
+  // which is labelled ET and must not drift to the viewer's local timezone.
+  const fmtTokenTime = (iso, tz) => {
     if (!iso) return ''
     try {
       const d = new Date(iso)
-      const day  = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      const zone = tz ? { timeZone: tz } : {}
+      const day  = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...zone })
+      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', ...zone })
       return `${day} at ${time}`
     } catch { return iso }
   }
@@ -667,7 +670,7 @@ export default function SettingsPage() {
                 ? <> — established {fmtTokenTime(tokenStatus.weekly_token_established)}</>
                 : null}
               <span className="text-gray-500 dark:text-gray-600">
-                {' '}· Next reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)} ET
+                {' '}· Next reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset, 'America/New_York')} ET
               </span>
             </div>
           ) : (
@@ -675,7 +678,7 @@ export default function SettingsPage() {
               🔑 No weekly token yet — the next gateway restart will require an IB Key approval on your phone.
               {tokenStatus?.weekly_token_next_reset && (
                 <span className="text-gray-500 dark:text-gray-600">
-                  {' '}Next scheduled reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)} ET.
+                  {' '}Next scheduled reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset, 'America/New_York')} ET.
                 </span>
               )}
             </div>
@@ -922,6 +925,16 @@ export default function SettingsPage() {
             Tuesday becomes the execution day. A Discord alert fires when an update is applied.
           </p>
         )}
+        <div className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-amber-600 dark:text-amber-400 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-2.5 py-2">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <span>
+            Every update restarts IB Gateway, which requires a fresh IB Key 2FA approval on
+            your phone. With Auto-Update on, that prompt fires unattended at 3 AM — if no one
+            approves it, the gateway stays logged out and trading is paused until you do.
+            Leave Auto-Update off unless you'll be available to approve, or plan to apply
+            updates manually while you're at the computer.
+          </span>
+        </div>
       </Section>
 
       {/* Shutdown */}

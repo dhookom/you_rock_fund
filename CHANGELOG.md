@@ -1,3 +1,10 @@
+## [3.4.1] — 2026-06-02
+### Fixed
+- **Weekly token "Next reset" now renders in ET** — the reset time is labelled ET but was being formatted in the viewer's local timezone (e.g. showing "Sat, Jun 6 at 10:00 PM ET" in Pacific instead of "Sun, Jun 7 at 1:00 AM ET"). It now formats explicitly in `America/New_York`.
+
+### Added
+- **Auto-Update 2FA warning** — Settings → Software Updates now warns that every update restarts IB Gateway and requires a fresh IB Key 2FA approval. With Auto-Update on, that prompt fires unattended at 3 AM; if unapproved, the gateway stays logged out and trading pauses. Confirmed live: the dashboard upgrade rebuilds the ib_gateway image and recreates the container, so a 2FA challenge fires on every upgrade.
+
 ## [3.4.0] — 2026-06-02
 ### Added
 - **Weekly IB Key 2FA token status** — Settings → IB Gateway now shows whether this week's authentication token is active, when it was established, and when the next reset is due (~Sunday 1 AM ET). The API log monitor watches the IBC `autorestart file found/not found` lines and persists the establishment timestamp to `/data/weekly_token_established`.
