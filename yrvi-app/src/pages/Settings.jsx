@@ -899,7 +899,14 @@ export default function SettingsPage() {
             />
             <label
               className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 cursor-pointer hover:text-blue-400"
-              onClick={() => { window._reconScrollY = window.scrollY }}
+              onClick={() => {
+                const y = window.scrollY
+                const onFocus = () => {
+                  window.scrollTo(0, y)
+                  window.removeEventListener('focus', onFocus)
+                }
+                window.addEventListener('focus', onFocus)
+              }}
             >
               <Upload size={12} /> Or click to select a .xml file
               <input
@@ -909,13 +916,8 @@ export default function SettingsPage() {
                 onChange={e => {
                   const file = e.target.files?.[0]
                   if (!file) return
-                  e.target.blur()
-                  const y = window._reconScrollY ?? window.scrollY
                   const reader = new FileReader()
-                  reader.onload = ev => {
-                    setReconXml(ev.target.result)
-                    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)))
-                  }
+                  reader.onload = ev => setReconXml(ev.target.result)
                   reader.readAsText(file)
                   e.target.value = ''
                 }}
