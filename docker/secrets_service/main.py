@@ -25,6 +25,8 @@ OPTIONAL_SECRETS = [
     "vnc_server_password",
     "discord_webhook_url",
     "discord_feedback_webhook_url",
+    "flex_token",
+    "flex_query_id",
 ]
 ALL_SECRETS = REQUIRED_SECRETS + OPTIONAL_SECRETS
 

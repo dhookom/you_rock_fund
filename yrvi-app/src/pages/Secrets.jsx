@@ -23,6 +23,8 @@ const LABELS = {
   vnc_server_password:         { label: 'VNC Password',                 required: false, description: 'Default: ibgateway123!test — used to connect via VNC to the IB Gateway container (port 5900)' },
   discord_webhook_url:          { label: 'Discord Webhook URL',          required: false, description: 'All Discord notifications — weekly plan, execution results, assignments, and alerts — go to this channel.' },
   discord_feedback_webhook_url: { label: 'Discord Feedback Webhook URL', required: false, description: 'Enables the bug/feature feedback form on the Help page. Get the URL from the #yrvi_secrets channel in the You Rock Club Discord.' },
+  flex_token:    { label: 'IBKR Flex Token',    required: false, description: 'Flex Web Service token from IBKR Portal → Performance & Reports → Flex Queries. Required for "Fetch from IBKR" in the Reconciler.' },
+  flex_query_id: { label: 'IBKR Flex Query ID', required: false, description: 'Numeric query ID of your Activity Flex Query (Executions sub-type, XML format). Required for "Fetch from IBKR" in the Reconciler.' },
 }
 
 function deriveSecrets(statusSecrets) {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
-import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw } from 'lucide-react'
+import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
 
 const PRESET_TIMES = [
@@ -141,6 +141,16 @@ export default function SettingsPage() {
   const [showShutdownModal, setShowShutdownModal] = useState(false)
   const [shuttingDown, setShuttingDown]           = useState(false)
   const [systemOffline, setSystemOffline]         = useState(false)
+
+  // Reconciler
+  const [reconXml, setReconXml]               = useState('')
+  const [reconDateFrom, setReconDateFrom]     = useState('')
+  const [reconDateTo, setReconDateTo]         = useState('')
+  const [reconPreview, setReconPreview]       = useState(null)
+  const [reconRunning, setReconRunning]       = useState(false)
+  const [reconCommitting, setReconCommitting] = useState(false)
+  const [reconMsg, setReconMsg]               = useState(null)
+  const [reconMode, setReconMode]             = useState('upload') // 'upload' | 'flex'
 
   const { theme, setTheme } = useThemeContext()
 
@@ -801,6 +811,203 @@ export default function SettingsPage() {
             <Power size={14} />
             Shut Down YRVI
           </button>
+        </div>
+      </Section>
+
+      {/* Reconciler */}
+      <Section title="History Reconciler" emoji="🔄">
+        <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+          Rebuild the weekly premium history from IBKR Flex XML — use this to recover weeks that
+          were traded outside YRVI or lost during a volume wipe.
+          Option sell proceeds are summed by week; stock P&amp;L is not included.
+        </div>
+
+        {/* Mode tabs */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => { setReconMode('upload'); setReconPreview(null); setReconMsg(null) }}
+            className={`text-xs px-3 py-1.5 rounded-md border font-medium inline-flex items-center gap-1.5 ${
+              reconMode === 'upload'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+          >
+            <Upload size={13} /> Paste / Upload XML
+          </button>
+          <button
+            type="button"
+            onClick={() => { setReconMode('flex'); setReconPreview(null); setReconMsg(null) }}
+            className={`text-xs px-3 py-1.5 rounded-md border font-medium inline-flex items-center gap-1.5 ${
+              reconMode === 'flex'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+          >
+            <Download size={13} /> Fetch from IBKR
+          </button>
+        </div>
+
+        {/* Optional date range */}
+        <div className="flex gap-3 items-center">
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-500">From (YYYY-MM-DD)</label>
+            <input
+              type="text"
+              placeholder="2026-01-01"
+              value={reconDateFrom}
+              onChange={e => setReconDateFrom(e.target.value)}
+              className="bg-gray-50 dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-md text-xs px-2.5 py-1.5 text-gray-900 dark:text-white font-mono w-36 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-500">To (YYYY-MM-DD)</label>
+            <input
+              type="text"
+              placeholder="2026-12-31"
+              value={reconDateTo}
+              onChange={e => setReconDateTo(e.target.value)}
+              className="bg-gray-50 dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-md text-xs px-2.5 py-1.5 text-gray-900 dark:text-white font-mono w-36 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="text-xs text-gray-400 dark:text-gray-600 mt-4">Leave blank to include all dates</div>
+        </div>
+
+        {/* XML textarea — upload mode only */}
+        {reconMode === 'upload' && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Paste Flex XML</label>
+            <textarea
+              rows={6}
+              placeholder={'<?xml version="1.0" ?>\n<FlexQueryResponse …>…</FlexQueryResponse>'}
+              value={reconXml}
+              onChange={e => setReconXml(e.target.value)}
+              className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-md text-xs px-3 py-2 text-gray-900 dark:text-white font-mono resize-y focus:outline-none focus:border-blue-500"
+            />
+            <label className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 cursor-pointer hover:text-blue-400">
+              <Upload size={12} /> Or click to select a .xml file
+              <input
+                type="file"
+                accept=".xml,text/xml"
+                className="sr-only"
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = ev => setReconXml(ev.target.result)
+                  reader.readAsText(file)
+                  e.target.value = ''
+                }}
+              />
+            </label>
+          </div>
+        )}
+
+        {reconMode === 'flex' && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-lg px-3 py-2.5 leading-relaxed">
+            Requires <strong>IBKR Flex Token</strong> and <strong>Flex Query ID</strong> to be set in the{' '}
+            <a href="/secrets" className="text-blue-500 hover:underline">Secrets</a> page.
+            Your query must include the <strong>Executions</strong> sub-type under Trades, XML format.
+          </div>
+        )}
+
+        {/* Preview result */}
+        {reconPreview && (
+          <div className="bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-gray-900 dark:text-white">Preview</div>
+              <div className="text-xs text-gray-500">{reconPreview.fills_found} fills · {reconPreview.weeks_found} weeks · ${reconPreview.total_premium?.toLocaleString()}</div>
+            </div>
+            {reconPreview.weeks?.length > 0 ? (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-200 dark:border-gray-800">
+                    <th className="text-left pb-1.5">Week of</th>
+                    <th className="text-right pb-1.5">Premium</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconPreview.weeks.map(w => (
+                    <tr key={w.week_start} className="border-b border-gray-100 dark:border-gray-800/60">
+                      <td className="py-1 font-mono text-gray-700 dark:text-gray-300">{w.week_start}</td>
+                      <td className="py-1 text-right font-mono text-green-600 dark:text-green-400">
+                        ${w.premium_collected?.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-xs text-gray-500">No option sell fills found in this XML / date range.</div>
+            )}
+          </div>
+        )}
+
+        {/* Status message */}
+        {reconMsg && (
+          <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${
+            reconMsg.type === 'success'
+              ? 'bg-green-900/20 border border-green-800 text-green-400'
+              : 'bg-red-900/20 border border-red-800 text-red-400'
+          }`}>
+            {reconMsg.type === 'success' ? <CheckCircle size={13} /> : <AlertTriangle size={13} />}
+            {reconMsg.text}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-2 flex-wrap">
+          <button
+            type="button"
+            disabled={reconRunning || (reconMode === 'upload' && !reconXml.trim())}
+            onClick={async () => {
+              setReconRunning(true)
+              setReconPreview(null)
+              setReconMsg(null)
+              try {
+                const body = { dry_run: true, date_from: reconDateFrom || undefined, date_to: reconDateTo || undefined }
+                const url = reconMode === 'upload' ? '/api/reconcile/upload' : '/api/reconcile/flex'
+                if (reconMode === 'upload') body.xml = reconXml
+                const r = await axios.post(url, body)
+                setReconPreview(r.data)
+              } catch (e) {
+                setReconMsg({ type: 'error', text: e?.response?.data?.detail || e.message || 'Preview failed' })
+              } finally {
+                setReconRunning(false)
+              }
+            }}
+            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCw size={13} className={reconRunning ? 'animate-spin' : ''} />
+            {reconRunning ? 'Parsing…' : 'Preview'}
+          </button>
+
+          {reconPreview && reconPreview.weeks_found > 0 && (
+            <button
+              type="button"
+              disabled={reconCommitting}
+              onClick={async () => {
+                setReconCommitting(true)
+                setReconMsg(null)
+                try {
+                  const body = { dry_run: false, date_from: reconDateFrom || undefined, date_to: reconDateTo || undefined }
+                  const url = reconMode === 'upload' ? '/api/reconcile/upload' : '/api/reconcile/flex'
+                  if (reconMode === 'upload') body.xml = reconXml
+                  const r = await axios.post(url, body)
+                  setReconMsg({ type: 'success', text: `Committed — ${r.data.weeks_found} weeks, $${r.data.total_premium?.toLocaleString()} total premium written to ytd_tracker.json` })
+                  setReconPreview(null)
+                } catch (e) {
+                  setReconMsg({ type: 'error', text: e?.response?.data?.detail || e.message || 'Commit failed' })
+                } finally {
+                  setReconCommitting(false)
+                }
+              }}
+              className="text-xs px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-medium inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <CheckCircle size={13} />
+              {reconCommitting ? 'Saving…' : `Commit ${reconPreview.weeks_found} weeks`}
+            </button>
+          )}
         </div>
       </Section>
 

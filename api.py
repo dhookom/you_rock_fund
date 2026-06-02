@@ -770,6 +770,17 @@ def restart_scheduler():
 class ShutdownRequest(BaseModel):
     confirm: str
 
+class ReconcileUploadRequest(BaseModel):
+    xml: str
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    dry_run: bool = True
+
+class ReconcileFlexRequest(BaseModel):
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    dry_run: bool = True
+
 class FeedbackRequest(BaseModel):
     type: str    # "bug" | "feature"
     message: str
@@ -2192,3 +2203,45 @@ def submit_feedback(body: FeedbackRequest):
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Discord post failed: {e}")
+
+
+@app.post("/api/reconcile/upload")
+def reconcile_upload(body: ReconcileUploadRequest):
+    """Parse a Flex XML string and preview or commit the ytd_tracker rebuild."""
+    from reconciler import reconcile_from_xml
+    if not body.xml or not body.xml.strip():
+        raise HTTPException(status_code=400, detail="xml is required")
+    try:
+        result = reconcile_from_xml(
+            body.xml,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            dry_run=body.dry_run,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@app.post("/api/reconcile/flex")
+def reconcile_flex(body: ReconcileFlexRequest):
+    """Fetch Flex XML from IBKR and preview or commit the ytd_tracker rebuild."""
+    from reconciler import reconcile_from_flex_service
+    token    = _read_secret_or_env("flex_token",    "IBKR_FLEX_TOKEN")
+    query_id = _read_secret_or_env("flex_query_id", "IBKR_FLEX_QUERY_ID")
+    if not token or not query_id:
+        raise HTTPException(
+            status_code=400,
+            detail="flex_token and flex_query_id secrets must be set before using this feature",
+        )
+    try:
+        result = reconcile_from_flex_service(
+            token,
+            query_id,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            dry_run=body.dry_run,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return result
