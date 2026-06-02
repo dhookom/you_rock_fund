@@ -65,6 +65,28 @@ settings_file.write_text(json.dumps(settings, indent=2) + "\n")
 PY
 }
 
+# ── Durable trading-mode override ────────────────────────────────
+# The active trading mode (live/paper) is persisted to /data/gw_trading_mode by
+# the YRVI API so it survives software upgrades, which reset .env.compose back
+# to its committed defaults (paper / 4004). Derive TRADING_MODE and IBKR_PORT
+# from that file — the same source of truth the IB Gateway entrypoint reads —
+# so the scheduler/api and the gateway can never disagree on which account is
+# live. (Inside the container network the gateway listens on 4003=live, 4004=paper.)
+if [ -f "/data/gw_trading_mode" ]; then
+    _tm_override="$(tr -d '\r\n' < /data/gw_trading_mode 2>/dev/null || true)"
+    if [ "$_tm_override" = "live" ] || [ "$_tm_override" = "paper" ]; then
+        TRADING_MODE="$_tm_override"
+        export TRADING_MODE
+        if [ "$_tm_override" = "live" ]; then
+            IBKR_PORT=4003
+        else
+            IBKR_PORT=4004
+        fi
+        export IBKR_PORT
+        echo "yrvi-entrypoint: trading mode from /data/gw_trading_mode -> ${TRADING_MODE} (IBKR_PORT=${IBKR_PORT})"
+    fi
+fi
+
 load_secret RENDER_SECRET /run/secrets/render_secret
 load_secret ANTHROPIC_API_KEY /run/secrets/anthropic_api_key
 load_secret DISCORD_WEBHOOK_URL /run/secrets/discord_webhook_url

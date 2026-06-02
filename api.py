@@ -278,6 +278,17 @@ def _restart_ibgateway() -> None:
         capture_output=True, text=True, timeout=60,
     )
 
+
+def _restart_scheduler() -> None:
+    # Plain restart re-runs the shared entrypoint, which re-reads the durable
+    # /data/gw_trading_mode file and re-derives IBKR_PORT. Mirrors the gateway:
+    # both containers take the trading mode from the same persisted file rather
+    # than from .env.compose (which upgrades reset to paper/4004).
+    subprocess.run(
+        ["docker", "restart", "yrvi-scheduler-1"],
+        capture_output=True, text=True, timeout=60,
+    )
+
 # ── Watchdog helpers ───────────────────────────────────────────
 
 def _send_discord_alert(message: str) -> None:
@@ -1763,6 +1774,10 @@ def set_trading_mode(body: TradingModeRequest):
         current["account"] = get_secret("account_paper")
 
     _restart_ibgateway()
+
+    # Restart scheduler too so it re-reads /data/gw_trading_mode and re-derives
+    # IBKR_PORT — otherwise it keeps trading on the previous mode's port.
+    _restart_scheduler()
 
     save_settings(current)
 
