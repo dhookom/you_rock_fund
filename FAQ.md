@@ -244,7 +244,7 @@ Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query 
 2. Find **IBKR Flex Token** and click **Set** — paste your token
 3. Find **IBKR Flex Query ID** and click **Set** — paste the numeric query ID
 
-> **Note:** After enabling the Flex Web Service for the first time, IBKR needs a few minutes to activate the token. If you see "Statement is incomplete at this time", wait 5–10 minutes and try again.
+> **Note:** After enabling the Flex Web Service for the first time, IBKR needs a few minutes to activate the token. If you see "Statement is incomplete at this time" or "Statement could not be generated at this time", wait 5–10 minutes and try again. If the error persists, use the **Paste / Upload XML** tab instead — download the XML manually from IBKR (see the previous FAQ entry) and upload it directly. The fetch-from-IBKR path and the manual upload path produce identical results.
 
 **Step 4 — Use the Reconciler**
 
