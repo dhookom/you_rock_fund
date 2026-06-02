@@ -900,9 +900,10 @@ export default function SettingsPage() {
             <label
               className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 cursor-pointer hover:text-blue-400"
               onClick={() => {
-                const y = window.scrollY
+                const main = document.querySelector('main')
+                const y = main ? main.scrollTop : 0
                 const onFocus = () => {
-                  window.scrollTo(0, y)
+                  if (main) main.scrollTop = y
                   window.removeEventListener('focus', onFocus)
                 }
                 window.addEventListener('focus', onFocus)
