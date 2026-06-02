@@ -669,45 +669,54 @@ export default function SettingsPage() {
           <div className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 text-sm">
             <KeyRound size={14} /> Weekly IB Key Token
           </div>
-          {tokenStatus?.weekly_token_active ? (
-            <div className="text-xs leading-relaxed text-green-600 dark:text-green-400">
-              ✅ Weekly token active{tokenStatus.weekly_token_established
-                ? <> — established {fmtTokenTime(tokenStatus.weekly_token_established)}</>
-                : null}
-              <span className="text-gray-500 dark:text-gray-600">
-                {' '}· Next reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)}
-              </span>
+          {!isLive ? (
+            <div className="text-xs leading-relaxed text-gray-500 dark:text-gray-600">
+              📄 Paper trading — IB Key 2FA isn't required, so there's no weekly token to manage.
+              This applies only to live accounts.
             </div>
           ) : (
-            <div className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
-              🔑 No weekly token yet — the next gateway restart will require an IB Key approval on your phone.
-              {tokenStatus?.weekly_token_next_reset && (
-                <span className="text-gray-500 dark:text-gray-600">
-                  {' '}Next scheduled reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)}.
-                </span>
+            <>
+              {tokenStatus?.weekly_token_active ? (
+                <div className="text-xs leading-relaxed text-green-600 dark:text-green-400">
+                  ✅ Weekly token active{tokenStatus.weekly_token_established
+                    ? <> — established {fmtTokenTime(tokenStatus.weekly_token_established)}</>
+                    : null}
+                  <span className="text-gray-500 dark:text-gray-600">
+                    {' '}· Next reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+                  🔑 No weekly token yet — the next gateway restart will require an IB Key approval on your phone.
+                  {tokenStatus?.weekly_token_next_reset && (
+                    <span className="text-gray-500 dark:text-gray-600">
+                      {' '}Next scheduled reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)}.
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
-            Restarts IB Gateway to trigger your IB Key approval. Check your phone after clicking.
-          </div>
-          <button
-            onClick={refreshWeeklyToken}
-            disabled={refreshingToken || !tokenStatus?.weekly_token_refresh_enabled}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-600 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <KeyRound size={11} className={refreshingToken ? 'animate-pulse' : ''} />
-            {refreshingToken ? 'Waiting for IB Key approval…' : '🔑 Refresh Weekly Token'}
-          </button>
-          {!tokenStatus?.weekly_token_refresh_enabled && !refreshingToken && (
-            <div className="text-xs text-gray-500 dark:text-gray-600">
-              Disabled while this week's token is active — no approval needed until the next reset.
-            </div>
-          )}
-          {refreshTokenResult && (
-            <div className={`text-xs font-medium ${refreshTokenResult.ok ? 'text-green-500' : 'text-red-400'}`}>
-              {refreshTokenResult.ok ? '✅' : '❌'} {refreshTokenResult.text}
-            </div>
+              <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
+                Restarts IB Gateway to trigger your IB Key approval. Check your phone after clicking.
+              </div>
+              <button
+                onClick={refreshWeeklyToken}
+                disabled={refreshingToken || !tokenStatus?.weekly_token_refresh_enabled}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-600 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <KeyRound size={11} className={refreshingToken ? 'animate-pulse' : ''} />
+                {refreshingToken ? 'Waiting for IB Key approval…' : '🔑 Refresh Weekly Token'}
+              </button>
+              {!tokenStatus?.weekly_token_refresh_enabled && !refreshingToken && (
+                <div className="text-xs text-gray-500 dark:text-gray-600">
+                  Disabled while this week's token is active — no approval needed until the next reset.
+                </div>
+              )}
+              {refreshTokenResult && (
+                <div className={`text-xs font-medium ${refreshTokenResult.ok ? 'text-green-500' : 'text-red-400'}`}>
+                  {refreshTokenResult.ok ? '✅' : '❌'} {refreshTokenResult.text}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -767,10 +776,12 @@ export default function SettingsPage() {
           <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
             <strong className="text-gray-700 dark:text-gray-400">Reset Installation</strong> wipes the Gateway settings volume and reinstalls from scratch. Use this if Gateway is stuck or failing to connect after a version mismatch. Gateway will be unavailable for ~2 minutes.
           </div>
-          <div className="flex items-start gap-1.5 text-xs leading-relaxed text-amber-600 dark:text-amber-400 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-2.5 py-2">
-            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-            <span>Reset Installation also wipes the weekly auth token. A new IB Key 2FA approval will be required on your phone at the next restart.</span>
-          </div>
+          {isLive && (
+            <div className="flex items-start gap-1.5 text-xs leading-relaxed text-amber-600 dark:text-amber-400 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-2.5 py-2">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>Reset Installation also wipes the weekly auth token. A new IB Key 2FA approval will be required on your phone at the next restart.</span>
+            </div>
+          )}
           <button
             onClick={resetGateway}
             disabled={resettingGw}
@@ -930,16 +941,18 @@ export default function SettingsPage() {
             Tuesday becomes the execution day. A Discord alert fires when an update is applied.
           </p>
         )}
-        <div className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-amber-600 dark:text-amber-400 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-2.5 py-2">
-          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-          <span>
-            Every update restarts IB Gateway, which requires a fresh IB Key 2FA approval on
-            your phone. With Auto-Update on, that prompt fires unattended at 3 AM — if no one
-            approves it, the gateway stays logged out and trading is paused until you do.
-            Leave Auto-Update off unless you'll be available to approve, or plan to apply
-            updates manually while you're at the computer.
-          </span>
-        </div>
+        {isLive && (
+          <div className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-amber-600 dark:text-amber-400 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-2.5 py-2">
+            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+            <span>
+              Every update restarts IB Gateway, which on a <strong>live</strong> account requires
+              a fresh IB Key 2FA approval on your phone. With Auto-Update on, that prompt fires
+              unattended at 3 AM — if no one approves it, the gateway stays logged out and trading
+              is paused until you do. Leave Auto-Update off unless you'll be available to approve,
+              or plan to apply updates manually while you're at the computer.
+            </span>
+          </div>
+        )}
       </Section>
 
       {/* Shutdown */}

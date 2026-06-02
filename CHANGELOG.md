@@ -1,3 +1,7 @@
+## [3.4.2] — 2026-06-02
+### Fixed
+- **Weekly IB Key Token panel hidden for paper accounts** — paper logins don't use IB Key 2FA, so the token status, "No weekly token yet" warning, and Refresh Weekly Token button no longer appear in paper mode. Instead a short note explains it applies to live accounts only. The Auto-Update and Reset Installation 2FA warnings are likewise shown only in live mode, since paper restarts never require approval.
+
 ## [3.4.1] — 2026-06-02
 ### Fixed
 - **Weekly token "Next reset" mislabeled "ET"** — the reset time was correctly converted to the viewer's local timezone but the label said "ET". It now renders in plain local time matching the "established" line (e.g. "Sat, Jun 6 at 10:00 PM"), with no timezone suffix.
