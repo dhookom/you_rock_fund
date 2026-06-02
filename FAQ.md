@@ -203,10 +203,11 @@ Without this, the scheduler will connect, get market data, size positions, submi
 4. Configure the query:
    - **Query Name:** Give it a name like `YRVI Reconciler`
    - **Sections:** Click **Trades** — then click **Select All** to include all fields, make sure the **Executions** sub-type is checked, then click **Save**
-   - **Period:** Choose *Last 365 Calendar Days* (or a custom date range)
+   - **Period:** Choose *Last 365 Calendar Days* (or a custom date range), then click **Continue**
    - **Format:** XML
    - **Date Format:** `yyyyMMdd`
-5. Click **Run** (▶ button next to your query)
+5. Click **Create** to save the query
+6. Click **Run** (▶ button next to your query)
 6. When the download dialog appears, save the `.xml` file
 
 Then in YRVI:
