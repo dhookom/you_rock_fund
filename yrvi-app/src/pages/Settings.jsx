@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import axios from 'axios'
 import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw, ExternalLink } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
@@ -156,6 +156,7 @@ export default function SettingsPage() {
   const [manualPremium, setManualPremium]     = useState('')
   const [manualSaving, setManualSaving]       = useState(false)
   const [showManual, setShowManual]           = useState(false)
+  const fileInputRef                          = useRef(null)
 
   const { theme, setTheme } = useThemeContext()
 
@@ -364,6 +365,22 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Hidden file input at top of DOM so the browser doesn't scroll to it */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xml,text/xml"
+        className="sr-only"
+        style={{ position: 'fixed', top: 0, left: 0 }}
+        onChange={e => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = ev => setReconXml(ev.target.result)
+          reader.readAsText(file)
+          e.target.value = ''
+        }}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Settings</h1>
@@ -897,33 +914,13 @@ export default function SettingsPage() {
               onChange={e => setReconXml(e.target.value)}
               className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-md text-xs px-3 py-2 text-gray-900 dark:text-white font-mono resize-y focus:outline-none focus:border-blue-500"
             />
-            <label
-              className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 cursor-pointer hover:text-blue-400"
-              onClick={() => {
-                const main = document.querySelector('main')
-                const y = main ? main.scrollTop : 0
-                const onFocus = () => {
-                  if (main) main.scrollTop = y
-                  window.removeEventListener('focus', onFocus)
-                }
-                window.addEventListener('focus', onFocus)
-              }}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-400"
             >
               <Upload size={12} /> Or click to select a .xml file
-              <input
-                type="file"
-                accept=".xml,text/xml"
-                className="sr-only"
-                onChange={e => {
-                  const file = e.target.files?.[0]
-                  if (!file) return
-                  const reader = new FileReader()
-                  reader.onload = ev => setReconXml(ev.target.result)
-                  reader.readAsText(file)
-                  e.target.value = ''
-                }}
-              />
-            </label>
+            </button>
           </div>
         )}
 
