@@ -186,6 +186,12 @@ export default function SettingsPage() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
+  // Once the token re-establishes, clear the "Gateway restarting — check your
+  // phone" notice so it doesn't linger next to the now-active status.
+  useEffect(() => {
+    if (tokenStatus?.weekly_token_active) setRefreshTokenResult(null)
+  }, [tokenStatus?.weekly_token_active])
+
   const set = useCallback((key, val) => {
     setSettings(prev => ({ ...prev, [key]: val }))
   }, [])
