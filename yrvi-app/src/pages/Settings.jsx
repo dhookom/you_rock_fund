@@ -897,7 +897,10 @@ export default function SettingsPage() {
               onChange={e => setReconXml(e.target.value)}
               className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-md text-xs px-3 py-2 text-gray-900 dark:text-white font-mono resize-y focus:outline-none focus:border-blue-500"
             />
-            <label className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 cursor-pointer hover:text-blue-400">
+            <label
+              className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 cursor-pointer hover:text-blue-400"
+              onClick={() => { window._reconScrollY = window.scrollY }}
+            >
               <Upload size={12} /> Or click to select a .xml file
               <input
                 type="file"
@@ -907,7 +910,7 @@ export default function SettingsPage() {
                   const file = e.target.files?.[0]
                   if (!file) return
                   e.target.blur()
-                  const y = window.scrollY
+                  const y = window._reconScrollY ?? window.scrollY
                   const reader = new FileReader()
                   reader.onload = ev => {
                     setReconXml(ev.target.result)
