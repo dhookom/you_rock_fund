@@ -1,9 +1,10 @@
 ## [3.4.1] — 2026-06-02
 ### Fixed
-- **Weekly token "Next reset" now shows local time + ET reference** — the reset was correctly converted to the viewer's local timezone but mislabeled "ET". It now reads e.g. "Sat, Jun 6 at 10:00 PM PDT (Sun, Jun 7 at 1:00 AM ET)" — local time with its real abbreviation, ET in parens (omitted for Eastern viewers).
+- **Weekly token "Next reset" mislabeled "ET"** — the reset time was correctly converted to the viewer's local timezone but the label said "ET". It now renders in plain local time matching the "established" line (e.g. "Sat, Jun 6 at 10:00 PM"), with no timezone suffix.
 
 ### Added
 - **Auto-Update 2FA warning** — Settings → Software Updates now warns that every update restarts IB Gateway and requires a fresh IB Key 2FA approval. With Auto-Update on, that prompt fires unattended at 3 AM; if unapproved, the gateway stays logged out and trading pauses. Confirmed live: the dashboard upgrade rebuilds the ib_gateway image and recreates the container, so a 2FA challenge fires on every upgrade.
+- **FAQ entry** explaining why updates ask for IB Key 2FA and why Auto-Update is risky for unattended (3 AM) runs.
 
 ## [3.4.0] — 2026-06-02
 ### Added

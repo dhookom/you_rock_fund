@@ -201,6 +201,26 @@ Skip NYMEX (futures), Canadian exchanges, and OTC Markets — YRVI doesn't trade
 
 ---
 
+### Q: Why does applying an update ask for an IB Key 2FA approval? (And is Auto-Update safe?)
+
+**A:** Every update restarts IB Gateway, and any gateway restart that IBKR didn't schedule itself requires a fresh **IB Key push approval on your phone**.
+
+**Why it happens:** IBKR invalidates the weekly authentication token every **Sunday 1:00 AM ET**. IBC only writes a valid "autorestart" token during its *own* nightly auto-restart (the Daily Auto-Restart Time in Settings → IB Gateway). An update rebuilds the gateway image and **recreates the container**, so on startup IBC finds no valid autorestart file and logs:
+
+```
+autorestart file not found: full authentication will be required
+```
+
+That triggers the Second Factor Authentication prompt. After you approve, the dashboard records the token and daily restarts run unattended until the next Sunday reset. You can see the current state any time under **Settings → IB Gateway → Weekly IB Key Token**.
+
+**Is this a problem?** Not for a **manual** update — you're at the computer when you click Upgrade, so you just approve the push. It *is* a problem with **Auto-Update enabled**: those updates run unattended at **3 AM Wed–Fri**, the 2FA prompt fires with no one to approve it, and the gateway stays logged out — **trading is paused until you approve on your phone**.
+
+**Recommendation:** Leave **Auto-Update off** for live trading (or only enable it if you'll reliably catch and approve the 3 AM push). Apply updates manually while you're at the machine. Settings → Software Updates shows this same warning inline.
+
+> **Reset Installation** also forces a fresh 2FA — it wipes the gateway settings volume, including the weekly token, so the next restart requires full authentication.
+
+---
+
 ### Q: Orders never fill — stuck on "failed" or "order unfilled" even when market data works
 
 **A:** IB Gateway is blocking API orders behind a confirmation dialog that no one is clicking. When **Bypass Order Precautions for API Orders** is not enabled, IBKR pops up a warning dialog before submitting each order. Since the system runs headlessly, nothing dismisses it and the order times out.
