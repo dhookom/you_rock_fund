@@ -781,6 +781,10 @@ class ReconcileFlexRequest(BaseModel):
     date_to: Optional[str] = None
     dry_run: bool = True
 
+class YtdWeekRequest(BaseModel):
+    week_start: str        # YYYY-MM-DD
+    premium_collected: float
+
 class FeedbackRequest(BaseModel):
     type: str    # "bug" | "feature"
     message: str
@@ -2204,6 +2208,35 @@ def submit_feedback(body: FeedbackRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Discord post failed: {e}")
 
+
+@app.post("/api/ytd/weeks")
+def upsert_ytd_week(body: YtdWeekRequest):
+    """Add or update a single week in ytd_tracker.json."""
+    from reconciler import _load_existing_weeks, _finalize_ytd
+    import re
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", body.week_start):
+        raise HTTPException(status_code=400, detail="week_start must be YYYY-MM-DD")
+    weeks = _load_existing_weeks()
+    weeks[body.week_start] = {
+        "week_start":        body.week_start,
+        "premium_collected": round(body.premium_collected, 2),
+        "total_realized":    round(body.premium_collected, 2),
+    }
+    ytd = _finalize_ytd(weeks)
+    YTD_FILE.write_text(json.dumps(ytd, indent=2))
+    return {"committed": True, "weeks_total": ytd["weeks_traded"], "total_premium": ytd["total_premium"]}
+
+@app.delete("/api/ytd/weeks/{week_start}")
+def delete_ytd_week(week_start: str):
+    """Remove a week from ytd_tracker.json by week_start (YYYY-MM-DD)."""
+    from reconciler import _load_existing_weeks, _finalize_ytd
+    weeks = _load_existing_weeks()
+    if week_start not in weeks:
+        raise HTTPException(status_code=404, detail="week not found")
+    del weeks[week_start]
+    ytd = _finalize_ytd(weeks)
+    YTD_FILE.write_text(json.dumps(ytd, indent=2))
+    return {"committed": True, "weeks_total": ytd["weeks_traded"], "total_premium": ytd["total_premium"]}
 
 @app.post("/api/reconcile/upload")
 def reconcile_upload(body: ReconcileUploadRequest):

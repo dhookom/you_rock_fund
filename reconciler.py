@@ -127,23 +127,54 @@ def _rebuild_ytd(fills: list[dict]) -> dict:
     }
 
 
+def _load_existing_weeks() -> dict[str, dict]:
+    """Return existing ytd_tracker weeks keyed by week_start."""
+    if not YTD_FILE.exists():
+        return {}
+    try:
+        data = json.loads(YTD_FILE.read_text())
+        return {w["week_start"]: w for w in data.get("weeks", []) if "week_start" in w}
+    except Exception:
+        return {}
+
+
+def _finalize_ytd(weeks_map: dict[str, dict]) -> dict:
+    """Build a complete ytd_tracker dict from a week_start → week dict map."""
+    weeks = sorted(weeks_map.values(), key=lambda w: w["week_start"])
+    total = round(sum(w.get("premium_collected", w.get("realized", 0)) for w in weeks), 2)
+    best  = max(weeks, key=lambda w: w.get("premium_collected", w.get("realized", 0))) if weeks else None
+    worst = min(weeks, key=lambda w: w.get("premium_collected", w.get("realized", 0))) if weeks else None
+    return {
+        "weeks":         weeks,
+        "total_premium": total,
+        "weeks_traded":  len(weeks),
+        "best_week":     best,
+        "worst_week":    worst,
+    }
+
+
 def reconcile_from_xml(
     xml_str: str,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     dry_run: bool = False,
 ) -> dict:
-    """Parse Flex XML and optionally overwrite ytd_tracker.json.
+    """Parse Flex XML and merge into ytd_tracker.json.
 
-    Returns a summary dict with fills_found, weeks_found, total_premium,
-    weeks (list), and committed (bool).
+    XML weeks take precedence over existing data for the same week_start.
+    Existing weeks not present in the XML are preserved.
     """
     fills = _parse_fills(xml_str, date_from, date_to)
-    ytd   = _rebuild_ytd(fills)
+    xml_ytd = _rebuild_ytd(fills)
+
+    merged = _load_existing_weeks()
+    for w in xml_ytd["weeks"]:
+        merged[w["week_start"]] = w
+    ytd = _finalize_ytd(merged)
 
     result = {
         "fills_found":   len(fills),
-        "weeks_found":   ytd["weeks_traded"],
+        "weeks_found":   len(xml_ytd["weeks"]),
         "total_premium": ytd["total_premium"],
         "weeks":         ytd["weeks"],
         "committed":     False,

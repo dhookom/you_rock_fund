@@ -151,6 +151,11 @@ export default function SettingsPage() {
   const [reconCommitting, setReconCommitting] = useState(false)
   const [reconMsg, setReconMsg]               = useState(null)
   const [reconMode, setReconMode]             = useState('upload') // 'upload' | 'flex'
+  const [ytdWeeks, setYtdWeeks]               = useState(null)
+  const [manualWeekStart, setManualWeekStart] = useState('')
+  const [manualPremium, setManualPremium]     = useState('')
+  const [manualSaving, setManualSaving]       = useState(false)
+  const [showManual, setShowManual]           = useState(false)
 
   const { theme, setTheme } = useThemeContext()
 
@@ -978,6 +983,133 @@ export default function SettingsPage() {
             {reconMsg.text}
           </div>
         )}
+
+        {/* Current weeks + manual entry */}
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Current ytd_tracker weeks</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const r = await axios.get('/api/performance')
+                    setYtdWeeks(r.data.weeks || [])
+                  } catch { setYtdWeeks([]) }
+                }}
+                className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 inline-flex items-center gap-1"
+              >
+                <RefreshCw size={11} /> Load
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowManual(s => !s)}
+                className="text-xs px-2 py-1 rounded border border-blue-400 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 inline-flex items-center gap-1"
+              >
+                + Add week manually
+              </button>
+            </div>
+          </div>
+
+          {ytdWeeks !== null && (
+            ytdWeeks.length === 0 ? (
+              <div className="text-xs text-gray-400">No weeks in ytd_tracker.json</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-200 dark:border-gray-800">
+                    <th className="text-left pb-1">Week of</th>
+                    <th className="text-right pb-1">Premium</th>
+                    <th className="pb-1" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {ytdWeeks.map(w => (
+                    <tr key={w.week_start} className="border-b border-gray-100 dark:border-gray-800/60">
+                      <td className="py-1 font-mono text-gray-700 dark:text-gray-300">{w.week_start}</td>
+                      <td className="py-1 text-right font-mono text-green-600 dark:text-green-400">
+                        ${(w.premium_collected ?? w.realized ?? 0).toLocaleString()}
+                      </td>
+                      <td className="py-1 text-right">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm(`Remove week ${w.week_start}?`)) return
+                            try {
+                              await axios.delete(`/api/ytd/weeks/${w.week_start}`)
+                              const r = await axios.get('/api/performance')
+                              setYtdWeeks(r.data.weeks || [])
+                              setReconMsg({ type: 'success', text: `Removed week ${w.week_start}` })
+                            } catch (e) {
+                              setReconMsg({ type: 'error', text: e?.response?.data?.detail || 'Delete failed' })
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-600 text-[10px] px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                        >
+                          remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {showManual && (
+            <div className="bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-3 space-y-2">
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Add / update a week</div>
+              <div className="flex gap-2 items-end flex-wrap">
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] text-gray-500">Week start (YYYY-MM-DD)</label>
+                  <input
+                    type="text"
+                    placeholder="2026-04-20"
+                    value={manualWeekStart}
+                    onChange={e => setManualWeekStart(e.target.value)}
+                    className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded text-xs px-2 py-1.5 font-mono w-36 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] text-gray-500">Premium ($)</label>
+                  <input
+                    type="number"
+                    placeholder="2498"
+                    value={manualPremium}
+                    onChange={e => setManualPremium(e.target.value)}
+                    className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded text-xs px-2 py-1.5 font-mono w-28 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={manualSaving || !manualWeekStart || !manualPremium}
+                  onClick={async () => {
+                    setManualSaving(true)
+                    setReconMsg(null)
+                    try {
+                      await axios.post('/api/ytd/weeks', {
+                        week_start: manualWeekStart,
+                        premium_collected: parseFloat(manualPremium),
+                      })
+                      setManualWeekStart('')
+                      setManualPremium('')
+                      setReconMsg({ type: 'success', text: `Week ${manualWeekStart} saved` })
+                      const r = await axios.get('/api/performance')
+                      setYtdWeeks(r.data.weeks || [])
+                    } catch (e) {
+                      setReconMsg({ type: 'error', text: e?.response?.data?.detail || 'Save failed' })
+                    } finally {
+                      setManualSaving(false)
+                    }
+                  }}
+                  className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {manualSaving ? 'Saving…' : 'Save week'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
