@@ -366,17 +366,30 @@ export default function SettingsPage() {
     }
   }
 
-  // Format an ISO timestamp like "Sun, Jun 1 at 9:30 PM". Pass tz (e.g.
-  // 'America/New_York') to render in a specific zone — used for the weekly reset,
-  // which is labelled ET and must not drift to the viewer's local timezone.
-  const fmtTokenTime = (iso, tz) => {
+  // Format an ISO timestamp like "Sun, Jun 1 at 9:30 PM" in the viewer's local timezone.
+  const fmtTokenTime = (iso) => {
     if (!iso) return ''
     try {
       const d = new Date(iso)
-      const zone = tz ? { timeZone: tz } : {}
-      const day  = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...zone })
-      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', ...zone })
+      const day  = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
       return `${day} at ${time}`
+    } catch { return iso }
+  }
+
+  // The weekly reset is canonically 1:00 AM ET. Show it in the viewer's local
+  // timezone (with its real abbreviation, e.g. PDT) and append the ET reference
+  // in parens — unless the viewer is already on Eastern, where that'd be redundant.
+  // Renders e.g. "Sat, Jun 6 at 10:00 PM PDT (Sun, Jun 7 at 1:00 AM ET)".
+  const fmtResetTime = (iso) => {
+    if (!iso) return ''
+    try {
+      const d = new Date(iso)
+      const day  = (zone) => d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...(zone && { timeZone: zone }) })
+      const local = `${day()} at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`
+      const et    = `${day('America/New_York')} at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET`
+      const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      return localTz === 'America/New_York' ? `${local}` : `${local} (${et})`
     } catch { return iso }
   }
 
@@ -670,7 +683,7 @@ export default function SettingsPage() {
                 ? <> — established {fmtTokenTime(tokenStatus.weekly_token_established)}</>
                 : null}
               <span className="text-gray-500 dark:text-gray-600">
-                {' '}· Next reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset, 'America/New_York')} ET
+                {' '}· Next reset: ~{fmtResetTime(tokenStatus.weekly_token_next_reset)}
               </span>
             </div>
           ) : (
@@ -678,7 +691,7 @@ export default function SettingsPage() {
               🔑 No weekly token yet — the next gateway restart will require an IB Key approval on your phone.
               {tokenStatus?.weekly_token_next_reset && (
                 <span className="text-gray-500 dark:text-gray-600">
-                  {' '}Next scheduled reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset, 'America/New_York')} ET.
+                  {' '}Next scheduled reset: ~{fmtResetTime(tokenStatus.weekly_token_next_reset)}.
                 </span>
               )}
             </div>
