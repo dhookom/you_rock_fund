@@ -1,3 +1,9 @@
+## [3.4.0] — 2026-06-02
+### Added
+- **Weekly IB Key 2FA token status** — Settings → IB Gateway now shows whether this week's authentication token is active, when it was established, and when the next reset is due (~Sunday 1 AM ET). The API log monitor watches the IBC `autorestart file found/not found` lines and persists the establishment timestamp to `/data/weekly_token_established`.
+- **Refresh Weekly Token button** — manually restart IB Gateway to trigger the IB Key phone approval at a convenient time instead of waiting for the nightly auto-restart. Enabled only while this week's token is not yet active; shows a "waiting for IB Key approval…" state and flips to ✅ once login completes. Backed by `POST /api/gateway/refresh-token`.
+- **Reset Installation 2FA warning** — the Reset Installation flow now warns that wiping the settings volume also clears the weekly auth token, so a fresh IB Key approval will be required on the next restart.
+
 ## [3.0.0] — 2026-05-30
 ### Added
 - **Live trading support** — YRVI now connects to real IBKR live accounts in addition to paper trading. Switch between modes from the Settings page with a single toggle.

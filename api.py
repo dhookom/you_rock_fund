@@ -60,6 +60,15 @@ GATEWAY_STATUS_FILE = (
     Path("/data/gateway_status.json") if CONTAINERIZED
     else BASE_DIR / "gateway_status.json"
 )
+# Weekly IB Key 2FA token: IBKR invalidates it every Sunday 1:00 AM ET. The first
+# gateway restart after that needs a manual IB Key phone approval; subsequent daily
+# restarts run unattended until the next Sunday. We record when the token became
+# active (IBC log: "autorestart file found … authentication will not be required")
+# and clear it when 2FA is required again ("autorestart file not found …").
+WEEKLY_TOKEN_FILE = (
+    Path("/data/weekly_token_established") if CONTAINERIZED
+    else BASE_DIR / "weekly_token_established"
+)
 SECRETS_SERVICE_URL = "http://secrets:8001"
 # Feedback webhook — configure via discord_feedback_webhook_url secret in the secrets container
 _FEEDBACK_WEBHOOK_DEFAULT = ""
@@ -461,7 +470,7 @@ _LOG_RELEVANT_KEYWORDS = (
     "login", "failed", "failure", "error", "exception", "warn",
     "locked", "password", "connect", "disconnect", "starting", "started",
     "ready", "authenticated", "authentication", "2fa", "challenge",
-    "exit", "crash", "timeout", "refused", "unrecognized",
+    "exit", "crash", "timeout", "refused", "unrecognized", "autorestart",
 )
 
 
@@ -484,6 +493,77 @@ def _read_gateway_status() -> dict:
         return json.loads(GATEWAY_STATUS_FILE.read_text())
     except Exception:
         return {}
+
+
+# ── Weekly IB Key 2FA token tracking ───────────────────────────
+
+def _last_weekly_token_reset(now: datetime) -> datetime:
+    """Most recent Sunday 01:00 ET — when IBKR invalidates the weekly IB Key token."""
+    et_now = now.astimezone(ET)
+    days_since_sun = (et_now.weekday() - 6) % 7   # Mon=0 … Sun=6
+    boundary = et_now.replace(hour=1, minute=0, second=0, microsecond=0) \
+        - timedelta(days=days_since_sun)
+    if boundary > et_now:          # early Sunday, before 1 AM → use last week's
+        boundary -= timedelta(days=7)
+    return boundary
+
+
+def _next_weekly_token_reset(now: datetime) -> datetime:
+    """Upcoming Sunday 01:00 ET — the next weekly token invalidation."""
+    return _last_weekly_token_reset(now) + timedelta(days=7)
+
+
+def _read_weekly_token() -> Optional[str]:
+    """ISO timestamp of when the weekly token was established, or None."""
+    try:
+        ts = WEEKLY_TOKEN_FILE.read_text().strip()
+        return ts or None
+    except Exception:
+        return None
+
+
+def _set_weekly_token() -> None:
+    """Record the token as established. No-op if already set — preserves the
+    original establishment time across the week's daily auto-restarts."""
+    if _read_weekly_token():
+        return
+    try:
+        WEEKLY_TOKEN_FILE.write_text(datetime.now(PST).isoformat())
+        print("[api/weekly-token] token established — timestamp recorded")
+    except Exception as e:
+        print(f"[api/weekly-token] could not write token file: {e}")
+
+
+def _clear_weekly_token() -> None:
+    """Clear the established timestamp — 2FA is required again."""
+    try:
+        if WEEKLY_TOKEN_FILE.exists():
+            WEEKLY_TOKEN_FILE.unlink()
+            print("[api/weekly-token] token cleared — 2FA required")
+    except Exception as e:
+        print(f"[api/weekly-token] could not clear token file: {e}")
+
+
+def _weekly_token_status() -> dict:
+    """Computed weekly-token state for /api/status and the dashboard."""
+    now         = datetime.now(PST)
+    established  = _read_weekly_token()
+    last_reset   = _last_weekly_token_reset(now)
+    active = False
+    if established:
+        try:
+            active = datetime.fromisoformat(established).astimezone(ET) >= last_reset
+        except Exception:
+            active = False
+    return {
+        # Only surface the timestamp while it's still valid for the current week.
+        "weekly_token_established":     established if active else None,
+        "weekly_token_active":          active,
+        "weekly_token_next_reset":      _next_weekly_token_reset(now).isoformat(),
+        # Enabled whenever this week's token isn't active yet (the last Sunday 1 AM
+        # boundary is always in the past, so no separate time gate is needed).
+        "weekly_token_refresh_enabled": not active,
+    }
 
 
 def _get_docker_container_state() -> dict:
@@ -588,6 +668,12 @@ def _run_gateway_log_monitor() -> None:
                 ll = line.lower()
                 _add_line(line)
 
+                # Weekly IB Key 2FA token state (IBC logs one of these on every restart).
+                if "autorestart file not found" in ll:
+                    _clear_weekly_token()          # token reset → 2FA required this boot
+                elif "autorestart file found" in ll and "will not be required" in ll:
+                    _set_weekly_token()            # token active → no 2FA needed
+
                 if "locked out" in ll:
                     _set_status("locked", line)
                     _send_discord_alert(
@@ -619,6 +705,11 @@ def _run_gateway_log_monitor() -> None:
                 if "login has completed" in ll or "logged in" in ll:
                     login_attempts = 0
                     _set_status("ok", line)
+                    # A successful login confirms the token is established. After a
+                    # 2FA approval the "autorestart file found" line only appears on
+                    # the next restart, so this is the timely establishment signal.
+                    # No-op if already recorded earlier this week.
+                    _set_weekly_token()
 
         except Exception as e:
             print(f"[api/gateway-log-monitor] error: {e}")
@@ -729,6 +820,24 @@ def reset_gateway_installation():
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/gateway/refresh-token")
+def refresh_weekly_token():
+    """
+    Restart ib_gateway to trigger the weekly IB Key 2FA push notification.
+    Used on Sunday (after the 1 AM ET token invalidation) so the user can get
+    their phone prompt at a convenient time instead of waiting for the nightly
+    auto-restart. The log monitor records the new token once login completes.
+    """
+    if not CONTAINERIZED:
+        raise HTTPException(status_code=400, detail="Only available in containerized mode")
+    try:
+        _restart_ibgateway()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gateway restart failed: {e}")
+    return {"success": True,
+            "message": "Gateway restarting — check your phone for the IB Key approval."}
 
 
 @app.post("/api/restart-scheduler")
@@ -1397,6 +1506,7 @@ def get_status():
         "execution_time":       settings.get("execution_time", "10:00"),
         "wheel_count":          wheel_count,
         "gateway_login_status": _gateway_login_status,
+        **_weekly_token_status(),
     }
 
 @app.get("/api/diag")

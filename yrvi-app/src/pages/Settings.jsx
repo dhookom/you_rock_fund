@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw, ExternalLink } from 'lucide-react'
+import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw, ExternalLink, KeyRound } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
 
 const PRESET_TIMES = [
@@ -134,6 +134,9 @@ export default function SettingsPage() {
   const [patchResult, setPatchResult]       = useState(null)
   const [resettingGw, setResettingGw]       = useState(false)
   const [resetGwResult, setResetGwResult]   = useState(null)
+  const [tokenStatus, setTokenStatus]       = useState(null)
+  const [refreshingToken, setRefreshingToken] = useState(false)
+  const [refreshTokenResult, setRefreshTokenResult] = useState(null)
   const [timezone, setTimezone]                 = useState('')
   const [timezoneOriginal, setTimezoneOriginal] = useState('')
   const [tzSaving, setTzSaving]                 = useState(false)
@@ -168,6 +171,19 @@ export default function SettingsPage() {
       setTimezone(tz)
       setTimezoneOriginal(tz)
     })
+  }, [])
+
+  // Poll /api/status for the weekly IB Key token state (drives the status line
+  // and the Refresh Weekly Token button). 20s cadence catches the post-2FA
+  // transition without hammering the API.
+  useEffect(() => {
+    let alive = true
+    const pull = () => axios.get('/api/status', { timeout: 4000 })
+      .then(r => { if (alive) setTokenStatus(r.data) })
+      .catch(() => {})
+    pull()
+    const id = setInterval(pull, 20000)
+    return () => { alive = false; clearInterval(id) }
   }, [])
 
   const set = useCallback((key, val) => {
@@ -334,6 +350,31 @@ export default function SettingsPage() {
     } finally {
       setResettingGw(false)
     }
+  }
+
+  const refreshWeeklyToken = async () => {
+    if (!window.confirm('Restart IB Gateway to refresh the weekly IB Key token? You will get an IB Key approval push on your phone — approve it to complete the restart (~30–60s).')) return
+    setRefreshingToken(true)
+    setRefreshTokenResult(null)
+    try {
+      const res = await axios.post('/api/gateway/refresh-token')
+      setRefreshTokenResult({ ok: true, text: res.data.message })
+    } catch (err) {
+      setRefreshTokenResult({ ok: false, text: err.response?.data?.detail ?? 'Refresh failed' })
+    } finally {
+      setRefreshingToken(false)
+    }
+  }
+
+  // Format an ISO timestamp like "Sun Jun 1 at 9:30 PM" in the local timezone.
+  const fmtTokenTime = (iso) => {
+    if (!iso) return ''
+    try {
+      const d = new Date(iso)
+      const day  = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      return `${day} at ${time}`
+    } catch { return iso }
   }
 
   const isDirty = JSON.stringify(settings) !== JSON.stringify(original)
@@ -615,7 +656,54 @@ export default function SettingsPage() {
 
       {/* IB Gateway */}
       <Section title="IB Gateway" emoji="🔌">
-        <div>
+        {/* Weekly IB Key 2FA token */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 text-sm">
+            <KeyRound size={14} /> Weekly IB Key Token
+          </div>
+          {tokenStatus?.weekly_token_active ? (
+            <div className="text-xs leading-relaxed text-green-600 dark:text-green-400">
+              ✅ Weekly token active{tokenStatus.weekly_token_established
+                ? <> — established {fmtTokenTime(tokenStatus.weekly_token_established)}</>
+                : null}
+              <span className="text-gray-500 dark:text-gray-600">
+                {' '}· Next reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)} ET
+              </span>
+            </div>
+          ) : (
+            <div className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+              🔑 No weekly token yet — the next gateway restart will require an IB Key approval on your phone.
+              {tokenStatus?.weekly_token_next_reset && (
+                <span className="text-gray-500 dark:text-gray-600">
+                  {' '}Next scheduled reset: ~{fmtTokenTime(tokenStatus.weekly_token_next_reset)} ET.
+                </span>
+              )}
+            </div>
+          )}
+          <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
+            Restarts IB Gateway to trigger your IB Key approval. Check your phone after clicking.
+          </div>
+          <button
+            onClick={refreshWeeklyToken}
+            disabled={refreshingToken || !tokenStatus?.weekly_token_refresh_enabled}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-600 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <KeyRound size={11} className={refreshingToken ? 'animate-pulse' : ''} />
+            {refreshingToken ? 'Waiting for IB Key approval…' : '🔑 Refresh Weekly Token'}
+          </button>
+          {!tokenStatus?.weekly_token_refresh_enabled && !refreshingToken && (
+            <div className="text-xs text-gray-500 dark:text-gray-600">
+              Disabled while this week's token is active — no approval needed until the next reset.
+            </div>
+          )}
+          {refreshTokenResult && (
+            <div className={`text-xs font-medium ${refreshTokenResult.ok ? 'text-green-500' : 'text-red-400'}`}>
+              {refreshTokenResult.ok ? '✅' : '❌'} {refreshTokenResult.text}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
           <div className="text-gray-700 dark:text-gray-300 text-sm mb-2">⏰ Daily Auto-Restart Time</div>
           <select
             value={settings.auto_restart_time ?? '11:59 PM'}
@@ -670,6 +758,10 @@ export default function SettingsPage() {
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
           <div className="text-gray-500 dark:text-gray-600 text-xs leading-relaxed">
             <strong className="text-gray-700 dark:text-gray-400">Reset Installation</strong> wipes the Gateway settings volume and reinstalls from scratch. Use this if Gateway is stuck or failing to connect after a version mismatch. Gateway will be unavailable for ~2 minutes.
+          </div>
+          <div className="flex items-start gap-1.5 text-xs leading-relaxed text-amber-600 dark:text-amber-400 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-2.5 py-2">
+            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+            <span>Reset Installation also wipes the weekly auth token. A new IB Key 2FA approval will be required on your phone at the next restart.</span>
           </div>
           <button
             onClick={resetGateway}
