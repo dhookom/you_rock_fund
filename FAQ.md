@@ -244,6 +244,8 @@ Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query 
 2. Find **IBKR Flex Token** and click **Set** — paste your token
 3. Find **IBKR Flex Query ID** and click **Set** — paste the numeric query ID
 
+> **Note:** After enabling the Flex Web Service for the first time, IBKR needs a few minutes to activate the token. If you see "Statement is incomplete at this time", wait 5–10 minutes and try again.
+
 **Step 4 — Use the Reconciler**
 
 1. Go to **Settings → History Reconciler**
