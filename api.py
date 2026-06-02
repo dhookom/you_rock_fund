@@ -1290,12 +1290,23 @@ def _build_diag() -> dict:
                     except Exception:
                         pass
 
-                if spy_price and strikes:
-                    strike = min(strikes, key=lambda s: abs(s - spy_price * 0.90))
+                # Pick a near-the-money put (~3% OTM) — it has a liquid,
+                # two-sided market. A deep-OTM strike (e.g. 10% OTM on low-vol
+                # SPY with a short expiry) is near-worthless with no bid
+                # (bid = -1), which would false-flag perfectly healthy data as
+                # "no bid/ask". Compute the target directly and only trust the
+                # chain's strike list if it has one genuinely close to it.
+                if spy_price:
+                    target = spy_price * 0.97
+                    strike = round(target / 5) * 5
+                    if strikes:
+                        nearest = min(strikes, key=lambda s: abs(s - target))
+                        if abs(nearest - target) <= 0.06 * spy_price:
+                            strike = nearest
                 elif strikes:
                     strike = strikes[len(strikes) // 2]
                 else:
-                    strike = 500
+                    strike = 750
 
                 contract  = Option("SPY", expiry, strike, "P", "SMART", currency="USD")
                 qualified = ib.qualifyContracts(contract)
@@ -1324,9 +1335,13 @@ def _build_diag() -> dict:
                 label    = f"SPY {exp_fmt} ${strike:.0f}P"
                 delta_str = f" / Δ {delta:.3f}" if delta_ok else ""
 
-                if bid_ok and ask_ok:
+                # Data is flowing if we got an ask plus either a bid or greeks.
+                # (A valid option always quotes an ask; bid can legitimately be
+                # 0/-1 on a very cheap strike, so don't require bid alone.)
+                if ask_ok and (bid_ok or delta_ok):
+                    bid_str = f"${bid:.2f}" if bid_ok else "—"
                     check("Options Data", "ok",
-                          f"{label} — Bid ${bid:.2f} / Ask ${ask:.2f}{delta_str}")
+                          f"{label} — Bid {bid_str} / Ask ${ask:.2f}{delta_str}")
                 else:
                     now_et = now.astimezone(ET)
                     outside_hours = (
