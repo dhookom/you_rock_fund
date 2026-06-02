@@ -1126,10 +1126,16 @@ def _build_diag() -> dict:
     gw_check_idx = len(checks) - 1
 
     # ── 2b. Scheduler port vs settings port mismatch ───────────
+    # Read PID 1's environ — that's the scheduler.py process the entrypoint
+    # exec'd, carrying the IBKR_PORT the entrypoint derived from
+    # /data/gw_trading_mode. A plain `echo $IBKR_PORT` via docker exec would
+    # spawn a fresh shell with the stale container-level env (compose default)
+    # and report a false mismatch even when the scheduler is on the right port.
     try:
         import subprocess as _sp
         _sched_port_raw = _sp.run(
-            ["docker", "exec", "yrvi-scheduler-1", "sh", "-c", "echo $IBKR_PORT"],
+            ["docker", "exec", "yrvi-scheduler-1", "sh", "-c",
+             "tr '\\0' '\\n' < /proc/1/environ | sed -n 's/^IBKR_PORT=//p'"],
             capture_output=True, text=True, timeout=5
         ).stdout.strip()
         if _sched_port_raw:
@@ -1139,7 +1145,7 @@ def _build_diag() -> dict:
                 _settings_mode = "live" if port in (4001, 4003) else "paper"
                 check("Port Mismatch", "error",
                       f"Scheduler is using port {_sched_port} ({_sched_mode}) but settings say port {port} ({_settings_mode}) — "
-                      f"containers need restart: docker compose --env-file .env.compose up -d")
+                      f"switch trading mode in Settings (or restart the scheduler) to re-sync")
             else:
                 check("Port Config", "ok", f"Scheduler and settings both on port {port}")
     except Exception:
