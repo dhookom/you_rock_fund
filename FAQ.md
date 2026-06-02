@@ -191,4 +191,63 @@ Without this, the scheduler will connect, get market data, size positions, submi
 
 ---
 
+---
+
+### Q: How do I export a Flex XML from IBKR to use with the History Reconciler?
+
+**A:** Use the IBKR Client Portal to run a Flex Query and download the XML. This covers trades placed manually or outside YRVI that need to be added to your premium history.
+
+1. Log into the **IBKR Client Portal** at [https://www.interactivebrokers.com/sso/Login](https://www.interactivebrokers.com/sso/Login) using your **live account** credentials
+2. Navigate to **Performance & Reports → Flex Queries**
+3. Click **Activity Flex Query** → then the **+** button to create a new query (or edit an existing one)
+4. Configure the query:
+   - **Sections:** Under **Trades**, check the **Executions** sub-type
+   - **Period:** Choose *Last 365 Calendar Days* (or a custom date range)
+   - **Format:** XML
+   - **Date Format:** `yyyyMMdd`
+5. Click **Run** (▶ button next to your query)
+6. When the download dialog appears, save the `.xml` file
+
+Then in YRVI:
+- Go to **Settings → History Reconciler**
+- Select **Paste / Upload XML**
+- Click the file picker (or paste the XML content directly)
+- Click **Preview** to review the weeks found, then **Commit** to save
+
+> **Note:** Only option *sells* are counted (CSPs and covered calls). Stock share sales are not included in the premium total.
+
+---
+
+### Q: How do I set up automatic reconciliation via the IBKR Flex Web Service?
+
+**A:** This lets YRVI fetch your trade history directly from IBKR on demand — no manual export needed. It requires a one-time setup of a Flex Token and Query ID in your Secrets page.
+
+**Step 1 — Create the Flex Query (if you haven't already)**
+
+Follow steps 1–4 from the previous FAQ entry to create an Activity Flex Query with the **Executions** sub-type, XML format. Note the **Query ID** shown in the query list (a 6–9 digit number).
+
+**Step 2 — Get your Flex Web Service Token**
+
+1. In the IBKR Client Portal, go to **Performance & Reports → Flex Queries**
+2. Click the **gear icon (⚙)** in the top right of the Flex Queries page
+3. Under **Flex Web Service**, click **Generate Token** (or copy your existing token if one exists)
+4. Copy the token — it's a long alphanumeric string
+
+**Step 3 — Enter the secrets in YRVI**
+
+1. Go to **Settings → Secrets** (or the Secrets page in the sidebar)
+2. Find **IBKR Flex Token** and click **Set** — paste your token
+3. Find **IBKR Flex Query ID** and click **Set** — paste the numeric query ID
+
+**Step 4 — Use the Reconciler**
+
+1. Go to **Settings → History Reconciler**
+2. Select **Fetch from IBKR**
+3. Optionally set a date range, then click **Preview**
+4. Review the weeks found and click **Commit**
+
+> **Token security:** Treat your Flex Token like a password — it grants read-only access to your account history. It is stored encrypted in the YRVI secrets container.
+
+---
+
 *Have a question not covered here? Post in the You Rock Club Discord and we'll add it.*

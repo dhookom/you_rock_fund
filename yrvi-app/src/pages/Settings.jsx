@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
-import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw } from 'lucide-react'
+import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw, ExternalLink } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
 
 const PRESET_TIMES = [
@@ -819,7 +819,15 @@ export default function SettingsPage() {
         <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
           Rebuild the weekly premium history from IBKR Flex XML — use this to recover weeks that
           were traded outside YRVI or lost during a volume wipe.
-          Option sell proceeds are summed by week; stock P&amp;L is not included.
+          Option sell proceeds are summed by week; stock P&amp;L is not included.{' '}
+          <a
+            href="https://github.com/controllinghand/you_rock_fund/blob/main/FAQ.md#q-how-do-i-export-a-flex-xml-from-ibkr-to-use-with-the-history-reconciler"
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-500 hover:underline inline-flex items-center gap-0.5"
+          >
+            How-to guide <ExternalLink size={11} />
+          </a>
         </div>
 
         {/* Mode tabs */}
@@ -904,10 +912,22 @@ export default function SettingsPage() {
         )}
 
         {reconMode === 'flex' && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-lg px-3 py-2.5 leading-relaxed">
-            Requires <strong>IBKR Flex Token</strong> and <strong>Flex Query ID</strong> to be set in the{' '}
-            <a href="/secrets" className="text-blue-500 hover:underline">Secrets</a> page.
-            Your query must include the <strong>Executions</strong> sub-type under Trades, XML format.
+          <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-lg px-3 py-2.5 leading-relaxed space-y-1.5">
+            <div>
+              Requires <strong>IBKR Flex Token</strong> and <strong>Flex Query ID</strong> to be set in the{' '}
+              <a href="/secrets" className="text-blue-500 hover:underline">Secrets</a> page.
+              Your query must include the <strong>Executions</strong> sub-type under Trades, XML format.
+            </div>
+            <div>
+              <a
+                href="https://github.com/controllinghand/you_rock_fund/blob/main/FAQ.md#q-how-do-i-set-up-automatic-reconciliation-via-the-ibkr-flex-web-service"
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-500 hover:underline inline-flex items-center gap-0.5"
+              >
+                Step-by-step setup guide <ExternalLink size={11} />
+              </a>
+            </div>
           </div>
         )}
 
