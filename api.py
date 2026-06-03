@@ -982,14 +982,40 @@ def _get_ibkr_data(settings: dict) -> dict:
         if acct:
             result["account"] = acct
 
+            # Start the account-level P&L stream early so it has time to populate
+            # while accountSummary round-trips below. The IB Gateway's
+            # accountSummary does NOT expose UnrealizedPnL/RealizedPnL tags, so
+            # reqPnL is the reliable source for the dashboard summary cards.
+            acct_pnl = None
+            try:
+                acct_pnl = ib.reqPnL(acct, "")
+            except Exception as pe:
+                print(f"[api] reqPnL failed: {pe}")
+
             # ── Account summary
             summary_dict = {item.tag: item.value for item in ib.accountSummary(acct)}
             print(f"[api] accountSummary tags: {list(summary_dict.keys())}")
             result["account_value"]      = _safe_float(summary_dict.get("NetLiquidation", 0))
             result["buying_power"]       = _safe_float(summary_dict.get("BuyingPower",    0))
             result["settled_cash"]       = _safe_float(summary_dict.get("TotalCashValue", 0))
-            result["unrealized_pnl"]     = _safe_float(summary_dict.get("UnrealizedPnL",  0))
-            result["realized_pnl"]       = _safe_float(summary_dict.get("RealizedPnL",    0))
+            # Account-level P&L from reqPnL (accountSummary lacks these tags);
+            # fall back to summary tags if the stream hasn't populated. Wait
+            # briefly for the first update so a cold call isn't cached at 0.
+            if acct_pnl is not None:
+                for _ in range(10):
+                    if _safe_float(acct_pnl.unrealizedPnL) is not None:
+                        break
+                    ib.sleep(0.3)
+            pnl_unrl = _safe_float(acct_pnl.unrealizedPnL) if acct_pnl else None
+            pnl_real = _safe_float(acct_pnl.realizedPnL)   if acct_pnl else None
+            result["unrealized_pnl"]     = (pnl_unrl if pnl_unrl is not None
+                                            else _safe_float(summary_dict.get("UnrealizedPnL", 0)))
+            result["realized_pnl"]       = (pnl_real if pnl_real is not None
+                                            else _safe_float(summary_dict.get("RealizedPnL", 0)))
+            try:
+                ib.cancelPnL(acct, "")
+            except Exception:
+                pass
             result["maintenance_margin"] = _safe_float(summary_dict.get("MaintMarginReq", 0))
             result["excess_liquidity"]   = _safe_float(summary_dict.get("AvailableFunds", 0))
             result["account_summary"] = {
