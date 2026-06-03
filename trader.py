@@ -678,6 +678,13 @@ def execute_positions(sized_positions: list, extra_targets: list = None,
                 contracts    = pos["contracts"]
                 new_capital  = round(contracts * strike * 100, 2)
                 pos          = {**pos, "strike": strike, "capital_used": new_capital}
+                # Persist the executed strike/capital back into the candidate list
+                # so state.json (and the dashboard) reflect what we actually filled,
+                # not the original screener strike.
+                for _i, _sp in enumerate(all_sized):
+                    if _sp.get("ticker") == ticker:
+                        all_sized[_i] = pos
+                        break
                 log.info(f"  ⚡ Capital adjusted: ${old_capital:,.0f} → ${new_capital:,.0f}")
 
             _status(ticker=ticker, stage="fetching market data")
