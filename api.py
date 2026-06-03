@@ -1010,26 +1010,42 @@ def _get_ibkr_data(settings: dict) -> dict:
                 raw_positions = ib.positions()
                 print(f"[api] reqPositions returned {len(raw_positions)} items")
 
-                # ── Debug: check if portfolio() has data after reqPositions alone
-                portfolio_lookup: dict = {}
-                portfolio_items = ib.portfolio()
-                logger.info(f"portfolio() without subscription: {len(portfolio_items)} items")
-                for item in portfolio_items:
-                    logger.info(f"  {item.contract.symbol}: mktVal={item.marketValue} pnl={item.unrealizedPNL}")
-                for item in portfolio_items:
-                    portfolio_lookup[item.contract.conId] = {
-                        "marketPrice":   _safe_float(item.marketPrice),
-                        "marketValue":   _safe_float(item.marketValue),
-                        "unrealizedPNL": _safe_float(item.unrealizedPNL),
-                    }
+                # ── Per-position market value + unrealized P&L via reqPnLSingle.
+                # ib.portfolio() only populates after a reqAccountUpdates stream,
+                # which we never start; reqPnLSingle gives IBKR-computed value and
+                # unrealizedPnL per conId (correct cost basis/sign), and needs the
+                # account's market-data entitlement (OPRA for options).
+                acct_positions = [
+                    pos for pos in raw_positions
+                    if not (account_env and pos.account != account_env)
+                ]
+                pnl_lookup: dict = {}
+                pnl_reqs: list = []
+                for pos in acct_positions:
+                    try:
+                        pnl_reqs.append((pos.contract.conId,
+                                         ib.reqPnLSingle(acct, "", pos.contract.conId)))
+                    except Exception as se:
+                        print(f"[api] reqPnLSingle failed for {pos.contract.symbol}: {se}")
+                ib.sleep(3)  # let PnLSingle streams populate
+                for con_id, single in pnl_reqs:
+                    pnl_lookup[con_id] = single
+                    try:
+                        ib.cancelPnLSingle(acct, "", con_id)
+                    except Exception:
+                        pass
 
                 portfolio = []
-                for pos in raw_positions:
-                    if account_env and pos.account != account_env:
-                        continue
+                for pos in acct_positions:
                     c        = pos.contract
                     is_opt   = c.secType == "OPT"
-                    pnl_data = portfolio_lookup.get(c.conId, {})
+                    single   = pnl_lookup.get(c.conId)
+                    mult     = _safe_float(c.multiplier, 0) or (100 if is_opt else 1)
+                    mkt_val  = _safe_float(single.value)         if single else None
+                    unrl     = _safe_float(single.unrealizedPnL) if single else None
+                    # Derive per-share price from total value: value / (position * multiplier)
+                    denom    = (pos.position or 0) * mult
+                    mkt_px   = round(mkt_val / denom, 4) if (mkt_val is not None and denom) else None
                     portfolio.append({
                         "symbol":        c.symbol,
                         "secType":       c.secType,
@@ -1038,9 +1054,9 @@ def _get_ibkr_data(settings: dict) -> dict:
                         "expiry":        c.lastTradeDateOrContractMonth if is_opt else None,
                         "position":      _safe_float(pos.position, 0),
                         "avgCost":       _safe_float(pos.avgCost, 4),
-                        "marketPrice":   pnl_data.get("marketPrice"),
-                        "marketValue":   pnl_data.get("marketValue"),
-                        "unrealizedPNL": pnl_data.get("unrealizedPNL"),
+                        "marketPrice":   mkt_px,
+                        "marketValue":   mkt_val,
+                        "unrealizedPNL": unrl,
                     })
                 portfolio.sort(key=lambda x: (0 if x["secType"] == "STK" else 1, x["symbol"]))
                 result["portfolio"] = portfolio
