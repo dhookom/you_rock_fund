@@ -302,9 +302,9 @@ def run_wheel_check_job():
         _discord_alert(f"🚨 **YRVI** {msg}. Check gateway login / VNC port 5900.")
     try:
         from wheel_manager import run_wheel_check
-        freed, skip, reserved = run_wheel_check()
-        log.info(f"✅ Wheel check done — freed ${freed:,.0f}  "
-                 f"reserved ${reserved:,.0f}  skip {skip or 'none'}")
+        r = run_wheel_check()
+        log.info(f"✅ Wheel check done — freed ${r['freed_capital']:,.0f}  "
+                 f"reserved ${r['reserved_capital']:,.0f}  skip {r['skip_tickers'] or 'none'}")
     except Exception as e:
         log.error(f"❌ Wheel check error: {e}", exc_info=True)
         _discord_alert(f"🚨 **YRVI** Monday wheel check failed: `{type(e).__name__}: {e}`")
@@ -329,60 +329,12 @@ def run_pipeline():
         log.error(f"❌ {msg}")
         _discord_alert(f"🚨 **YRVI** {msg}. Check gateway login / VNC port 5900.")
     try:
-        from screener import get_top_targets
-        from position_sizer import size_all
-        from trader import execute_positions
+        # Read context left by wheel_check (9:55AM), then delegate to the shared
+        # Monday runner so the scheduled pipeline runs the exact same code as the
+        # dashboard's Run Now / Run Screener.
+        state   = _load_state()
+        context = state.get("monday_context", {})
 
-        # Read context left by wheel_check (9:55AM)
-        state         = _load_state()
-        context       = state.get("monday_context", {})
-        skip_tickers       = set(context.get("skip_tickers", []))
-        freed_capital      = context.get("freed_capital", 0.0)
-        reserved_capital   = context.get("reserved_capital", 0.0)
-        active_wheel_count = context.get("active_wheel_count", 0)
-
-        if skip_tickers:
-            log.info(f"  🚫 Skipping tickers (wheel exits): {skip_tickers}")
-        if freed_capital > 0:
-            log.info(f"  💰 Freed capital added to pool: ${freed_capital:,.0f}")
-        if reserved_capital > 0:
-            log.info(f"  🔒 Capital reserved for {active_wheel_count} wheel holding(s): "
-                     f"${reserved_capital:,.0f}")
-
-        all_targets = get_top_targets(10)
-        if not all_targets:
-            log.error("❌ No targets returned — aborting"); return
-
-        # Filter out wheel-exit tickers so they don't re-enter as CSPs this week
-        filtered_targets = [t for t in all_targets if t["ticker"] not in skip_tickers]
-        if len(filtered_targets) < len(all_targets):
-            log.info(f"  Filtered {len(all_targets) - len(filtered_targets)} ticker(s) "
-                     f"from screener results")
-
-        settings         = get_settings()
-        compound_enabled = settings.get("compound_enabled", True)
-        if compound_enabled:
-            # BuyingPower already reflects all open positions (manual trades, wheel stock,
-            # open CSPs) so it is the true available cash. Add freed_capital as a safety net
-            # in case the 9:55AM wheel stock sales haven't settled in IBKR yet.
-            buying_power, net_liq = _fetch_account_summary(TOTAL_FUND_BUDGET)
-            effective_budget      = buying_power + freed_capital
-            log.info(f"  📊 Budget: buying_power=${buying_power:,.0f}  net_liq=${net_liq:,.0f}  "
-                     f"freed=${freed_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding ON)")
-        else:
-            effective_budget = TOTAL_FUND_BUDGET + freed_capital - reserved_capital
-            log.info(f"  📊 Budget: base=${TOTAL_FUND_BUDGET:,.0f}  freed=${freed_capital:,.0f}  "
-                     f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding OFF)")
-        target_fills     = max(1, NUM_POSITIONS - active_wheel_count)
-        if target_fills < NUM_POSITIONS:
-            log.info(f"  🔢 Targeting {target_fills} CSP(s) "
-                     f"({active_wheel_count} wheel holding(s) active)")
-        positions = size_all(filtered_targets, budget=effective_budget,
-                             num_positions=target_fills)
-        if not positions:
-            log.error("❌ No positions sized — aborting"); return
-
-        # Write executing status to shared file so API can expose it
         import json as _json
         _progress_file = "/data/run_progress.json"
         _ticker_results = []
@@ -401,8 +353,8 @@ def run_pipeline():
                 pass
 
         _sched_progress(ticker=None, stage="starting")
-        results = execute_positions(positions, extra_targets=filtered_targets,
-                                    target_fills=target_fills, status_callback=_sched_progress)
+        from monday_runner import run_csp_pipeline
+        outcome = run_csp_pipeline(context, dry_run=False, progress_callback=_sched_progress)
 
         # Clear progress file now that execution is done
         try:
@@ -412,6 +364,7 @@ def run_pipeline():
             pass
 
         # ── Systemic market data failure alert ────────────────
+        results    = outcome.get("results", [])
         actionable = [r for r in results if r.get("status") not in
                       ("skipped_contract_size", "skipped_delta")]
         if actionable and all(r.get("status") == "failed_market_data" for r in actionable):
@@ -420,33 +373,9 @@ def run_pipeline():
                 "Check IB Gateway → data farm connections and paper account market data subscriptions."
             )
 
-        # ── Build weekly P&L ──────────────────────────────────
-        filled          = [r for r in results if r.get("status") in ("filled", "dry_run", "partial_fill")]
-        csp_premium     = sum(r.get("premium_collected", 0) for r in results)
-        cc_premium      = context.get("cc_premium", 0.0)
-        shares_sold_pnl = context.get("shares_sold_pnl", 0.0)
-        total_realized  = round(csp_premium + cc_premium + shares_sold_pnl, 2)
-
-        state = _load_state()   # reload — execute_positions merges but may have written it
-        state["weekly_pnl"] = {
-            "week_start":       now.strftime("%Y-%m-%d"),
-            "csp_premium":      round(csp_premium, 2),
-            "cc_premium":       round(cc_premium, 2),
-            "shares_sold_pnl":  round(shares_sold_pnl, 2),
-            "total_realized":   total_realized,
-            "last_updated":     datetime.now().isoformat()
-        }
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=2)
-
-        from discord_poster import is_enabled, post_weekly_results
-        if is_enabled():
-            post_weekly_results(_load_state(), fund_budget=effective_budget)
-
-        log.info(f"\n✅ Done — {len(filled)}/{target_fills} CSP fills  |  "
-                 f"CSP ${csp_premium:,.0f}  CC ${cc_premium:,.0f}  "
-                 f"Shares sold P&L ${shares_sold_pnl:,.0f}  "
-                 f"Total realized ${total_realized:,.0f}")
+        log.info(f"\n✅ Done — {outcome.get('fills', 0)}/{outcome.get('target_fills', 0)} CSP fills  |  "
+                 f"CSP ${outcome.get('csp_premium', 0):,.0f}  "
+                 f"Total realized ${outcome.get('total_realized', 0):,.0f}")
 
     except Exception as e:
         log.error(f"❌ Pipeline error: {e}", exc_info=True)

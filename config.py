@@ -22,8 +22,11 @@ if not ACCOUNT:
     )
 
 # IBKR client IDs — each module gets its own to allow concurrent connections
-IBKR_CLIENT_ID_WHEEL = 2        # wheel_manager.py
+IBKR_CLIENT_ID_WHEEL = 2        # wheel_manager.py (scheduler Monday 9:55 job)
 IBKR_CLIENT_ID_RISK  = 3        # risk_manager.py
+IBKR_CLIENT_ID_PREVIEW = 4      # API-driven Monday runner (Run Screener / Run Now) —
+                                # distinct from the scheduler's wheel id so a manual
+                                # run from the dashboard never collides with the 9:55 job
 
 # Execution
 EXECUTE_HOUR_PST = 10            # 10AM PST Monday

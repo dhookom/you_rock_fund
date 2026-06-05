@@ -1,0 +1,213 @@
+"""
+Monday runner — the single source of truth for "what happens on Monday".
+
+The exact same code path is used by:
+  • scheduler.py        — Mon 9:55 wheel check + Mon 10:00 CSP pipeline (live)
+  • Run Now    (api)    — execute the full Monday sequence on demand (live)
+  • Run Screener (api)  — preview the full Monday sequence (dry_run, no side effects)
+
+run_monday(dry_run) ties the two halves together:
+
+    run_wheel_check(dry_run)                       # keep / sell / write-CC decisions
+        │  → freed_capital, skip_tickers, cc_premium, shares_sold_pnl, ...
+        ▼
+    run_csp_pipeline(context, dry_run)             # size + (optionally) execute CSPs
+
+When dry_run is True nothing is placed, persisted, or posted — the call returns the
+plan so the dashboard can show exactly what Monday will do.
+"""
+import json
+import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from config import (
+    IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, IBKR_CLIENT_ID_PREVIEW, ACCOUNT,
+    NUM_POSITIONS, TOTAL_FUND_BUDGET, get_settings,
+)
+
+log = logging.getLogger(__name__)
+PST = ZoneInfo("America/Los_Angeles")
+STATE_FILE = "state.json"
+
+
+# ── Helpers ────────────────────────────────────────────────────
+
+def _load_state() -> dict:
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _fetch_account_summary(fallback: float) -> tuple[float, float]:
+    """
+    Fetch IBKR BuyingPower and NetLiquidation (read-only). Returns
+    (effective_budget, net_liq); falls back to (fallback, fallback) on any error.
+    Mirrors scheduler._fetch_account_summary so live budgeting is identical.
+    """
+    try:
+        from ib_insync import IB
+        ib = IB()
+        ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID, readonly=True)
+        summary = ib.accountSummary(ACCOUNT)
+        ib.disconnect()
+        by_tag  = {v.tag: float(v.value) for v in summary
+                   if v.tag in ("BuyingPower", "NetLiquidation")}
+        bp      = by_tag.get("BuyingPower")
+        net_liq = by_tag.get("NetLiquidation")
+        if bp and bp > 0 and net_liq and net_liq > 0:
+            effective = min(bp, net_liq)
+            log.info(f"  💹 Compound mode: net_liq=${net_liq:,.0f}  "
+                     f"buying_power=${bp:,.0f}  using=${effective:,.0f}")
+            return effective, net_liq
+        log.warning("  ⚠️  Account summary incomplete — using fund budget fallback")
+    except Exception as e:
+        log.warning(f"  ⚠️  Could not fetch account summary ({e}) — using fund budget fallback")
+    return fallback, fallback
+
+
+# ── CSP pipeline (Monday 10:00 half) ───────────────────────────
+
+def run_csp_pipeline(context: dict, dry_run: bool = False,
+                     progress_callback=None, account_summary: tuple = None) -> dict:
+    """
+    Screen → size → (execute) CSPs, applying the wheel check's results.
+
+    context provides the outputs of run_wheel_check (or a persisted monday_context):
+      skip_tickers, freed_capital, reserved_capital, active_wheel_count,
+      cc_premium, shares_sold_pnl
+
+    dry_run: size only, place no orders, write no state, post no Discord.
+    account_summary: optional (buying_power, net_liq) to avoid an extra IBKR
+      connection during a preview; when None and compounding, it is fetched live.
+
+    Note: module (re)loading is the caller's responsibility — the API endpoints
+    reload config/screener/etc. before calling so dashboard changes take effect;
+    the long-running scheduler deliberately does not reload mid-process.
+    """
+    from screener import get_top_targets
+    from position_sizer import size_all
+
+    skip_tickers       = set(context.get("skip_tickers", []))
+    freed_capital      = context.get("freed_capital", 0.0)
+    reserved_capital   = context.get("reserved_capital", 0.0)
+    active_wheel_count = context.get("active_wheel_count", 0)
+
+    mode = "DRY RUN" if dry_run else "LIVE"
+    log.info(f"⏰ CSP PIPELINE [{mode}]")
+    if skip_tickers:
+        log.info(f"  🚫 Skipping wheel-exit tickers: {skip_tickers}")
+    if freed_capital:
+        log.info(f"  💰 Freed capital added to pool: ${freed_capital:,.0f}")
+
+    all_targets = get_top_targets(10)
+    filtered_targets = [t for t in all_targets if t["ticker"] not in skip_tickers]
+
+    settings         = get_settings()
+    compound_enabled = settings.get("compound_enabled", True)
+    if compound_enabled:
+        if account_summary is not None:
+            buying_power, net_liq = account_summary
+        else:
+            buying_power, net_liq = _fetch_account_summary(TOTAL_FUND_BUDGET)
+        effective_budget = buying_power + freed_capital
+        log.info(f"  📊 Budget: buying_power=${buying_power:,.0f}  freed=${freed_capital:,.0f}  "
+                 f"effective=${effective_budget:,.0f}  (compounding ON)")
+    else:
+        effective_budget = TOTAL_FUND_BUDGET + freed_capital - reserved_capital
+        log.info(f"  📊 Budget: base=${TOTAL_FUND_BUDGET:,.0f}  freed=${freed_capital:,.0f}  "
+                 f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding OFF)")
+
+    target_fills = max(1, NUM_POSITIONS - active_wheel_count)
+    positions    = size_all(filtered_targets, budget=effective_budget,
+                            num_positions=target_fills)
+
+    total_premium = sum(p.get("premium_total", 0) for p in positions)
+    total_capital = sum(p.get("capital_used", 0) for p in positions)
+
+    base = {
+        "positions":         positions,
+        "raw_targets":       all_targets,
+        "filtered_count":    len(all_targets) - len(filtered_targets),
+        "effective_budget":  effective_budget,
+        "target_fills":      target_fills,
+        "total_premium":     total_premium,
+        "total_capital":     total_capital,
+        "compound_enabled":  compound_enabled,
+    }
+
+    if dry_run:
+        log.info(f"  🟡 [DRY RUN] sized {len(positions)} CSP(s) — no orders placed")
+        base["executed"] = False
+        return base
+
+    # ── Live execution ────────────────────────────────────────
+    from trader import execute_positions
+    results = execute_positions(positions, extra_targets=filtered_targets,
+                                target_fills=target_fills, status_callback=progress_callback)
+
+    filled          = [r for r in results if r.get("status") in ("filled", "dry_run", "partial_fill")]
+    csp_premium     = sum(r.get("premium_collected", 0) for r in results)
+    cc_premium      = context.get("cc_premium", 0.0)
+    shares_sold_pnl = context.get("shares_sold_pnl", 0.0)
+    total_realized  = round(csp_premium + cc_premium + shares_sold_pnl, 2)
+
+    now   = datetime.now(PST)
+    state = _load_state()
+    state["weekly_pnl"] = {
+        "week_start":      now.strftime("%Y-%m-%d"),
+        "csp_premium":     round(csp_premium, 2),
+        "cc_premium":      round(cc_premium, 2),
+        "shares_sold_pnl": round(shares_sold_pnl, 2),
+        "total_realized":  total_realized,
+        "last_updated":    datetime.now().isoformat(),
+    }
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+    try:
+        from discord_poster import is_enabled, post_weekly_results
+        if is_enabled():
+            post_weekly_results(_load_state(), fund_budget=effective_budget)
+    except Exception as e:
+        log.warning(f"  ⚠️  Discord weekly results post failed: {e}")
+
+    log.info(f"✅ CSP pipeline done — {len(filled)}/{target_fills} fills  "
+             f"CSP ${csp_premium:,.0f}  CC ${cc_premium:,.0f}  total ${total_realized:,.0f}")
+
+    base.update({
+        "executed":      True,
+        "results":       results,
+        "fills":         len(filled),
+        "csp_premium":   round(csp_premium, 2),
+        "total_realized": total_realized,
+    })
+    return base
+
+
+# ── Full Monday sequence (wheel check → CSP pipeline) ──────────
+
+def run_monday(dry_run: bool = False, progress_callback=None,
+               account_summary: tuple = None) -> dict:
+    """
+    Run the complete Monday sequence in one call: wheel check then CSP pipeline,
+    using the wheel check's in-memory results to drive the pipeline.
+
+    dry_run=True  → faithful preview, zero side effects (Run Screener)
+    dry_run=False → live execution: sells shares, writes CCs, opens CSPs (Run Now)
+    """
+    from wheel_manager import run_wheel_check
+
+    mode = "DRY RUN" if dry_run else "LIVE"
+    log.info("\n" + "=" * 65)
+    log.info(f"🗓️  MONDAY RUNNER [{mode}] — {datetime.now(PST).strftime('%Y-%m-%d %H:%M %Z')}")
+    log.info("=" * 65)
+
+    wheel = run_wheel_check(dry_run=dry_run, client_id=IBKR_CLIENT_ID_PREVIEW)
+    csp   = run_csp_pipeline(wheel, dry_run=dry_run,
+                             progress_callback=progress_callback,
+                             account_summary=account_summary)
+
+    return {"dry_run": dry_run, "wheel": wheel, "csp": csp}

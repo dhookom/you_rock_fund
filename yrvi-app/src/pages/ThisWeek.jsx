@@ -53,8 +53,11 @@ export default function ThisWeek() {
         // Run just finished — show result
         if (wasExecuting && !r.data.executing) {
           if (r.data.result) {
-            const { fills, premium } = r.data.result
-            setManualMsg({ ok: true, text: `✅ Run complete — ${fills} fill(s), $${premium.toLocaleString()} premium collected` })
+            const { fills, premium, cc_premium, freed_capital } = r.data.result
+            let text = `✅ Run complete — ${fills} CSP fill(s), $${(premium ?? 0).toLocaleString()} CSP premium`
+            if (cc_premium) text += `, $${cc_premium.toLocaleString()} CC premium`
+            if (freed_capital) text += `, $${freed_capital.toLocaleString()} freed`
+            setManualMsg({ ok: true, text })
           } else if (r.data.error) {
             setManualMsg({ ok: false, text: `Run failed: ${r.data.error}` })
           }
@@ -78,7 +81,29 @@ export default function ThisWeek() {
   const isExecuting = runStatus?.executing || manualRunning
 
   const triggerManualRun = useCallback(async () => {
-    if (!window.confirm('Run the CSP pipeline now?\n\nOnly use this if the scheduled run failed or you need a mid-week re-run. This will place real orders in your IBKR account immediately.')) return
+    // Context-aware warning: Run Now executes the FULL Monday sequence live —
+    // it will sell shares, write covered calls, and open CSPs immediately.
+    const ptParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric',
+      minute: 'numeric', hour12: false,
+    }).formatToParts(new Date())
+    const wd  = ptParts.find(p => p.type === 'weekday')?.value
+    const hh  = parseInt(ptParts.find(p => p.type === 'hour')?.value ?? '0', 10)
+    const mm  = parseInt(ptParts.find(p => p.type === 'minute')?.value ?? '0', 10)
+    const mins = hh * 60 + mm
+    const inMondayWindow = wd === 'Mon' && mins >= 9 * 60 + 45 && mins <= 10 * 60 + 15
+
+    let msg = 'Run the FULL Monday sequence now?\n\n'
+      + 'This places REAL orders in your IBKR account immediately:\n'
+      + '  • Wheel check — sells shares (dropped screener / stop-loss / no viable CC)\n'
+      + '    and writes covered calls on remaining holdings\n'
+      + '  • CSP pipeline — opens new cash-secured puts\n\n'
+      + 'Tip: click "Run Screener" first to preview exactly what will execute.'
+    if (inMondayWindow) {
+      msg += '\n\n⚠️ It is currently the Monday 9:55/10:00 AM PT window. The scheduled '
+        + 'run may also fire — running now can DOUBLE-EXECUTE (duplicate CCs and CSPs).'
+    }
+    if (!window.confirm(msg)) return
     setManualRunning(true)
     setManualMsg(null)
     try {
@@ -112,7 +137,7 @@ export default function ThisWeek() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">This Week</h1>
-        <div className="text-gray-500 text-sm">Preview next Monday's targets</div>
+        <div className="text-gray-500 text-sm">Preview or run Monday's full sequence — wheel check + CSPs</div>
       </div>
 
       {/* Next execution */}
@@ -204,8 +229,8 @@ export default function ThisWeek() {
       {loading && (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4" />
-          <div className="text-gray-600 dark:text-gray-400">Running screener + position sizer...</div>
-          <div className="text-gray-500 dark:text-gray-600 text-sm mt-1">This takes ~10 seconds</div>
+          <div className="text-gray-600 dark:text-gray-400">Previewing Monday — wheel check + screener + sizer...</div>
+          <div className="text-gray-500 dark:text-gray-600 text-sm mt-1">Querying IBKR option chains for covered-call decisions — ~20–40 seconds</div>
         </div>
       )}
 
@@ -296,6 +321,47 @@ export default function ThisWeek() {
             </div>
           )}
 
+          {/* Monday wheel plan (preview of wheel-check decisions) */}
+          {(screener.wheel_plan ?? []).length > 0 && (
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                <div className="text-gray-900 dark:text-white font-semibold text-sm">🗓️ Monday Wheel Plan</div>
+                <div className="text-gray-500 dark:text-gray-600 text-xs">
+                  CC ${(screener.wheel_cc_premium ?? 0).toLocaleString()} · Freed ${(screener.wheel_freed_capital ?? 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="divide-y divide-gray-100 dark:divide-gray-800/50">
+                {screener.wheel_plan.map((a, i) => {
+                  const isCC     = a.action === 'cc_opened'
+                  const isFailed = a.action === 'cc_failed'
+                  const isSold   = typeof a.action === 'string' && a.action.startsWith('sold')
+                  const emoji    = isCC ? '✅' : isSold ? '📤' : '⚠️'
+                  let detail
+                  if (isCC) {
+                    detail = `Write CC @ $${a.cc_strike} · δ${(a.cc_delta ?? 0).toFixed(2)} · ~$${(a.cc_premium ?? 0).toLocaleString()} premium · exp ${a.cc_expiry}`
+                  } else if (isSold) {
+                    const reason = a.action.replace(/^sold_?/, '').replace(/_/g, ' ') || 'sold'
+                    detail = `Sell ${a.shares ?? ''} sh (${reason}) · ~$${(a.proceeds ?? 0).toLocaleString()} proceeds · P&L $${(a.realized_pnl ?? 0).toLocaleString()}`
+                  } else if (isFailed) {
+                    detail = `CC could not be priced @ $${a.cc_strike}`
+                  } else {
+                    detail = a.action
+                  }
+                  return (
+                    <div key={i} className="px-5 py-2.5 flex items-start gap-2 text-sm">
+                      <span>{emoji}</span>
+                      <span className="font-semibold text-gray-900 dark:text-white w-16">{a.ticker}</span>
+                      <span className="text-gray-600 dark:text-gray-400 text-xs leading-relaxed">{detail}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="px-5 py-2 text-xs text-gray-400 dark:text-gray-600 border-t border-gray-100 dark:border-gray-800/50">
+                Covered-call strikes/deltas are from live IBKR option-chain queries — this mirrors Monday's wheel check.
+              </div>
+            </div>
+          )}
+
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-4">
             {[
@@ -366,9 +432,10 @@ export default function ThisWeek() {
           )}
 
           <div className="bg-blue-100 dark:bg-blue-950/30 border border-blue-300 dark:border-blue-900/40 rounded-xl px-5 py-3.5 text-xs text-blue-800 dark:text-blue-300/80 leading-relaxed">
-            <span className="font-semibold text-blue-900 dark:text-blue-300">These are screener estimates, not final results.</span>
-            {' '}Strikes, premiums, and deltas are calculated Saturday using delayed data and will differ from Monday&apos;s execution against the live IBKR option chain.
-            {' '}For wheel holdings, covered calls will target the assigned strike if its delta is ≥ 0.20 — not the strike shown above.
+            <span className="font-semibold text-blue-900 dark:text-blue-300">Dry-run preview of Monday — no orders placed.</span>
+            {' '}The <span className="font-medium">Wheel Plan</span> (sells + covered calls) is computed from live IBKR option chains, so it mirrors Monday&apos;s wheel check closely.
+            {' '}<span className="font-medium">CSP targets</span> are screener estimates; exact strikes/premiums settle against the live chain at execution.
+            {' '}Running this again, or clicking <span className="font-medium">Run Now</span>, executes this same plan for real.
           </div>
 
           {runAt && (

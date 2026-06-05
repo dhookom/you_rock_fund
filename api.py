@@ -1677,81 +1677,64 @@ def get_performance():
 
 @app.get("/api/screener")
 def run_screener():
-    """Run screener + position sizer. Takes ~10 seconds."""
+    """
+    Preview the FULL Monday sequence (wheel check + CSP pipeline) with zero side
+    effects — a dry run of exactly what the scheduler / Run Now will execute.
+    Connects to IBKR to query option chains for the covered-call decisions, so it
+    takes ~20–40s. Places no orders, writes no state, posts no Discord.
+    """
     settings = load_settings()
     try:
-        import importlib
-        import sys
-        for mod_name in ["config", "screener", "position_sizer"]:
+        import importlib, sys
+        for mod_name in ["config", "screener", "position_sizer", "trader",
+                         "wheel_manager", "monday_runner"]:
             if mod_name in sys.modules:
                 importlib.reload(sys.modules[mod_name])
+        from monday_runner import run_monday
 
-        from screener import get_top_targets
-        from position_sizer import size_all
+        initial_fund_budget = settings.get("fund_budget", 250_000)
+        compound_enabled    = settings.get("compound_enabled", True)
 
-        n                    = settings.get("num_positions", 5)
-        initial_fund_budget  = settings.get("fund_budget", 250_000)
-        compound_enabled     = settings.get("compound_enabled", True)
+        # Pass cached account summary so the dry preview needs no extra IBKR
+        # connection for budgeting (min(bp, net_liq) — see scheduler for rationale).
+        account_summary = None
+        cached       = _ibkr_cache.get("data")
+        buying_power = cached.get("buying_power") if cached else None
+        net_liq      = cached.get("account_value") if cached else None
+        if compound_enabled and buying_power and net_liq:
+            account_summary = (min(buying_power, net_liq), net_liq)
 
-        if compound_enabled:
-            # Use min(buying_power, net_liq): for cash/Roth accounts buying_power < net_liq
-            # (reflects reserved CSP cash); for margin/paper accounts buying_power is inflated
-            # (4x+) so net_liq wins. min() gives the correct deployable budget in both cases.
-            cached       = _ibkr_cache.get("data")
-            buying_power = cached.get("buying_power") if cached else None
-            net_liq      = cached.get("account_value") if cached else None
-            if buying_power and net_liq:
-                budget = min(buying_power, net_liq)
-            else:
-                budget = buying_power or net_liq or initial_fund_budget
-        else:
-            budget = initial_fund_budget
+        outcome = run_monday(dry_run=True, account_summary=account_summary)
+        wheel   = outcome.get("wheel", {})
+        csp     = outcome.get("csp", {})
 
-        # When compounding, BuyingPower already accounts for wheel holdings and open CSPs,
-        # so no manual deduction is needed. When not compounding, subtract reserved capital.
+        positions     = csp.get("positions", [])
+        total_premium = csp.get("total_premium", 0)
+        total_capital = csp.get("total_capital", 0)
+
+        # Current holdings (post-plan view comes from wheel_activity below)
         state           = load_state()
         wheel_holdings  = state.get("wheel_holdings", [])
-        active_holdings = [h for h in wheel_holdings if h.get("shares", 0) > 0]
-        reserved_capital   = round(sum(
-            h["shares"] * h.get("assigned_strike", 0.0) for h in active_holdings
-        ), 2)
-        active_wheel_count = len(active_holdings)
-        adjusted_budget    = budget if compound_enabled else budget - reserved_capital
-        target_fills       = n
-        held_map           = {h["ticker"]: h for h in active_holdings}
-
-        all_targets = get_top_targets(n * 2, always_include=set(held_map.keys()))
-
-        # Split: tickers we already hold → CC; everything else → CSP
-        cc_targets  = []
-        csp_targets = []
-        for t in all_targets:
-            if t["ticker"] in held_map:
-                t["action_type"] = "CC"
-                t["shares"]      = held_map[t["ticker"]]["shares"]
-                cc_targets.append(t)
-            else:
-                csp_targets.append(t)
-
-        positions = size_all(csp_targets, budget=adjusted_budget, num_positions=target_fills,
-                             cc_targets=cc_targets)
-
-        total_premium = sum(p.get("premium_total", 0) for p in positions)
-        total_capital = sum(p.get("capital_used", 0) for p in positions)
 
         return {
             "positions":          positions,
-            "raw_targets":        all_targets,
+            "raw_targets":        csp.get("raw_targets", []),
             "total_premium":      total_premium,
             "total_capital":      total_capital,
             "blended_yield":      round(total_premium / total_capital * 100 if total_capital else 0, 3),
-            "budget":               adjusted_budget,
-            "total_budget":         budget,
+            "budget":               csp.get("effective_budget", 0),
+            "total_budget":         (account_summary[0] if account_summary else initial_fund_budget),
             "initial_fund_budget":  initial_fund_budget,
-            "compound_enabled":     compound_enabled,
-            "reserved_capital":     reserved_capital,
-            "active_wheel_count":   active_wheel_count,
+            "compound_enabled":     csp.get("compound_enabled", compound_enabled),
+            "reserved_capital":     wheel.get("reserved_capital", 0.0),
+            "active_wheel_count":   wheel.get("active_wheel_count", 0),
             "wheel_holdings":       wheel_holdings,
+            # Preview of the Monday wheel decisions (the part that used to be invisible):
+            "wheel_plan":           wheel.get("wheel_activity", []),
+            "wheel_freed_capital":  wheel.get("freed_capital", 0.0),
+            "wheel_cc_premium":     wheel.get("cc_premium", 0.0),
+            "wheel_shares_sold_pnl": wheel.get("shares_sold_pnl", 0.0),
+            "dry_run":              True,
             "run_at":               datetime.now(PST).isoformat(),
         }
     except Exception as e:
@@ -2218,42 +2201,17 @@ def manual_run():
         raise HTTPException(status_code=409, detail="A run is already in progress")
 
     def _run():
-        _run_status.update({"executing": True, "started_at": datetime.now().isoformat(), "result": None, "error": None})
+        _run_status.update({"executing": True, "started_at": datetime.now().isoformat(),
+                            "result": None, "error": None, "ticker_results": [],
+                            "current_ticker": None, "current_stage": None})
         try:
             import importlib, sys
-            for mod in ["config", "screener", "position_sizer", "trader"]:
+            for mod in ["config", "screener", "position_sizer", "trader",
+                        "wheel_manager", "monday_runner"]:
                 if mod in sys.modules:
                     importlib.reload(sys.modules[mod])
-            from screener import get_top_targets
-            from position_sizer import size_all
-            from trader import execute_positions
+            from monday_runner import run_monday
 
-            settings             = load_settings()
-            n                    = settings.get("num_positions", 5)
-            initial_fund_budget  = settings.get("fund_budget", 250_000)
-            compound_enabled     = settings.get("compound_enabled", True)
-
-            if compound_enabled:
-                cached       = _ibkr_cache.get("data")
-                buying_power = cached.get("buying_power") if cached else None
-                net_liq      = cached.get("account_value") if cached else None
-                if buying_power and net_liq:
-                    budget = min(buying_power, net_liq)
-                else:
-                    budget = buying_power or net_liq or initial_fund_budget
-            else:
-                budget = initial_fund_budget
-
-            state           = load_state()
-            wheel_holdings  = state.get("wheel_holdings", [])
-            active_holdings = [h for h in wheel_holdings if h.get("shares", 0) > 0]
-            reserved_capital   = round(sum(
-                h["shares"] * h.get("assigned_strike", 0.0) for h in active_holdings
-            ), 2)
-            effective_budget = budget if compound_enabled else budget - reserved_capital
-
-            all_targets    = get_top_targets(n * 2)
-            positions      = size_all(all_targets[:n], budget=effective_budget)
             _ticker_results = []
 
             def _progress(ticker=None, stage=None, result=None):
@@ -2263,36 +2221,21 @@ def manual_run():
                 _run_status["current_stage"]  = stage
                 _run_status["ticker_results"] = list(_ticker_results)
 
-            execute_positions(positions, extra_targets=all_targets, status_callback=_progress)
+            # Full Monday sequence, live: wheel check (sell shares / write CCs) then CSPs.
+            outcome = run_monday(dry_run=False, progress_callback=_progress)
             _run_status["current_ticker"] = None
             _run_status["current_stage"]  = None
 
-            # Update weekly_pnl and post to Discord
-            state       = load_state()
-            results     = state.get("executions", [])
-            filled      = [r for r in results if r.get("status") in ("filled", "partial_fill", "dry_run")]
-            csp_premium = sum(r.get("premium_collected", 0) for r in filled)
-            pnl         = state.get("weekly_pnl", {})
-            state["weekly_pnl"] = {
-                **pnl,
-                "week_start":     datetime.now(PST).strftime("%Y-%m-%d"),
-                "csp_premium":    round(csp_premium, 2),
-                "total_realized": round(csp_premium + pnl.get("cc_premium", 0) + pnl.get("shares_sold_pnl", 0), 2),
-                "last_updated":   datetime.now().isoformat(),
-            }
-            with open(STATE_FILE, "w") as f:
-                json.dump(state, f, indent=2)
-
-            from discord_poster import is_enabled, post_weekly_results
-            if is_enabled():
-                post_weekly_results(load_state(), fund_budget=effective_budget)
-
+            wheel = outcome.get("wheel", {})
+            csp   = outcome.get("csp", {})
             _run_status.update({
                 "executing": False,
                 "result": {
-                    "fills":     len(filled),
-                    "premium":   round(csp_premium, 2),
-                    "completed": datetime.now().isoformat(),
+                    "fills":         csp.get("fills", 0),
+                    "premium":       csp.get("csp_premium", 0),
+                    "cc_premium":    wheel.get("cc_premium", 0),
+                    "freed_capital": wheel.get("freed_capital", 0),
+                    "completed":     datetime.now().isoformat(),
                 }
             })
         except Exception as e:
@@ -2301,7 +2244,7 @@ def manual_run():
             _run_status.update({"executing": False, "error": str(e), "result": None})
 
     threading.Thread(target=_run, daemon=True).start()
-    return {"success": True, "message": "Pipeline started"}
+    return {"success": True, "message": "Monday sequence started (wheel check + CSP pipeline)"}
 
 
 @app.post("/api/test-run")

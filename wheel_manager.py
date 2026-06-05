@@ -80,14 +80,15 @@ def _save_state(state: dict):
 
 # ── IBKR ───────────────────────────────────────────────────────
 
-def _connect() -> IB:
+def _connect(client_id: int = None) -> IB:
+    client_id = client_id if client_id is not None else IBKR_CLIENT_ID_WHEEL
     account_type = "paper" if IBKR_PORT == 4002 else "live"
     for attempt in range(1, 4):
         try:
             ib = IB()
-            ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID_WHEEL)
+            ib.connect(IBKR_HOST, IBKR_PORT, clientId=client_id)
             ib.reqMarketDataType(3)
-            log.info(f"✅ Connected to IBKR (clientId={IBKR_CLIENT_ID_WHEEL})")
+            log.info(f"✅ Connected to IBKR (clientId={client_id})")
             return ib
         except TimeoutError:
             log.warning(f"⚠️  IBKR connect attempt {attempt}/3 timed out ({account_type}, {IBKR_HOST}:{IBKR_PORT})")
@@ -276,7 +277,19 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
 # ── Orders ─────────────────────────────────────────────────────
 
 def _sell_stock_market(ib: IB, ticker: str, shares: int, reason: str,
-                       assigned_strike: float = 0.0) -> dict:
+                       assigned_strike: float = 0.0, dry_run: bool = False) -> dict:
+    if dry_run:
+        # Preview only: simulate a market fill at the current price. No order,
+        # no Discord alert, no trade-log write.
+        price = _get_stock_price(ib, ticker)
+        if price is None:
+            log.warning(f"  🟡 [DRY RUN] {ticker}: price unavailable — cannot simulate sale")
+            return {"status": "failed", "proceeds": 0.0, "fill_price": None, "dry_run": True}
+        proceeds = round(shares * price, 2)
+        log.info(f"  🟡 [DRY RUN] would SELL {shares} {ticker} @ ~${price:.2f} "
+                 f"= ${proceeds:,.0f}  [{reason}]")
+        return {"status": "filled", "fill_price": price, "proceeds": proceeds, "dry_run": True}
+
     contract  = Stock(ticker, "SMART", "USD")
     qualified = ib.qualifyContracts(contract)
     if not qualified:
@@ -316,12 +329,22 @@ def _sell_stock_market(ib: IB, ticker: str, shares: int, reason: str,
 
 
 def _sell_cc_with_escalation(ib: IB, contract, shares: int, ticker: str,
-                              strike: float, ref_mid: float) -> dict:
+                              strike: float, ref_mid: float, dry_run: bool = False) -> dict:
     num_contracts = shares // 100
     if num_contracts < 1:
         log.warning(f"  ⚠️  {ticker}: {shares} shares < 100 — cannot sell CC")
         return {"status": "skipped_insufficient_shares", "premium_collected": 0.0,
                 "fill_price": None, "order_type": None}
+
+    if dry_run:
+        # Preview only: simulate a fill at the mid price. No order placed.
+        premium = round(num_contracts * ref_mid * 100, 2)
+        log.info(f"  🟡 [DRY RUN] would SELL {num_contracts}x {ticker} CALL "
+                 f"${strike:.2f} @ ~${ref_mid:.2f}  = ${premium:,.0f}")
+        return {"ticker": ticker, "option_contracts": num_contracts, "shares": shares,
+                "strike": strike, "status": "filled", "fill_price": ref_mid,
+                "order_type": "dry_run", "premium_collected": premium,
+                "timestamp": datetime.now().isoformat(), "dry_run": True}
 
     result = {
         "ticker": ticker, "option_contracts": num_contracts, "shares": shares,
@@ -509,7 +532,7 @@ def detect_assignments():
         discord_poster.post_assignment_alert(new_assignments)
 
 
-def run_wheel_check() -> tuple[float, list]:
+def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     """
     Monday 9:55AM PST — five-step evaluation for each held stock:
 
@@ -523,10 +546,20 @@ def run_wheel_check() -> tuple[float, list]:
               else sell the highest-delta (≥ 0.20) strike. If none, sell shares.
       Step 5  Persist monday_context and wheel_activity to state.json.
 
-    Returns (freed_capital, skip_tickers, reserved_capital) consumed by run_pipeline.
+    dry_run: when True, computes the exact same keep/sell/CC decisions and
+    queries IBKR for chains + prices, but places NO orders, writes NO state,
+    posts NO Discord alerts, and makes NO trade-log entries. Used by the
+    dashboard "Run Screener" preview so it mirrors Monday without side effects.
+
+    client_id: IBKR client id to connect with (defaults to the wheel id). The
+    API-driven runner passes a distinct id to avoid colliding with the 9:55 job.
+
+    Returns a dict: freed_capital, skip_tickers, reserved_capital, cc_premium,
+    shares_sold_pnl, active_wheel_count, wheel_activity, dry_run.
     """
+    mode = "DRY RUN" if dry_run else "LIVE"
     log.info("\n" + "=" * 65)
-    log.info(f"🔄 MONDAY WHEEL CHECK — "
+    log.info(f"🔄 MONDAY WHEEL CHECK [{mode}] — "
              f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 65)
 
@@ -541,7 +574,7 @@ def run_wheel_check() -> tuple[float, list]:
     candidate_info  = {}
     expiry          = _next_friday_expiry()
 
-    ib = _connect()
+    ib = _connect(client_id)
 
     try:
         # ── Step 0: Sync against live IBKR stock positions ────
@@ -616,7 +649,7 @@ def run_wheel_check() -> tuple[float, list]:
             if candidate_info and ticker not in candidate_info:
                 log.warning(f"  🚫 {ticker}: dropped from screener — selling shares")
                 result = _sell_stock_market(ib, ticker, shares, "dropped_screener",
-                                               assigned_strike=assigned_strike)
+                                               assigned_strike=assigned_strike, dry_run=dry_run)
                 if result["status"] == "filled":
                     proceeds = result["proceeds"]
                     realized = round(proceeds - (assigned_strike * shares), 2)
@@ -655,7 +688,7 @@ def run_wheel_check() -> tuple[float, list]:
                             f"(threshold {STOP_LOSS_PCT*100:.0f}%) — selling shares"
                         )
                         result = _sell_stock_market(ib, ticker, shares, "stop_loss",
-                                                    assigned_strike=assigned_strike)
+                                                    assigned_strike=assigned_strike, dry_run=dry_run)
                         if result["status"] == "filled":
                             proceeds = result["proceeds"]
                             realized = round(proceeds - (assigned_strike * shares), 2)
@@ -705,7 +738,7 @@ def run_wheel_check() -> tuple[float, list]:
                     log.warning(f"  🚨 {ticker}: earnings in {dte_int} day(s) — "
                                  f"selling shares to avoid earnings risk")
                     result = _sell_stock_market(ib, ticker, shares, "earnings_this_week",
-                                                   assigned_strike=assigned_strike)
+                                                   assigned_strike=assigned_strike, dry_run=dry_run)
                     if result["status"] == "filled":
                         proceeds = result["proceeds"]
                         realized = round(proceeds - (assigned_strike * shares), 2)
@@ -744,7 +777,7 @@ def run_wheel_check() -> tuple[float, list]:
                 log.warning(f"  ❌ {ticker}: no call strike with delta ≥ "
                              f"{CC_DELTA_MIN:.2f} — selling shares")
                 result = _sell_stock_market(ib, ticker, shares, "no_viable_cc",
-                                               assigned_strike=assigned_strike)
+                                               assigned_strike=assigned_strike, dry_run=dry_run)
                 if result["status"] == "filled":
                     proceeds = result["proceeds"]
                     realized = round(proceeds - (assigned_strike * shares), 2)
@@ -786,7 +819,7 @@ def run_wheel_check() -> tuple[float, list]:
 
             ref_mid      = cc_mid if (cc_mid and cc_mid > 0) else 0.50
             order_result = _sell_cc_with_escalation(
-                ib, qualified[0], shares, ticker, cc_strike, ref_mid
+                ib, qualified[0], shares, ticker, cc_strike, ref_mid, dry_run=dry_run
             )
 
             if order_result["status"] in ("filled", "partial_fill"):
@@ -811,22 +844,23 @@ def run_wheel_check() -> tuple[float, list]:
                     round(((cc_stock_price - cc_strike) / cc_stock_price) * 100, 2)
                     if cc_stock_price and cc_stock_price > 0 else None
                 )
-                try:
-                    _append_trade_log({
-                        "symbol":               ticker,
-                        "expiry":               expiry,
-                        "strike":               float(cc_strike),
-                        "right":                "C",
-                        "entry_date":           datetime.now().isoformat(),
-                        "delta_at_entry":       round(cc_delta, 4),
-                        "buffer_pct_at_entry":  buffer_pct,
-                        "premium_per_contract": fill_price,
-                        "contracts":            shares // 100,
-                        "total_premium":        prem,
-                    })
-                    log.info(f"  📝 trade_log.json: {ticker} CC recorded")
-                except Exception as tl_err:
-                    log.warning(f"  ⚠️  trade_log.json write failed: {tl_err}")
+                if not dry_run:
+                    try:
+                        _append_trade_log({
+                            "symbol":               ticker,
+                            "expiry":               expiry,
+                            "strike":               float(cc_strike),
+                            "right":                "C",
+                            "entry_date":           datetime.now().isoformat(),
+                            "delta_at_entry":       round(cc_delta, 4),
+                            "buffer_pct_at_entry":  buffer_pct,
+                            "premium_per_contract": fill_price,
+                            "contracts":            shares // 100,
+                            "total_premium":        prem,
+                        })
+                        log.info(f"  📝 trade_log.json: {ticker} CC recorded")
+                    except Exception as tl_err:
+                        log.warning(f"  ⚠️  trade_log.json write failed: {tl_err}")
             else:
                 h["cc_status"] = "failed"
                 wheel_activity.append({
@@ -844,8 +878,7 @@ def run_wheel_check() -> tuple[float, list]:
     ), 2)
     active_wheel_count = sum(1 for h in holdings if h.get("shares", 0) > 0)
 
-    state["wheel_holdings"] = holdings
-    state["monday_context"] = {
+    monday_context = {
         "skip_tickers":       skip_tickers,
         "freed_capital":      freed_capital,
         "cc_premium":         cc_premium,
@@ -855,7 +888,12 @@ def run_wheel_check() -> tuple[float, list]:
         "active_wheel_count": active_wheel_count,
         "updated":            datetime.now().isoformat()
     }
-    _save_state(state)
+    if not dry_run:
+        state["wheel_holdings"] = holdings
+        state["monday_context"] = monday_context
+        _save_state(state)
+    else:
+        log.info("  🟡 [DRY RUN] state.json NOT written — preview only")
 
     exits   = [a for a in wheel_activity if "sold" in a["action"]]
     ccs     = [a for a in wheel_activity if a["action"] == "cc_opened"]
@@ -881,7 +919,16 @@ def run_wheel_check() -> tuple[float, list]:
     log.info(f"   Active holdings:  {active_wheel_count}")
     log.info("=" * 65)
 
-    return freed_capital, skip_tickers, reserved_capital
+    return {
+        "dry_run":            dry_run,
+        "freed_capital":      freed_capital,
+        "skip_tickers":       skip_tickers,
+        "reserved_capital":   reserved_capital,
+        "cc_premium":         cc_premium,
+        "shares_sold_pnl":    shares_sold_pnl,
+        "active_wheel_count": active_wheel_count,
+        "wheel_activity":     wheel_activity,
+    }
 
 
 if __name__ == "__main__":
@@ -890,5 +937,8 @@ if __name__ == "__main__":
     if cmd == "detect":
         detect_assignments()
     else:
-        freed, skip, reserved = run_wheel_check()
-        print(f"\nFreed: ${freed:,.0f}  Skip: {skip}  Reserved: ${reserved:,.0f}")
+        dry = "--dry-run" in sys.argv or "dry" in sys.argv[2:]
+        r = run_wheel_check(dry_run=dry)
+        print(f"\n[{'DRY RUN' if dry else 'LIVE'}]  Freed: ${r['freed_capital']:,.0f}  "
+              f"Skip: {r['skip_tickers']}  Reserved: ${r['reserved_capital']:,.0f}  "
+              f"CC premium: ${r['cc_premium']:,.0f}")

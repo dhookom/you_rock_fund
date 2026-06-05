@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-3.5.0-blue)
+![Version](https://img.shields.io/badge/version-3.6.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -608,6 +608,12 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v3.6.0 (June 2026)
+- **"This Week" now mirrors Monday exactly** — a new `monday_runner.py` orchestrator is the single source of truth for the full Monday sequence (wheel check → CSP pipeline). The scheduler, **Run Now**, and **Run Screener** all call the same code, so what you preview is what executes.
+- **Run Screener = faithful dry-run preview** — previously the preview used the 10B entry screener and showed held names below the entry floor (e.g. QBTS) as *dropped*, contradicting Monday. It now runs the real wheel check in dry-run mode (queries live IBKR option chains for covered-call decisions, places no orders, writes no state) and shows a **Monday Wheel Plan**: which holdings get a CC (strike/delta/premium), which get sold, and freed capital — then sizes CSPs against that plan. Takes ~20–40s and requires the gateway up.
+- **Run Now = execute Monday on demand** — now runs the complete live sequence (sell shares, write covered calls, open CSPs), not just CSPs. A context-aware confirmation lists exactly what will execute and warns about double-execution if clicked inside the Monday 9:55/10:00 AM PT scheduled window.
+- `run_wheel_check(dry_run=...)` added with full side-effect gating (no orders, state, Discord, or trade-log writes in dry-run); returns a structured result dict. New `IBKR_CLIENT_ID_PREVIEW` (4) keeps API-driven runs from colliding with the scheduler's 9:55 wheel job.
 
 ### v3.5.0 (June 2026)
 - **Separate wheel retention market-cap floor** — market cap is an *entry* criterion (10B), but a held name that slips modestly below it shouldn't be force-sold. A new `wheel_retention_market_cap_min` setting (default $5.0B) lets the Monday wheel check keep writing covered calls on assigned positions down to a lower floor; a name is only sold if it falls below the retention floor or fails the genuine risk gates (stop loss, no viable 0.20-delta CC, earnings this week).
