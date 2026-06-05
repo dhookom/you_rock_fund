@@ -332,13 +332,16 @@ export default function ThisWeek() {
               </div>
               <div className="divide-y divide-gray-100 dark:divide-gray-800/50">
                 {screener.wheel_plan.map((a, i) => {
-                  const isCC     = a.action === 'cc_opened'
-                  const isFailed = a.action === 'cc_failed'
-                  const isSold   = typeof a.action === 'string' && a.action.startsWith('sold')
-                  const emoji    = isCC ? '✅' : isSold ? '📤' : '⚠️'
+                  const isCC       = a.action === 'cc_opened'
+                  const isFailed   = a.action === 'cc_failed'
+                  const isAlready  = a.action === 'cc_already_open' || a.action === 'held_covered'
+                  const isSold     = typeof a.action === 'string' && a.action.startsWith('sold')
+                  const emoji      = isCC ? '✅' : isAlready ? '♻️' : isSold ? '📤' : '⚠️'
                   let detail
                   if (isCC) {
                     detail = `Write CC @ $${a.cc_strike} · δ${(a.cc_delta ?? 0).toFixed(2)} · ~$${(a.cc_premium ?? 0).toLocaleString()} premium · exp ${a.cc_expiry}`
+                  } else if (isAlready) {
+                    detail = `Already covered by open CC${a.cc_expiry ? ` (exp ${a.cc_expiry}${a.contracts ? `, ${a.contracts}x` : ''})` : ''} — skip (recovery-safe)`
                   } else if (isSold) {
                     const reason = a.action.replace(/^sold_?/, '').replace(/_/g, ' ') || 'sold'
                     detail = `Sell ${a.shares ?? ''} sh (${reason}) · ~$${(a.proceeds ?? 0).toLocaleString()} proceeds · P&L $${(a.realized_pnl ?? 0).toLocaleString()}`
@@ -375,6 +378,15 @@ export default function ThisWeek() {
               </div>
             ))}
           </div>
+
+          {/* Recovery note — CSPs already open in IBKR that a re-run skips */}
+          {(screener.already_open_put_tickers ?? []).length > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-5 py-3 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+              ♻️ <span className="font-semibold">Recovery:</span> {screener.already_open_put_tickers.join(', ')} already
+              {' '}{screener.already_open_put_tickers.length === 1 ? 'has' : 'have'} an open CSP — skipped to avoid duplicates.
+              {' '}Filling {screener.target_fills} remaining slot{screener.target_fills === 1 ? '' : 's'} with available cash.
+            </div>
+          )}
 
           {/* CSP targets table */}
           {positions.length > 0 ? (

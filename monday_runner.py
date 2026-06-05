@@ -41,6 +41,37 @@ def _load_state() -> dict:
         return {}
 
 
+def _write_weekly_pnl(csp_premium: float, context: dict, fund_budget: float = 0) -> float:
+    """Assemble weekly_pnl from CSP premium + wheel-check context, persist it, and
+    post Discord results. Returns total_realized. Shared by the normal and the
+    'no remaining CSP slots' code paths so P&L is consistent either way."""
+    cc_premium      = context.get("cc_premium", 0.0)
+    shares_sold_pnl = context.get("shares_sold_pnl", 0.0)
+    total_realized  = round(csp_premium + cc_premium + shares_sold_pnl, 2)
+
+    now   = datetime.now(PST)
+    state = _load_state()
+    state["weekly_pnl"] = {
+        "week_start":      now.strftime("%Y-%m-%d"),
+        "csp_premium":     round(csp_premium, 2),
+        "cc_premium":      round(cc_premium, 2),
+        "shares_sold_pnl": round(shares_sold_pnl, 2),
+        "total_realized":  total_realized,
+        "last_updated":    datetime.now().isoformat(),
+    }
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+    try:
+        from discord_poster import is_enabled, post_weekly_results
+        if is_enabled():
+            post_weekly_results(_load_state(), fund_budget=fund_budget)
+    except Exception as e:
+        log.warning(f"  ⚠️  Discord weekly results post failed: {e}")
+
+    return total_realized
+
+
 def _fetch_account_summary(fallback: float) -> tuple[float, float]:
     """
     Fetch IBKR BuyingPower and NetLiquidation (read-only). Returns
@@ -90,23 +121,48 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
     from screener import get_top_targets
     from position_sizer import size_all
 
-    skip_tickers       = set(context.get("skip_tickers", []))
+    # Recovery dedup: tickers that already have an open short put (from the wheel
+    # check's live IBKR snapshot). We skip re-selling them and count them toward
+    # the fill target so a re-run only fills the *remaining* slots.
+    already_open_puts  = list(context.get("open_short_put_tickers", []))
+    skip_tickers       = set(context.get("skip_tickers", [])) | set(already_open_puts)
     freed_capital      = context.get("freed_capital", 0.0)
     reserved_capital   = context.get("reserved_capital", 0.0)
     active_wheel_count = context.get("active_wheel_count", 0)
+    open_csp_count     = len(already_open_puts)
 
     mode = "DRY RUN" if dry_run else "LIVE"
     log.info(f"⏰ CSP PIPELINE [{mode}]")
-    if skip_tickers:
-        log.info(f"  🚫 Skipping wheel-exit tickers: {skip_tickers}")
+    if context.get("skip_tickers"):
+        log.info(f"  🚫 Skipping wheel-exit tickers: {set(context.get('skip_tickers', []))}")
+    if already_open_puts:
+        log.info(f"  ♻️  CSP already open (recovery): {already_open_puts}")
     if freed_capital:
         log.info(f"  💰 Freed capital added to pool: ${freed_capital:,.0f}")
+
+    settings         = get_settings()
+    compound_enabled = settings.get("compound_enabled", True)
+
+    # Remaining CSP slots = total − wheel holdings − already-open CSPs
+    target_fills = max(0, NUM_POSITIONS - active_wheel_count - open_csp_count)
+
+    if target_fills <= 0:
+        log.info(f"  ✅ No remaining CSP slots to fill "
+                 f"({active_wheel_count} wheel + {open_csp_count} open CSP = {NUM_POSITIONS} cap)")
+        result = {
+            "positions": [], "raw_targets": [], "filtered_count": 0,
+            "effective_budget": 0, "target_fills": 0, "total_premium": 0,
+            "total_capital": 0, "compound_enabled": compound_enabled,
+            "already_open_put_tickers": already_open_puts,
+            "executed": not dry_run,
+        }
+        if not dry_run:
+            _write_weekly_pnl(0.0, context)
+        return result
 
     all_targets = get_top_targets(10)
     filtered_targets = [t for t in all_targets if t["ticker"] not in skip_tickers]
 
-    settings         = get_settings()
-    compound_enabled = settings.get("compound_enabled", True)
     if compound_enabled:
         if account_summary is not None:
             buying_power, net_liq = account_summary
@@ -120,7 +176,8 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
         log.info(f"  📊 Budget: base=${TOTAL_FUND_BUDGET:,.0f}  freed=${freed_capital:,.0f}  "
                  f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding OFF)")
 
-    target_fills = max(1, NUM_POSITIONS - active_wheel_count)
+    log.info(f"  🔢 Filling {target_fills} CSP slot(s)  "
+             f"({active_wheel_count} wheel + {open_csp_count} open CSP already deployed)")
     positions    = size_all(filtered_targets, budget=effective_budget,
                             num_positions=target_fills)
 
@@ -128,14 +185,15 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
     total_capital = sum(p.get("capital_used", 0) for p in positions)
 
     base = {
-        "positions":         positions,
-        "raw_targets":       all_targets,
-        "filtered_count":    len(all_targets) - len(filtered_targets),
-        "effective_budget":  effective_budget,
-        "target_fills":      target_fills,
-        "total_premium":     total_premium,
-        "total_capital":     total_capital,
-        "compound_enabled":  compound_enabled,
+        "positions":               positions,
+        "raw_targets":             all_targets,
+        "filtered_count":          len(all_targets) - len(filtered_targets),
+        "effective_budget":        effective_budget,
+        "target_fills":            target_fills,
+        "total_premium":           total_premium,
+        "total_capital":           total_capital,
+        "compound_enabled":        compound_enabled,
+        "already_open_put_tickers": already_open_puts,
     }
 
     if dry_run:
@@ -148,34 +206,12 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
     results = execute_positions(positions, extra_targets=filtered_targets,
                                 target_fills=target_fills, status_callback=progress_callback)
 
-    filled          = [r for r in results if r.get("status") in ("filled", "dry_run", "partial_fill")]
-    csp_premium     = sum(r.get("premium_collected", 0) for r in results)
-    cc_premium      = context.get("cc_premium", 0.0)
-    shares_sold_pnl = context.get("shares_sold_pnl", 0.0)
-    total_realized  = round(csp_premium + cc_premium + shares_sold_pnl, 2)
-
-    now   = datetime.now(PST)
-    state = _load_state()
-    state["weekly_pnl"] = {
-        "week_start":      now.strftime("%Y-%m-%d"),
-        "csp_premium":     round(csp_premium, 2),
-        "cc_premium":      round(cc_premium, 2),
-        "shares_sold_pnl": round(shares_sold_pnl, 2),
-        "total_realized":  total_realized,
-        "last_updated":    datetime.now().isoformat(),
-    }
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
-
-    try:
-        from discord_poster import is_enabled, post_weekly_results
-        if is_enabled():
-            post_weekly_results(_load_state(), fund_budget=effective_budget)
-    except Exception as e:
-        log.warning(f"  ⚠️  Discord weekly results post failed: {e}")
+    filled      = [r for r in results if r.get("status") in ("filled", "dry_run", "partial_fill")]
+    csp_premium = sum(r.get("premium_collected", 0) for r in results)
+    total_realized = _write_weekly_pnl(csp_premium, context, fund_budget=effective_budget)
 
     log.info(f"✅ CSP pipeline done — {len(filled)}/{target_fills} fills  "
-             f"CSP ${csp_premium:,.0f}  CC ${cc_premium:,.0f}  total ${total_realized:,.0f}")
+             f"CSP ${csp_premium:,.0f}  CC ${context.get('cc_premium', 0.0):,.0f}  total ${total_realized:,.0f}")
 
     base.update({
         "executed":      True,

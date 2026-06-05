@@ -1734,6 +1734,9 @@ def run_screener():
             "wheel_freed_capital":  wheel.get("freed_capital", 0.0),
             "wheel_cc_premium":     wheel.get("cc_premium", 0.0),
             "wheel_shares_sold_pnl": wheel.get("shares_sold_pnl", 0.0),
+            # Recovery reconciliation — positions already open in IBKR that a re-run skips:
+            "already_open_put_tickers": csp.get("already_open_put_tickers", []),
+            "target_fills":         csp.get("target_fills", 0),
             "dry_run":              True,
             "run_at":               datetime.now(PST).isoformat(),
         }

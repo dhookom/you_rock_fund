@@ -573,6 +573,11 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     wheel_activity  = []
     candidate_info  = {}
     expiry          = _next_friday_expiry()
+    # Recovery reconciliation — what is ALREADY open in IBKR (so a re-run never
+    # duplicates). Source of truth is the live account, not state.json.
+    open_short_calls       = {}     # (symbol, expiry YYYYMMDD) -> contracts short
+    open_short_put_tickers = set()  # symbols with an open short put (CSP)
+    tickers_with_open_call = set()  # symbols with any open short call (covered)
 
     ib = _connect(client_id)
 
@@ -584,6 +589,22 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
         live_pos      = ib.positions(account=ACCOUNT)
         strike_lookup = {p["ticker"]: p["strike"] for p in state.get("positions", [])}
         known_tickers = {h["ticker"] for h in holdings}
+
+        # Snapshot open option positions for recovery dedup
+        for p in live_pos:
+            c   = p.contract
+            pos = int(p.position)
+            if c.secType == "OPT" and pos < 0:
+                if c.right == "C":
+                    key = (c.symbol, c.lastTradeDateOrContractMonth)
+                    open_short_calls[key] = open_short_calls.get(key, 0) + abs(pos)
+                elif c.right == "P":
+                    open_short_put_tickers.add(c.symbol)
+        tickers_with_open_call = {sym for (sym, _exp) in open_short_calls}
+        if open_short_calls or open_short_put_tickers:
+            calls_str = ", ".join(f"{k[0]} {k[1]}×{v}" for k, v in open_short_calls.items()) or "none"
+            log.info(f"  🔎 Reconcile — open short calls: {calls_str}  |  "
+                     f"open short puts: {sorted(open_short_put_tickers) or 'none'}")
         for p in live_pos:
             if p.contract.secType == "STK" and int(p.position) > 0:
                 sym = p.contract.symbol
@@ -634,6 +655,27 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             ticker          = h["ticker"]
             shares          = h.get("shares", 0)
             assigned_strike = h.get("assigned_strike", 0.0)
+
+            # ── Recovery guard: already covered by a live short call ──
+            # If a CC is already open on this ticker, the shares are covered.
+            # On a re-run we must NOT sell them (selling would leave a naked call,
+            # and we never buy back CCs) and must NOT write a second CC. Skip the
+            # whole holding before touching weeks_held so the re-run is idempotent.
+            if shares > 0 and ticker in tickers_with_open_call:
+                on_this = (ticker, expiry) in open_short_calls
+                exps    = sorted({e for (s, e) in open_short_calls if s == ticker})
+                log.info(f"  ♻️  {ticker}: already covered by open CC (exp {', '.join(exps)}) "
+                         f"— leaving as-is (recovery-safe)")
+                h["cc_status"]    = "open"
+                h["last_checked"] = datetime.now().isoformat()
+                wheel_activity.append({
+                    "ticker":    ticker,
+                    "action":    "cc_already_open" if on_this else "held_covered",
+                    "cc_expiry": expiry if on_this else (exps[0] if exps else None),
+                    "contracts": open_short_calls.get((ticker, expiry)),
+                })
+                continue
+
             weeks_held      = h.get("weeks_held", 0) + 1
             h["weeks_held"] = weeks_held
             h["last_checked"] = datetime.now().isoformat()
@@ -879,14 +921,15 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     active_wheel_count = sum(1 for h in holdings if h.get("shares", 0) > 0)
 
     monday_context = {
-        "skip_tickers":       skip_tickers,
-        "freed_capital":      freed_capital,
-        "cc_premium":         cc_premium,
-        "shares_sold_pnl":    shares_sold_pnl,
-        "wheel_activity":     wheel_activity,
-        "reserved_capital":   reserved_capital,
-        "active_wheel_count": active_wheel_count,
-        "updated":            datetime.now().isoformat()
+        "skip_tickers":           skip_tickers,
+        "freed_capital":          freed_capital,
+        "cc_premium":             cc_premium,
+        "shares_sold_pnl":        shares_sold_pnl,
+        "wheel_activity":         wheel_activity,
+        "reserved_capital":       reserved_capital,
+        "active_wheel_count":     active_wheel_count,
+        "open_short_put_tickers": sorted(open_short_put_tickers),
+        "updated":                datetime.now().isoformat()
     }
     if not dry_run:
         state["wheel_holdings"] = holdings
@@ -920,14 +963,15 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     log.info("=" * 65)
 
     return {
-        "dry_run":            dry_run,
-        "freed_capital":      freed_capital,
-        "skip_tickers":       skip_tickers,
-        "reserved_capital":   reserved_capital,
-        "cc_premium":         cc_premium,
-        "shares_sold_pnl":    shares_sold_pnl,
-        "active_wheel_count": active_wheel_count,
-        "wheel_activity":     wheel_activity,
+        "dry_run":                dry_run,
+        "freed_capital":          freed_capital,
+        "skip_tickers":           skip_tickers,
+        "reserved_capital":       reserved_capital,
+        "cc_premium":             cc_premium,
+        "shares_sold_pnl":        shares_sold_pnl,
+        "active_wheel_count":     active_wheel_count,
+        "wheel_activity":         wheel_activity,
+        "open_short_put_tickers": sorted(open_short_put_tickers),
     }
 
 

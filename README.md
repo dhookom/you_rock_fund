@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-3.6.0-blue)
+![Version](https://img.shields.io/badge/version-3.7.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -608,6 +608,12 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v3.7.0 (June 2026)
+- **Run Now is now a recovery-safe tool** — its purpose is to complete a Monday that failed or partially filled (system down, partial fills, etc.) using whatever cash/securities are actually available. Re-running is now **idempotent**: it reconciles against the live IBKR account and only does what's *missing*, never duplicating what already succeeded.
+- **Covered-call dedup** — the wheel check snapshots open short calls from IBKR. If a holding is already covered, it is left as-is: no second (naked) call is written, and the shares are **not** sold even if the screener flipped (selling covered shares would strand a naked call, and the fund never buys back CCs). Matches ticker + this-Friday expiry.
+- **CSP dedup** — tickers that already have an open short put are skipped, counted toward the position cap, and only the *remaining* slots are filled with available cash (`NUM_POSITIONS − wheel holdings − open CSPs`).
+- The **Run Screener** preview reflects all of this: shows "already covered — skip" rows in the Monday Wheel Plan and a recovery banner listing CSPs already open. Source of truth is the live account, not `state.json`, so it's robust even if a crash skipped a state write.
 
 ### v3.6.0 (June 2026)
 - **"This Week" now mirrors Monday exactly** — a new `monday_runner.py` orchestrator is the single source of truth for the full Monday sequence (wheel check → CSP pipeline). The scheduler, **Run Now**, and **Run Screener** all call the same code, so what you preview is what executes.
