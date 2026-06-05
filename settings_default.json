@@ -7,6 +7,7 @@
   "min_buffer_pct": 0.05,
   "earnings_filter_days": 7,
   "wheel_cc_ignore_earnings_filter": false,
+  "wheel_retention_market_cap_min": 5000000000,
   "wheel_stop_loss_enabled": false,
   "stop_loss_pct": 0.10,
   "compound_enabled": true,

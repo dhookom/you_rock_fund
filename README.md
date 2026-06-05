@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Version](https://img.shields.io/badge/version-3.5.0-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -608,6 +608,11 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v3.5.0 (June 2026)
+- **Separate wheel retention market-cap floor** — market cap is an *entry* criterion (10B), but a held name that slips modestly below it shouldn't be force-sold. A new `wheel_retention_market_cap_min` setting (default $5.0B) lets the Monday wheel check keep writing covered calls on assigned positions down to a lower floor; a name is only sold if it falls below the retention floor or fails the genuine risk gates (stop loss, no viable 0.20-delta CC, earnings this week).
+- New **"Wheel Retention Mkt Cap"** slider on Settings → Screener Filters (1.0B–10.0B, 0.5B steps). New CSP entries still use the 10B entry floor.
+- `screener.get_all_candidates()` gains a `market_cap_min` override; `wheel_manager` retention check queries the screener with the retention floor instead of the entry floor.
 
 ### v3.0.0 (May 2026) 🚀
 - **Live trading support** — full paper ↔ live toggle from the Settings page. IB Gateway restarts automatically with the correct account credentials. No config file edits required.

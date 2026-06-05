@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta
 from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, WHEEL_CC_IGNORE_EARNINGS_FILTER, WHEEL_STOP_LOSS_ENABLED, STOP_LOSS_PCT
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, WHEEL_CC_IGNORE_EARNINGS_FILTER, WHEEL_RETENTION_MARKET_CAP_MIN, WHEEL_STOP_LOSS_ENABLED, STOP_LOSS_PCT
 from screener import get_all_candidates
 import discord_poster
 
@@ -585,7 +585,12 @@ def run_wheel_check() -> tuple[float, list]:
             log.info("\n📡 Fetching screener candidates...")
             if WHEEL_CC_IGNORE_EARNINGS_FILTER:
                 log.info("  ⚠️  wheel_cc_ignore_earnings_filter=true — earnings filter bypassed for CC decisions")
-            candidate_info = get_all_candidates(ignore_earnings_filter=WHEEL_CC_IGNORE_EARNINGS_FILTER)
+            log.info(f"  📉 Retention market-cap floor: ${WHEEL_RETENTION_MARKET_CAP_MIN/1e9:.1f}B "
+                     f"(vs entry floor — held names below entry floor are kept if above this)")
+            candidate_info = get_all_candidates(
+                ignore_earnings_filter=WHEEL_CC_IGNORE_EARNINGS_FILTER,
+                market_cap_min=WHEEL_RETENTION_MARKET_CAP_MIN,
+            )
             if candidate_info:
                 log.info(f"  ✅ {len(candidate_info)} ticker(s) pass screener filters")
             else:

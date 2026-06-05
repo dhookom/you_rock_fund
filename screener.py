@@ -142,7 +142,7 @@ def get_top_targets(n=5, always_include: set = None):
     print("\n" + "=" * 65)
     return top
 
-def get_all_candidates(ignore_earnings_filter=False) -> dict[str, dict]:
+def get_all_candidates(ignore_earnings_filter=False, market_cap_min=None) -> dict[str, dict]:
     """
     Returns a dict of ticker → metadata for tickers that pass all screener filters.
     Metadata keys: days_to_earnings (int|None), earnings_date (str|None).
@@ -153,11 +153,18 @@ def get_all_candidates(ignore_earnings_filter=False) -> dict[str, dict]:
     the client-side _earnings_safe() check. Used by wheel_manager for CC decisions so
     holdings with earnings in 5–7 days aren't mistakenly sold as "dropped screener".
     The wheel_manager's 0–4 day earnings-this-week hard stop still applies.
+
+    market_cap_min: when provided, overrides the entry-level market_cap_min floor.
+    Used by wheel_manager for retention decisions: market cap is an *entry* criterion,
+    so a held name that slips modestly below the 10B entry floor shouldn't be force-sold.
+    A lower retention floor still triggers a sale if the name truly deteriorates.
     """
     try:
         params = dict(PARAMS)
         if ignore_earnings_filter:
             params["earnings_days_hide"] = 0
+        if market_cap_min is not None:
+            params["market_cap_min"] = market_cap_min
         response = requests.get(URL, params=params, timeout=60)
         response.raise_for_status()
         rows = response.json().get("rows", [])
