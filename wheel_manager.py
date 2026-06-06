@@ -420,8 +420,10 @@ def _sell_cc_with_escalation(ib: IB, contract, shares: int, ticker: str,
 
 def detect_assignments():
     """
-    Friday 4:15PM PST — scan IBKR for stock positions and reconcile
-    against known wheel_holdings. New assignments are added with the
+    Saturday 8AM PST — scan IBKR for stock positions and reconcile
+    against known wheel_holdings. Runs Saturday morning (not Friday
+    afternoon) so IBKR has posted the prior day's option assignments
+    and expirations overnight. New assignments are added with the
     assigned strike looked up from that week's state.json positions.
     Holdings whose CC has expired and are no longer in IBKR are
     recognized as called away and removed from wheel_holdings.
@@ -429,7 +431,7 @@ def detect_assignments():
     Returns list of called-away holding dicts (may be empty).
     """
     log.info("\n" + "=" * 65)
-    log.info(f"🔍 FRIDAY ASSIGNMENT DETECTION — "
+    log.info(f"🔍 SATURDAY ASSIGNMENT DETECTION — "
              f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 65)
 

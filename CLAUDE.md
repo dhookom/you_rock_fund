@@ -41,7 +41,7 @@ cat state.json               # Full system state (see schema below)
 
 | Day/Time (PST) | Job | Module |
 |---|---|---|
-| Friday 4:15PM | Assignment detection | `wheel_manager.detect_assignments()` |
+| Saturday 8:00AM | Assignment detection | `wheel_manager.detect_assignments()` |
 | Saturday 6:00PM | Screener preview | `screener` + `position_sizer` |
 | Monday 9:55AM | Wheel check: stop loss sells + covered calls | `wheel_manager.run_wheel_check()` |
 | Monday 10:00AM | CSP pipeline: screen → size → execute | `trader.execute_positions()` |

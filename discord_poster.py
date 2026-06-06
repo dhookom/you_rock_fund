@@ -508,7 +508,7 @@ def post_emergency_share_sale(result: dict):
     })
 
 
-def post_friday_summary(state: dict, called_away: list, new_assignments: list,
+def post_weekly_review(state: dict, called_away: list, new_assignments: list,
                         fund_budget: float = 250_000):
     """
     Post Friday end-of-week summary — how every position resolved.

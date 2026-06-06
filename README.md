@@ -15,7 +15,7 @@ An automated Python algorithmic options trading system that generates weekly inc
 | Monday* | 9:55 AM | Wheel check — stop losses + sell covered calls on assigned stocks |
 | Monday* | 10:00 AM | CSP execution — screen → size → execute 5 positions |
 | Tuesday–Thursday | 9:00 AM | Daily risk monitor — checks stop loss thresholds, logs P&L |
-| Friday | 4:15 PM | Assignment detection — checks for newly assigned positions |
+| Saturday | 8:00 AM | Assignment detection — checks for newly assigned positions (after IBKR posts overnight) |
 | Wednesday–Friday | 3:00 AM | Auto-update check — pulls latest release if enabled in Settings |
 
 *Shifts to Tuesday when Monday is a market holiday.
@@ -492,8 +492,8 @@ YRVI can post trade results to a Discord channel automatically. This is entirely
 |-------|------|---------|
 | Pre-execution preview | Monday 9:50AM | Sized positions with strikes, contracts, estimated premium |
 | Weekly results | Monday ~10:30AM | CSP/CC/stop-loss P&L, week yield %, YTD stats |
-| Assignment alert | Friday 4:15PM | Newly assigned stocks with stop-loss prices |
-| Called-away alert | Friday 4:15PM | CC-covered shares called away at expiry |
+| Assignment alert | Saturday 8:00AM | Newly assigned stocks with stop-loss prices |
+| Called-away alert | Saturday 8:00AM | CC-covered shares called away at expiry |
 | End-of-week summary | Friday ~4:20PM | Called-away recap, open wheel positions, weekly P&L |
 | Gateway watchdog alert | As needed | Gateway down / restarting / back online notifications |
 

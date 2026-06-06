@@ -208,17 +208,20 @@ def run_screener_preview():
         loop.close()
 
 
-# ── Friday 4:15PM — assignment detection ──────────────────────
+# ── Saturday 8AM — assignment detection ───────────────────────
+# Runs Saturday morning (not Friday afternoon) so IBKR has posted the
+# prior day's option assignments/expirations overnight. Detecting on
+# Friday 4:15PM misreported assigned puts as "expired worthless".
 
 def run_assignment_detection():
     loop = _new_loop()
     now  = datetime.now(PST)
     if is_market_holiday(now.date()):
-        log.info(f"⏭️  FRIDAY ASSIGNMENT DETECTION skipped — market holiday ({now.strftime('%Y-%m-%d')})")
+        log.info(f"⏭️  SATURDAY ASSIGNMENT DETECTION skipped — market holiday ({now.strftime('%Y-%m-%d')})")
         loop.close()
         return
     log.info("\n" + "=" * 65)
-    log.info(f"🔍 FRIDAY ASSIGNMENT DETECTION — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
+    log.info(f"🔍 SATURDAY ASSIGNMENT DETECTION — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("=" * 65)
     try:
         from wheel_manager import detect_assignments
@@ -227,7 +230,7 @@ def run_assignment_detection():
 
         called_away = detect_assignments()
 
-        from discord_poster import is_enabled, post_friday_summary
+        from discord_poster import is_enabled, post_weekly_review
         if is_enabled():
             state_after  = _load_state()
             today        = now.date().isoformat()
@@ -236,11 +239,11 @@ def run_assignment_detection():
                             and h.get("assignment_date") == today]
             settings      = _load_settings()
             fund_budget   = settings.get("fund_budget", TOTAL_FUND_BUDGET)
-            post_friday_summary(state_after, called_away or [], new_ones,
+            post_weekly_review(state_after, called_away or [], new_ones,
                                 fund_budget=fund_budget)
     except Exception as e:
         log.error(f"❌ Assignment detection error: {e}", exc_info=True)
-        _discord_alert(f"🚨 **YRVI** Friday assignment detection failed: `{type(e).__name__}: {e}`")
+        _discord_alert(f"🚨 **YRVI** Saturday assignment detection failed: `{type(e).__name__}: {e}`")
     finally:
         loop.close()
 
@@ -479,8 +482,8 @@ def main():
     )
     scheduler.add_job(
         run_assignment_detection,
-        trigger="cron", day_of_week="fri", hour=16, minute=15,
-        id="friday_assignment", name="Friday Assignment Detection"
+        trigger="cron", day_of_week="sat", hour=8, minute=0,
+        id="saturday_assignment", name="Saturday Assignment Detection"
     )
     scheduler.add_job(
         run_discord_preview,
