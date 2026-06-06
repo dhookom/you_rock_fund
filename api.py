@@ -1723,7 +1723,11 @@ def run_screener():
             "total_capital":      total_capital,
             "blended_yield":      round(total_premium / total_capital * 100 if total_capital else 0, 3),
             "budget":               csp.get("effective_budget", 0),
-            "total_budget":         (account_summary[0] if account_summary else initial_fund_budget),
+            # Display top-line for the Capital Allocation waterfall. Use the real
+            # net liq (account_summary[1]) — NOT account_summary[0], which is
+            # min(BuyingPower, NetLiq) and on cash/Roth accounts resolves to
+            # buying power, breaking the "net liq − reserved = available" math.
+            "total_budget":         (account_summary[1] if account_summary else initial_fund_budget),
             "initial_fund_budget":  initial_fund_budget,
             "compound_enabled":     csp.get("compound_enabled", compound_enabled),
             "reserved_capital":     wheel.get("reserved_capital", 0.0),
