@@ -121,7 +121,11 @@ export default function ThisWeek() {
     setLoading(true)
     setError(null)
     try {
-      const res = await axios.get('/api/screener', { timeout: 60000 })
+      // Backend dry-run connects to IBKR, queries option chains for every wheel
+      // holding, AND hits the Render screener API (which can cold-start ~60s on
+      // its own). With multiple wheels active this routinely exceeds 60s, so give
+      // it generous headroom rather than aborting a run that's still working.
+      const res = await axios.get('/api/screener', { timeout: 150000 })
       setScreener(res.data)
       setRunAt(new Date())
     } catch (err) {

@@ -14,6 +14,41 @@ PARAMS = {
     "hide_red": True
 }
 
+# ── Render cold-start warm-up ─────────────────────────────────
+# The ledger-sync service runs on Render's free tier, which spins the instance
+# down after ~15 min idle. The screener is only hit ~twice a week, so it is
+# almost always cold, and a cold boot (30–60s) would otherwise eat into the 60s
+# query timeout below and make the real request fail. We poll the cheap /health
+# endpoint first so boot time never counts against the data query.
+_HEALTH_URL = URL.split("/api/")[0].rstrip("/") + "/health"
+
+def _warm_up(max_wait: int = 90) -> None:
+    """Block until the Render instance answers /health (or max_wait elapses).
+
+    Best-effort: a healthy warm instance returns in <1s and this is a no-op;
+    a cold instance is woken and we wait for it. Never raises — if warm-up
+    fails we still attempt the real query (which has its own timeout)."""
+    import time
+    poll_timeout = 15
+    deadline = time.time() + max_wait
+    attempt  = 0
+    # Stop starting new polls once the remaining budget can't fit another full
+    # request timeout, so max_wait stays an honest ceiling rather than being
+    # overshot by a final in-flight poll.
+    while time.time() + poll_timeout <= deadline:
+        attempt += 1
+        try:
+            r = requests.get(_HEALTH_URL, timeout=poll_timeout)
+            if r.status_code == 200:
+                if attempt > 1:
+                    print(f"✅ Render instance warm after {attempt} health pings")
+                return
+        except requests.RequestException:
+            pass  # cold/booting — keep polling
+        time.sleep(3)
+    print(f"⚠️  Render /health not ready after {max_wait}s — querying anyway")
+
+
 # ── Hard filters ──────────────────────────────────────────────
 MAX_DELTA           = 0.21
 MIN_BUFFER_PCT      = 0.05
@@ -53,6 +88,7 @@ def score_target(row: dict) -> float:
 
 def get_top_targets(n=5, always_include: set = None):
     print(f"\n📡 Fetching CSP targets from Render API...")
+    _warm_up()
     response = requests.get(URL, params=PARAMS, timeout=60)
     response.raise_for_status()
 
@@ -165,6 +201,7 @@ def get_all_candidates(ignore_earnings_filter=False, market_cap_min=None) -> dic
             params["earnings_days_hide"] = 0
         if market_cap_min is not None:
             params["market_cap_min"] = market_cap_min
+        _warm_up()
         response = requests.get(URL, params=params, timeout=60)
         response.raise_for_status()
         rows = response.json().get("rows", [])
