@@ -159,48 +159,40 @@ def run_screener_preview():
     log.info(f"📋 SATURDAY PREVIEW — {now.strftime('%A %Y-%m-%d %H:%M %Z')}")
     log.info("=" * 65)
     try:
-        from screener import get_top_targets
-        from position_sizer import size_all
-
-        state        = _load_state()
-        holdings     = state.get("wheel_holdings", [])
-        active       = [h for h in holdings if h.get("shares", 0) > 0]
-        held_map     = {h["ticker"]: h for h in active}
-        reserved     = round(sum(
-            h.get("shares", 0) * h.get("assigned_strike", 0.0) for h in active
-        ), 2)
-        active_count = len(active)
-        all_targets  = get_top_targets(10, always_include=set(held_map.keys()))
-
-        # Split: tickers we already hold → CC; everything else → CSP
-        cc_targets  = []
-        csp_targets = []
-        for t in all_targets:
-            if t["ticker"] in held_map:
-                t["action_type"] = "CC"
-                t["shares"]      = held_map[t["ticker"]]["shares"]
-                cc_targets.append(t)
-            else:
-                csp_targets.append(t)
+        # Delegate to the shared Monday runner (dry_run) so the Saturday Discord
+        # preview is the EXACT same plan as the dashboard's Run Screener / This
+        # Week and Monday's live run — same CSP sizing and the same wheel-check
+        # decisions (CC / defer / sell). A user checking Discord sees what they'd
+        # see on the dashboard, even when away from their system.
+        from monday_runner import run_monday
 
         settings         = _load_settings()
         compound_enabled = settings.get("compound_enabled", True)
-        if compound_enabled:
-            # BuyingPower from IBKR already reflects all open positions (including manual
-            # trades outside the app and wheel stock), so use it directly as the CSP budget.
-            buying_power, _ = _fetch_account_summary(TOTAL_FUND_BUDGET)
-            budget          = buying_power
-        else:
-            budget = TOTAL_FUND_BUDGET - reserved
-        positions    = size_all(csp_targets, budget=budget, num_positions=NUM_POSITIONS,
-                                cc_targets=cc_targets)
-        exec_time    = settings.get("execution_time", "10:00")
-        log.info(f"\n📋 {len(positions)} positions queued for Monday {exec_time} PST  "
-                 f"(budget=${budget:,.0f}{'  compounding ON' if compound_enabled else ''})")
+        fund_budget      = settings.get("fund_budget", TOTAL_FUND_BUDGET)
+
+        # Pre-fetch the account summary so the dry preview reuses a single
+        # read-only connection for budgeting (mirrors the dashboard path and
+        # avoids a second IBKR connect inside the CSP pipeline).
+        account_summary = _fetch_account_summary(fund_budget) if compound_enabled else None
+
+        outcome   = run_monday(dry_run=True, account_summary=account_summary)
+        wheel     = outcome.get("wheel", {})
+        csp       = outcome.get("csp", {})
+        positions = csp.get("positions", [])
+
+        exec_time = settings.get("execution_time", "10:00")
+        log.info(f"\n📋 {len(positions)} CSP(s) queued for Monday {exec_time} PST  "
+                 f"(budget=${csp.get('effective_budget', 0):,.0f}"
+                 f"{'  compounding ON' if compound_enabled else ''})")
 
         from discord_poster import is_enabled, post_weekly_plan
         if is_enabled():
-            post_weekly_plan(positions)
+            post_weekly_plan(
+                positions,
+                wheel_plan=wheel.get("wheel_activity", []),
+                freed_capital=wheel.get("freed_capital", 0.0),
+                cc_premium=wheel.get("cc_premium", 0.0),
+            )
             log.info("✅ Weekly plan posted to Discord")
     except Exception as e:
         log.error(f"❌ Preview error: {e}", exc_info=True)

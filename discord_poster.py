@@ -252,8 +252,47 @@ def _yield_emoji(yield_pct: float) -> str:
     return "🔴"
 
 
-def post_weekly_plan(positions: list):
-    """Post Saturday evening weekly trading plan to Discord."""
+def _wheel_plan_lines(wheel_plan: list) -> list:
+    """Render wheel-check decisions as Discord lines, mirroring the This Week
+    'Monday Wheel Plan' rows (CC opened / deferred / already-covered / sold)."""
+    lines = []
+    for a in wheel_plan or []:
+        action = a.get("action", "")
+        ticker = a.get("ticker", "?")
+        if action == "cc_opened":
+            lines.append(
+                f"✅ **{ticker}** — Write CC @ {_fmt_strike(a.get('cc_strike'))} | "
+                f"δ{a.get('cc_delta', 0):.2f} | ~${a.get('cc_premium', 0):,.0f} | exp {a.get('cc_expiry', '?')}"
+            )
+        elif action == "cc_deferred":
+            lines.append(
+                f"⏳ **{ticker}** — CC priced Monday at open (market closed); "
+                f"{a.get('shares', '')} sh kept, no sale"
+            )
+        elif action in ("cc_already_open", "held_covered"):
+            exp = a.get("cc_expiry")
+            lines.append(f"♻️ **{ticker}** — Already covered by open CC"
+                         + (f" (exp {exp})" if exp else "") + " — skip")
+        elif action == "cc_failed":
+            lines.append(f"⚠️ **{ticker}** — CC could not be priced @ {_fmt_strike(a.get('cc_strike'))}")
+        elif isinstance(action, str) and action.startswith("sold"):
+            reason = action.replace("sold_", "").replace("_", " ") or "sold"
+            lines.append(
+                f"📤 **{ticker}** — Sell {a.get('shares', '')} sh ({reason}) | "
+                f"~${a.get('proceeds', 0):,.0f} proceeds | P&L ${a.get('realized_pnl', 0):,.0f}"
+            )
+        else:
+            lines.append(f"• **{ticker}** — {action}")
+    return lines
+
+
+def post_weekly_plan(positions: list, wheel_plan: list = None,
+                     freed_capital: float = 0.0, cc_premium: float = 0.0):
+    """Post Saturday evening weekly trading plan to Discord.
+
+    wheel_plan (optional): wheel-check decisions from run_monday's dry-run, shown
+    as a 'Monday Wheel Plan' section so Discord mirrors the This Week dashboard.
+    """
     if not WEBHOOK_URL:
         return
 
@@ -296,17 +335,33 @@ def post_weekly_plan(positions: list):
     blended_yield = (total_premium / total_capital * 100) if total_capital else 0.0
     run_time = now.strftime("%I:%M %p %Z").lstrip("0")
 
+    fields = [
+        {"name": "Capital Deployed", "value": f"${total_capital:,.0f}", "inline": True},
+        {"name": "Est. Premium",     "value": f"${total_premium:,.0f}", "inline": True},
+        {"name": "Blended Yield",    "value": f"{blended_yield:.2f}%",  "inline": True},
+    ]
+
+    # Monday Wheel Plan — mirrors the This Week dashboard section so Discord
+    # shows the same CC / defer / sell decisions for held positions.
+    wheel_lines = _wheel_plan_lines(wheel_plan)
+    if wheel_lines:
+        body = "\n".join(wheel_lines)
+        if len(body) > 1024:                      # Discord field value hard cap
+            body = body[:1000].rsplit("\n", 1)[0] + "\n… (truncated)"
+        fields.append({
+            "name":  f"🗓️ Monday Wheel Plan  ·  CC ${cc_premium:,.0f} · Freed ${freed_capital:,.0f}",
+            "value": body,
+            "inline": False,
+        })
+
+    fields.append({"name": "​", "value": "Results posted Monday after execution ✅",
+                   "inline": False})
+
     _post({"embeds": [{
         "title":       f"📋 YRVI Week of {next_monday} — Trading Plan [{mode_label}]",
-        "description": "\n".join(lines) if lines else "No positions sized.",
+        "description": "\n".join(lines) if lines else "No CSP positions sized.",
         "color":       0x0099FF,
-        "fields": [
-            {"name": "Capital Deployed", "value": f"${total_capital:,.0f}", "inline": True},
-            {"name": "Est. Premium",     "value": f"${total_premium:,.0f}", "inline": True},
-            {"name": "Blended Yield",    "value": f"{blended_yield:.2f}%",  "inline": True},
-            {"name": "​",           "value": "Results posted Monday after execution ✅",
-             "inline": False},
-        ],
+        "fields":      fields,
         "footer":    {"text": f"Screener run {run_time} · {_VERSION} · {mode_label}"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]})
