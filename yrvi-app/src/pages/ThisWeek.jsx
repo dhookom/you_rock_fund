@@ -29,6 +29,33 @@ function fmtDate(s) {
   } catch { return s }
 }
 
+// Ticks once per second while `active`, resetting to 0 each time it turns on.
+// Drives the dry-run progress display so a 1–2 min preview never looks frozen.
+function useElapsedSeconds(active) {
+  const [secs, setSecs] = useState(0)
+  useEffect(() => {
+    if (!active) { setSecs(0); return }
+    const start = Date.now()
+    const id = setInterval(() => setSecs(Math.floor((Date.now() - start) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [active])
+  return secs
+}
+
+// Approximate phases of the /api/screener dry-run, in real execution order.
+// Thresholds are rough (the wheel check dominates and scales with wheel count);
+// the live elapsed counter is the true "still working" signal.
+const PREVIEW_STAGES = [
+  { at: 0,  text: 'Connecting to IBKR…' },
+  { at: 3,  text: 'Pricing covered calls on your wheel holdings (the slow step)…' },
+  { at: 35, text: 'Fetching CSP candidates and sizing positions…' },
+]
+function previewStage(secs) {
+  let stage = PREVIEW_STAGES[0].text
+  for (const s of PREVIEW_STAGES) if (secs >= s.at) stage = s.text
+  return stage
+}
+
 export default function ThisWeek() {
   const [screener, setScreener]       = useState(null)
   const [status, setStatus]           = useState(null)
@@ -38,6 +65,7 @@ export default function ThisWeek() {
   const [manualRunning, setManualRunning] = useState(false)
   const [manualMsg, setManualMsg]     = useState(null)
   const [runStatus, setRunStatus]     = useState(null)
+  const elapsed = useElapsedSeconds(loading)
 
   useEffect(() => {
     axios.get('/api/status').then(r => setStatus(r.data)).catch(() => {})
@@ -233,8 +261,10 @@ export default function ThisWeek() {
       {loading && (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4" />
-          <div className="text-gray-600 dark:text-gray-400">Previewing Monday — wheel check + screener + sizer...</div>
-          <div className="text-gray-500 dark:text-gray-600 text-sm mt-1">Querying IBKR option chains for covered-call decisions — ~20–40 seconds</div>
+          <div className="text-gray-600 dark:text-gray-400">{previewStage(elapsed)}</div>
+          <div className="text-gray-500 dark:text-gray-600 text-sm mt-1">
+            Previewing Monday — wheel check + screener + sizer · {elapsed}s elapsed · usually 1–2 min
+          </div>
         </div>
       )}
 

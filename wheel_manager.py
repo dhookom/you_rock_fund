@@ -201,16 +201,23 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     log.info(f"  📊 {ticker}: scanning {len(candidates)} call strike(s) "
              f"[${candidates[0]:.2f}–${candidates[-1]:.2f}] on {expiry}")
 
-    # Qualify all option contracts up front
-    q_pairs: list[tuple[float, object]] = []
-    for strike in candidates:
-        opt = Option(ticker, expiry, strike, "C", "SMART", currency="USD")
-        try:
-            q = ib.qualifyContracts(opt)
-            if q:
-                q_pairs.append((strike, q[0]))
-        except Exception:
-            continue
+    # Qualify all option contracts in a single batched round-trip. ib_insync's
+    # qualifyContracts(*contracts) pipelines the underlying reqContractDetails
+    # calls concurrently and returns only those it could resolve — far faster
+    # than awaiting one call per strike (the dominant cost of the chain scan,
+    # ~0.3-0.5s × up to MAX_CC_STRIKES). Behavior is unchanged: same strikes are
+    # qualified, and unlisted strikes are simply absent from the result.
+    opts = [Option(ticker, expiry, s, "C", "SMART", currency="USD")
+            for s in candidates]
+    try:
+        qualified_opts = ib.qualifyContracts(*opts)
+    except Exception as e:
+        log.warning(f"  ⚠️  {ticker}: batch contract qualification failed — {e}")
+        qualified_opts = []
+    # Map each qualified contract back to its strike (set in-place by qualify).
+    q_pairs: list[tuple[float, object]] = [
+        (o.strike, o) for o in qualified_opts if getattr(o, "conId", 0)
+    ]
 
     if not q_pairs:
         log.warning(f"  ⚠️  {ticker}: no call contracts qualified on {expiry}")
