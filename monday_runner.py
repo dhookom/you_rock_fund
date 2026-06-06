@@ -173,8 +173,17 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
             buying_power, net_liq = account_summary
         else:
             buying_power, net_liq = _fetch_account_summary(fund_budget)
-        effective_budget = buying_power + freed_capital
-        log.info(f"  📊 Budget: buying_power=${buying_power:,.0f}  freed=${freed_capital:,.0f}  "
+        # Exclude capital already tied up in wheel holdings. buying_power is
+        # min(BuyingPower, NetLiq): for cash/Roth accounts BuyingPower already
+        # excludes wheel stock, but on margin/paper accounts it resolves to
+        # NetLiq, which INCLUDES the wheel stock — so without this cap we'd
+        # secure new CSPs with capital that's already deployed. Capping at
+        # net_liq − reserved removes that double-count; min() keeps whichever
+        # basis is tighter, and it's a no-op when there are no wheel holdings.
+        capped_budget    = min(buying_power, net_liq - reserved_capital)
+        effective_budget = capped_budget + freed_capital
+        log.info(f"  📊 Budget: buying_power=${buying_power:,.0f}  net_liq=${net_liq:,.0f}  "
+                 f"reserved=${reserved_capital:,.0f}  freed=${freed_capital:,.0f}  "
                  f"effective=${effective_budget:,.0f}  (compounding ON)")
     else:
         effective_budget = fund_budget + freed_capital - reserved_capital
