@@ -334,12 +334,15 @@ export default function ThisWeek() {
                 {screener.wheel_plan.map((a, i) => {
                   const isCC       = a.action === 'cc_opened'
                   const isFailed   = a.action === 'cc_failed'
+                  const isDeferred = a.action === 'cc_deferred'
                   const isAlready  = a.action === 'cc_already_open' || a.action === 'held_covered'
                   const isSold     = typeof a.action === 'string' && a.action.startsWith('sold')
-                  const emoji      = isCC ? '✅' : isAlready ? '♻️' : isSold ? '📤' : '⚠️'
+                  const emoji      = isCC ? '✅' : isDeferred ? '⏳' : isAlready ? '♻️' : isSold ? '📤' : '⚠️'
                   let detail
                   if (isCC) {
                     detail = `Write CC @ $${a.cc_strike} · δ${(a.cc_delta ?? 0).toFixed(2)} · ~$${(a.cc_premium ?? 0).toLocaleString()} premium · exp ${a.cc_expiry}`
+                  } else if (isDeferred) {
+                    detail = `CC priced Monday at open — market closed, ${a.shares ?? ''} sh kept (no sale)`
                   } else if (isAlready) {
                     detail = `Already covered by open CC${a.cc_expiry ? ` (exp ${a.cc_expiry}${a.contracts ? `, ${a.contracts}x` : ''})` : ''} — skip (recovery-safe)`
                   } else if (isSold) {
@@ -360,7 +363,7 @@ export default function ThisWeek() {
                 })}
               </div>
               <div className="px-5 py-2 text-xs text-gray-400 dark:text-gray-600 border-t border-gray-100 dark:border-gray-800/50">
-                Covered-call strikes/deltas are from live IBKR option-chain queries — this mirrors Monday's wheel check.
+                Covered-call strikes/deltas come from IBKR option-chain queries (delayed-frozen on a closed market, i.e. Friday's close) — this mirrors Monday's wheel check. ⏳ rows are holdings whose CC can't be priced until Monday's open; shares are kept, not sold.
               </div>
             </div>
           )}

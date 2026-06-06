@@ -34,6 +34,11 @@ MARKET_POLL_SECS = 5
 CC_DELTA_MIN     = 0.20   # minimum call delta required to sell a covered call
 MAX_CC_STRIKES   = 25     # max option strikes to evaluate per holding
 
+# Sentinel distinguishing "IBKR returned no greeks at all" (can't price the CC —
+# e.g. market closed during a weekend preview) from a genuine "greeks came back
+# but none reached CC_DELTA_MIN" (None). Only the latter should sell shares.
+CC_NO_DATA       = "NO_DATA"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)s  %(message)s",
@@ -146,13 +151,17 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     The assigned_strike is always included in the scan even if below the
     effective price floor, so its delta can be evaluated.
 
-    Returns (strike, delta, mid_price, stock_price) or None if no viable strike.
+    Returns (strike, delta, mid_price, stock_price), or:
+      • CC_NO_DATA — IBKR returned no greeks/chain at all (can't price; e.g. a
+        weekend preview with the market closed). Caller should NOT sell shares.
+      • None       — greeks came back but no strike reached CC_DELTA_MIN
+        (a genuine no-viable-CC outcome). Caller may sell shares.
     """
     stock = Stock(ticker, "SMART", "USD")
     q_stock = ib.qualifyContracts(stock)
     if not q_stock:
         log.warning(f"  ⚠️  {ticker}: cannot qualify stock for option chain lookup")
-        return None
+        return CC_NO_DATA
 
     stock_data = ib.reqMktData(q_stock[0], "", snapshot=True)
     ib.sleep(2)
@@ -162,7 +171,7 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     chains = ib.reqSecDefOptParams(ticker, "", "STK", q_stock[0].conId)
     if not chains:
         log.warning(f"  ⚠️  {ticker}: IBKR returned no option chain data")
-        return None
+        return CC_NO_DATA
 
     all_strikes: set[float] = set()
     for chain in chains:
@@ -171,7 +180,7 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
 
     if not all_strikes:
         log.warning(f"  ⚠️  {ticker}: expiry {expiry} not listed in option chain")
-        return None
+        return CC_NO_DATA
 
     price_floor     = current_price * 0.95 if current_price > 0 else assigned_strike
     effective_floor = max(assigned_strike, price_floor) if assigned_strike > 0 else price_floor
@@ -205,7 +214,7 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
 
     if not q_pairs:
         log.warning(f"  ⚠️  {ticker}: no call contracts qualified on {expiry}")
-        return None
+        return CC_NO_DATA
 
     # Open all market data streams simultaneously — one sleep covers all
     streams: dict[float, tuple[object, object]] = {}
@@ -242,8 +251,9 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     ib.sleep(0.5)
 
     if not results:
-        log.warning(f"  ⚠️  {ticker}: no delta data returned for any call strike")
-        return None
+        log.warning(f"  ⚠️  {ticker}: no delta data returned for any call strike "
+                    f"(market likely closed — cannot price CC right now)")
+        return CC_NO_DATA
 
     results.sort(key=lambda x: x[0])  # ascending by strike
 
@@ -583,6 +593,16 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
 
     ib = _connect(client_id)
 
+    # In a preview (dry_run) the market is usually closed (weekend / pre-open),
+    # so the default delayed feed (type 3) returns no option greeks and every
+    # holding would look like "no viable CC". Switch to delayed-frozen (type 4),
+    # which serves the last snapshot (Friday's close) and needs no OPRA
+    # entitlement on paper or live, so we can still price CCs for the preview.
+    # The live 9:55 run keeps type 3 — the market is open then.
+    if dry_run:
+        ib.reqMarketDataType(4)
+        log.info("  🧊 Preview: using delayed-frozen market data (last/Friday close)")
+
     try:
         # ── Step 0: Sync against live IBKR stock positions ────
         # Catches assignments that detect_assignments() may have missed on Friday.
@@ -817,6 +837,23 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             cc_info = _find_cc_strike(ib, ticker, expiry, assigned_strike)
 
             # ── Step 4: Decision ──────────────────────────────
+            # CC_NO_DATA means IBKR couldn't price any call (no greeks) — almost
+            # always a closed market during a weekend preview. Don't sell shares
+            # on missing data: defer the CC decision to Monday's open and keep
+            # the shares. (Live runs happen while the market is open, so this
+            # path is effectively preview-only; if it ever hits live, deferring
+            # and keeping shares is the safe choice over dumping on a data gap.)
+            if cc_info == CC_NO_DATA:
+                log.info(f"  ⏳ {ticker}: CC cannot be priced now "
+                         f"(market closed) — deferring to Monday open, keeping shares")
+                wheel_activity.append({
+                    "ticker": ticker,
+                    "action": "cc_deferred",
+                    "shares": shares,
+                })
+                h["cc_status"] = "pending"
+                continue
+
             if cc_info is None:
                 log.warning(f"  ❌ {ticker}: no call strike with delta ≥ "
                              f"{CC_DELTA_MIN:.2f} — selling shares")
