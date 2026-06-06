@@ -140,15 +140,20 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
     if freed_capital:
         log.info(f"  💰 Freed capital added to pool: ${freed_capital:,.0f}")
 
+    # Read sizing settings LIVE so the long-running scheduler matches the
+    # module-reloading preview/Run-Now paths — Run Screener, Run Now and the
+    # live 9:55 run all size against the same num_positions / fund_budget.
     settings         = get_settings()
     compound_enabled = settings.get("compound_enabled", True)
+    num_positions    = settings.get("num_positions", NUM_POSITIONS)
+    fund_budget      = settings.get("fund_budget", TOTAL_FUND_BUDGET)
 
     # Remaining CSP slots = total − wheel holdings − already-open CSPs
-    target_fills = max(0, NUM_POSITIONS - active_wheel_count - open_csp_count)
+    target_fills = max(0, num_positions - active_wheel_count - open_csp_count)
 
     if target_fills <= 0:
         log.info(f"  ✅ No remaining CSP slots to fill "
-                 f"({active_wheel_count} wheel + {open_csp_count} open CSP = {NUM_POSITIONS} cap)")
+                 f"({active_wheel_count} wheel + {open_csp_count} open CSP = {num_positions} cap)")
         result = {
             "positions": [], "raw_targets": [], "filtered_count": 0,
             "effective_budget": 0, "target_fills": 0, "total_premium": 0,
@@ -167,13 +172,13 @@ def run_csp_pipeline(context: dict, dry_run: bool = False,
         if account_summary is not None:
             buying_power, net_liq = account_summary
         else:
-            buying_power, net_liq = _fetch_account_summary(TOTAL_FUND_BUDGET)
+            buying_power, net_liq = _fetch_account_summary(fund_budget)
         effective_budget = buying_power + freed_capital
         log.info(f"  📊 Budget: buying_power=${buying_power:,.0f}  freed=${freed_capital:,.0f}  "
                  f"effective=${effective_budget:,.0f}  (compounding ON)")
     else:
-        effective_budget = TOTAL_FUND_BUDGET + freed_capital - reserved_capital
-        log.info(f"  📊 Budget: base=${TOTAL_FUND_BUDGET:,.0f}  freed=${freed_capital:,.0f}  "
+        effective_budget = fund_budget + freed_capital - reserved_capital
+        log.info(f"  📊 Budget: base=${fund_budget:,.0f}  freed=${freed_capital:,.0f}  "
                  f"reserved=${reserved_capital:,.0f}  effective=${effective_budget:,.0f}  (compounding OFF)")
 
     log.info(f"  🔢 Filling {target_fills} CSP slot(s)  "

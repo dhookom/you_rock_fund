@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta
 from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, WHEEL_CC_IGNORE_EARNINGS_FILTER, WHEEL_RETENTION_MARKET_CAP_MIN, WHEEL_STOP_LOSS_ENABLED, STOP_LOSS_PCT
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, get_settings
 from screener import get_all_candidates
 import discord_poster
 
@@ -578,6 +578,17 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     state    = _load_state()
     holdings = state.get("wheel_holdings", [])
 
+    # Read wheel settings LIVE at execution time (not the import-time config
+    # constants). The API preview/Run-Now paths reload config before calling, but
+    # the long-running scheduler does not — reading get_settings() here makes the
+    # live Monday job honor the current Settings toggles too, so Run Screener,
+    # Run Now and the live 9:55 run all act on the same values.
+    _s                        = get_settings()
+    cc_ignore_earnings        = _s.get("wheel_cc_ignore_earnings_filter", False)
+    retention_market_cap_min  = _s.get("wheel_retention_market_cap_min", 5_000_000_000)
+    stop_loss_enabled         = _s.get("wheel_stop_loss_enabled", False)
+    stop_loss_pct             = _s.get("stop_loss_pct", 0.10)
+
     freed_capital   = 0.0
     skip_tickers    = []
     cc_premium      = 0.0
@@ -659,13 +670,13 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
         else:
             # Screener candidates (Steps 1 & 2 prerequisite)
             log.info("\n📡 Fetching screener candidates...")
-            if WHEEL_CC_IGNORE_EARNINGS_FILTER:
+            if cc_ignore_earnings:
                 log.info("  ⚠️  wheel_cc_ignore_earnings_filter=true — earnings filter bypassed for CC decisions")
-            log.info(f"  📉 Retention market-cap floor: ${WHEEL_RETENTION_MARKET_CAP_MIN/1e9:.1f}B "
+            log.info(f"  📉 Retention market-cap floor: ${retention_market_cap_min/1e9:.1f}B "
                      f"(vs entry floor — held names below entry floor are kept if above this)")
             candidate_info = get_all_candidates(
-                ignore_earnings_filter=WHEEL_CC_IGNORE_EARNINGS_FILTER,
-                market_cap_min=WHEEL_RETENTION_MARKET_CAP_MIN,
+                ignore_earnings_filter=cc_ignore_earnings,
+                market_cap_min=retention_market_cap_min,
             )
             if candidate_info:
                 log.info(f"  ✅ {len(candidate_info)} ticker(s) pass screener filters")
@@ -738,18 +749,18 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             log.info(f"  ✅ {ticker} on screener — checking stop loss")
 
             # ── Step 1b: Stop-loss check ──────────────────────
-            if WHEEL_STOP_LOSS_ENABLED and assigned_strike > 0:
+            if stop_loss_enabled and assigned_strike > 0:
                 current_price = _get_stock_price(ib, ticker)
                 if current_price is None:
                     log.warning(f"  ⚠️  {ticker}: price unavailable — skipping stop-loss check")
                 else:
-                    stop_threshold = round(assigned_strike * (1 - STOP_LOSS_PCT), 2)
+                    stop_threshold = round(assigned_strike * (1 - stop_loss_pct), 2)
                     loss_pct       = round((1 - current_price / assigned_strike) * 100, 1)
                     if current_price < stop_threshold:
                         log.warning(
                             f"  🛑 {ticker}: price ${current_price:.2f} is {loss_pct:.1f}% below "
                             f"assigned strike ${assigned_strike:.2f} "
-                            f"(threshold {STOP_LOSS_PCT*100:.0f}%) — selling shares"
+                            f"(threshold {stop_loss_pct*100:.0f}%) — selling shares"
                         )
                         result = _sell_stock_market(ib, ticker, shares, "stop_loss",
                                                     assigned_strike=assigned_strike, dry_run=dry_run)
@@ -777,7 +788,7 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
                     else:
                         log.info(
                             f"  ✅ {ticker}: price ${current_price:.2f}  "
-                            f"({loss_pct:.1f}% below strike — within {STOP_LOSS_PCT*100:.0f}% threshold)"
+                            f"({loss_pct:.1f}% below strike — within {stop_loss_pct*100:.0f}% threshold)"
                             if current_price < assigned_strike else
                             f"  ✅ {ticker}: price ${current_price:.2f} (above assigned strike)"
                         )
@@ -785,8 +796,8 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             log.info(f"  ✅ {ticker}: stop-loss check passed — checking earnings")
 
             # ── Step 2: Earnings check ────────────────────────
-            # Skipped entirely when WHEEL_CC_IGNORE_EARNINGS_FILTER is True.
-            if not WHEEL_CC_IGNORE_EARNINGS_FILTER:
+            # Skipped entirely when wheel_cc_ignore_earnings_filter is True.
+            if not cc_ignore_earnings:
                 ticker_info      = candidate_info.get(ticker, {})
                 days_to_earnings = ticker_info.get("days_to_earnings")
                 try:
