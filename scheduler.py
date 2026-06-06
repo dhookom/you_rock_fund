@@ -128,13 +128,28 @@ def _load_settings() -> dict:
     except FileNotFoundError:
         return {}
 
+# Earliest allowed Monday execution. The wheel check runs 5 min before execution
+# and MUST be both after the 6:30 AM PST open (to price CCs) and before the CSP
+# pipeline (to free capital first). 7:00 puts the wheel check at 6:55 — ~25 min
+# after open — which is safe on live AND on paper's 15-min-delayed feed. Anything
+# earlier would run the wheel check at/pre-open with no greeks (no CCs written).
+_MIN_EXEC_HOUR = 7
+_MIN_EXEC_MIN  = 0
+
 def _parse_exec_time(settings: dict) -> tuple:
-    """Return (hour, minute) PST for configured Monday execution time."""
+    """Return (hour, minute) PST for configured Monday execution time, floored to
+    the earliest safe time so the wheel check never lands at/before market open."""
     try:
         h, m = map(int, settings.get("execution_time", "10:00").split(":"))
-        return h, m
     except Exception:
         return 10, 0
+    if (h, m) < (_MIN_EXEC_HOUR, _MIN_EXEC_MIN):
+        log.warning(f"⚠️  Configured execution_time {h:02d}:{m:02d} is earlier than the "
+                    f"{_MIN_EXEC_HOUR:02d}:{_MIN_EXEC_MIN:02d} floor — the wheel check would run "
+                    f"at/before market open with no option greeks. Using "
+                    f"{_MIN_EXEC_HOUR:02d}:{_MIN_EXEC_MIN:02d} instead.")
+        return _MIN_EXEC_HOUR, _MIN_EXEC_MIN
+    return h, m
 
 def _offset_time(hour: int, minute: int, delta_minutes: int) -> tuple:
     """Subtract delta_minutes from (hour, minute), return new (hour, minute)."""

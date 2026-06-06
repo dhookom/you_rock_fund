@@ -5,7 +5,7 @@ detect_assignments() — Friday 4:15PM PST
     Scan IBKR for stock positions created by put assignments.
     Persist to state.json["wheel_holdings"].
 
-run_wheel_check() — Monday 9:55AM PST (runs before CSP pipeline)
+run_wheel_check() — Monday, 5 min before the configured execution time (runs before CSP pipeline)
     For each held stock, four-step evaluation:
       Step 1  Screener check: if ticker dropped from screener → sell at market
       Step 2  Option chain: prefer assigned_strike call if delta >= 0.20;
@@ -546,7 +546,8 @@ def detect_assignments():
 
 def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     """
-    Monday 9:55AM PST — five-step evaluation for each held stock:
+    Monday, 5 min before the configured execution time (PST) — five-step
+    evaluation for each held stock:
 
       Step 1  Screener check — if ticker no longer passes screener filters,
               sell all shares at market and free capital.
@@ -564,7 +565,7 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     dashboard "Run Screener" preview so it mirrors Monday without side effects.
 
     client_id: IBKR client id to connect with (defaults to the wheel id). The
-    API-driven runner passes a distinct id to avoid colliding with the 9:55 job.
+    API-driven runner passes a distinct id to avoid colliding with the scheduled wheel job.
 
     Returns a dict: freed_capital, skip_tickers, reserved_capital, cc_premium,
     shares_sold_pnl, active_wheel_count, wheel_activity, dry_run.

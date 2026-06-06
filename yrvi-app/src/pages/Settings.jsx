@@ -3,9 +3,14 @@ import axios from 'axios'
 import { Save, AlertTriangle, CheckCircle, Send, Sun, Moon, Monitor, RefreshCw, Power, RotateCcw, Upload, Download, RotateCw, ExternalLink, KeyRound } from 'lucide-react'
 import { useThemeContext } from '../ThemeProvider.jsx'
 
+// Earliest allowed execution is 07:00 PST. The wheel check runs 5 min before
+// execution and must land after the 6:30 open (to price CCs) yet before the CSP
+// pipeline. 7:00 → wheel check at 6:55 (~25 min post-open), safe on live AND on
+// paper's 15-min-delayed feed. The scheduler enforces the same floor server-side.
+const MIN_EXEC_TIME = '07:00'
+
 const PRESET_TIMES = [
-  { value: '06:30', et: '9:30 AM ET',  note: 'Market Open — live only' },
-  { value: '07:00', et: '10:00 AM ET', note: '30 min after open' },
+  { value: '07:00', et: '10:00 AM ET', note: '30 min after open — earliest' },
   { value: '07:30', et: '10:30 AM ET', note: '1 hr after open' },
   { value: '08:00', et: '11:00 AM ET', note: '' },
   { value: '09:00', et: '12:00 PM ET', note: 'Noon ET' },
@@ -635,9 +640,9 @@ export default function SettingsPage() {
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
             Earlier = less liquidity and wider spreads.
             10:00 AM PST (1:00 PM ET) recommended for best fill prices.
-            {settings.execution_time === '06:30' && (
+            {/^\d{2}:\d{2}$/.test(settings.execution_time || '') && settings.execution_time < MIN_EXEC_TIME && (
               <span className="block mt-1 text-amber-600 dark:text-amber-500">
-                ⚠ 6:30 AM (market open) requires a live account — paper accounts use delayed data that isn't available at open.
+                ⚠ Earliest allowed is 7:00 AM PST. The wheel check runs 5 min before execution and must price covered calls after the open — anything earlier has no option data. The scheduler will use 7:00 AM if you save an earlier time.
               </span>
             )}
           </div>

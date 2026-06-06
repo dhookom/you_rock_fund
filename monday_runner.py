@@ -2,7 +2,7 @@
 Monday runner — the single source of truth for "what happens on Monday".
 
 The exact same code path is used by:
-  • scheduler.py        — Mon 9:55 wheel check + Mon 10:00 CSP pipeline (live)
+  • scheduler.py        — Mon wheel check (exec−5) + CSP pipeline (configured exec time) (live)
   • Run Now    (api)    — execute the full Monday sequence on demand (live)
   • Run Screener (api)  — preview the full Monday sequence (dry_run, no side effects)
 
