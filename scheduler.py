@@ -480,7 +480,14 @@ def main():
         h12  = h % 12 or 12
         return f"{h12}:{m:02d} {ampm} PST"
 
-    scheduler = BlockingScheduler(timezone=PST)
+    # job_defaults: survive brief host suspends (e.g. laptop maintenance sleep).
+    # If the host freezes across a job's fire time, run it on wake as long as we
+    # woke within 30 min — bounded so an overnight/weekend sleep can't fire a
+    # trade hours late. coalesce collapses a backlog into a single run.
+    scheduler = BlockingScheduler(
+        timezone=PST,
+        job_defaults={"misfire_grace_time": 1800, "coalesce": True},
+    )
 
     scheduler.add_job(
         run_screener_preview,

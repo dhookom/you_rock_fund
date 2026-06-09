@@ -1,3 +1,7 @@
+## [3.9.9] — 2026-06-09
+### Fixed
+- **Scheduler dropped Monday's run when the host briefly slept** — the live MacBook Pro runs lid-closed and kept entering macOS "Maintenance Sleep" even on AC, freezing the Docker VM for stretches of seconds to ~18 min. While suspended the scheduler couldn't run, so the heartbeat went stale (every "stale/resumed" Discord alert) and, on Mon 6/8, the box was asleep across the 07:20–07:45 trade window. With APScheduler's default `misfire_grace_time` of 1s, the Discord preview, wheel check, and CSP execution were all silently skipped — no trades ran. The `BlockingScheduler` now uses `job_defaults={"misfire_grace_time": 1800, "coalesce": True}` so a job whose fire time is missed during a brief host suspend still runs on wake (bounded to 30 min so an overnight/weekend sleep can't fire a trade hours late). Host-side fix (disable sleep) applied separately on the live machine.
+
 ## [3.4.6] — 2026-06-04
 ### Fixed
 - **Windows setup: secrets browser never opened** — `setup_docker.sh` Step 2 launched the secrets page with `cmd.exe /c start "$URL"`, but Windows `start` treats the first quoted argument as the window title, so it opened an empty window instead of the browser. With no timeout on the secrets wait loop and no CLI fallback, Windows setup appeared to hang at Step 2. Now uses `start "" "$URL"` (empty title) on both the Git Bash and WSL paths so the browser actually launches. Confirmed live on a fresh GEEKOM A5 (Win 11 Pro).
