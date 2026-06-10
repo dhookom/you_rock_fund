@@ -18,7 +18,7 @@ plan so the dashboard can show exactly what Monday will do.
 """
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import (
@@ -50,9 +50,13 @@ def _write_weekly_pnl(csp_premium: float, context: dict, fund_budget: float = 0)
     total_realized  = round(csp_premium + cc_premium + shares_sold_pnl, 2)
 
     now   = datetime.now(PST)
+    # Key the week by its Monday — same convention as reconciler._week_monday —
+    # so an off-Monday run (holiday, misfire recovery, manual Run Now) overwrites
+    # rather than spawning a second ytd_tracker row the Flex merge then preserves.
+    week_monday = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
     state = _load_state()
     state["weekly_pnl"] = {
-        "week_start":      now.strftime("%Y-%m-%d"),
+        "week_start":      week_monday,
         "csp_premium":     round(csp_premium, 2),
         "cc_premium":      round(cc_premium, 2),
         "shares_sold_pnl": round(shares_sold_pnl, 2),

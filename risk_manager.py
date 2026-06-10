@@ -11,7 +11,7 @@ run_daily_monitor():
 """
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from ib_insync import IB, Stock
 
@@ -97,8 +97,16 @@ def _build_weekly_pnl(state: dict) -> dict:
 
     total_realized = round(csp_premium + cc_premium + shares_sold_pnl, 2)
 
+    # Floor run_date to its Monday so this matches reconciler / monday_runner keying.
+    _rd = state.get("run_date", "")[:10]
+    if _rd:
+        _d = date.fromisoformat(_rd)
+        week_start = (_d - timedelta(days=_d.weekday())).strftime("%Y-%m-%d")
+    else:
+        week_start = ""
+
     return {
-        "week_start":           state.get("run_date", "")[:10],
+        "week_start":           week_start,
         "csp_premium":          round(csp_premium, 2),
         "cc_premium":           round(cc_premium, 2),
         "shares_sold_pnl":      round(shares_sold_pnl, 2),
