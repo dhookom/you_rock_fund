@@ -164,6 +164,8 @@ export default function SettingsPage() {
   const [manualPremium, setManualPremium]     = useState('')
   const [manualSaving, setManualSaving]       = useState(false)
   const [showManual, setShowManual]           = useState(false)
+  const [confirmDelete, setConfirmDelete]     = useState(null) // week_start pending delete confirm
+  const [deleting, setDeleting]               = useState(false)
   const fileInputRef                          = useRef(null)
 
   const { theme, setTheme } = useThemeContext()
@@ -1198,23 +1200,48 @@ export default function SettingsPage() {
                         ${(w.premium_collected ?? w.realized ?? 0).toLocaleString()}
                       </td>
                       <td className="py-1 text-right">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!confirm(`Remove week ${w.week_start}?`)) return
-                            try {
-                              await axios.delete(`/api/ytd/weeks/${w.week_start}`)
-                              const r = await axios.get('/api/performance')
-                              setYtdWeeks(r.data.weeks || [])
-                              setReconMsg({ type: 'success', text: `Removed week ${w.week_start}` })
-                            } catch (e) {
-                              setReconMsg({ type: 'error', text: e?.response?.data?.detail || 'Delete failed' })
-                            }
-                          }}
-                          className="text-red-400 hover:text-red-600 text-[10px] px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
-                        >
-                          remove
-                        </button>
+                        {confirmDelete === w.week_start ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-500">Remove?</span>
+                            <button
+                              type="button"
+                              disabled={deleting}
+                              onClick={async () => {
+                                setDeleting(true)
+                                try {
+                                  await axios.delete(`/api/ytd/weeks/${w.week_start}`)
+                                  const r = await axios.get('/api/performance')
+                                  setYtdWeeks(r.data.weeks || [])
+                                  setReconMsg({ type: 'success', text: `Removed week ${w.week_start}` })
+                                } catch (e) {
+                                  setReconMsg({ type: 'error', text: e?.response?.data?.detail || 'Delete failed' })
+                                } finally {
+                                  setDeleting(false)
+                                  setConfirmDelete(null)
+                                }
+                              }}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 disabled:cursor-wait"
+                            >
+                              {deleting ? '…' : 'yes'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deleting}
+                              onClick={() => setConfirmDelete(null)}
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                            >
+                              no
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDelete(w.week_start)}
+                            className="text-red-400 hover:text-red-600 text-[10px] px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                          >
+                            remove
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
