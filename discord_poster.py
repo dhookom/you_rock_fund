@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
-from config import MAX_PER_POSITION, TRADING_MODE, ACCOUNT
+from config import MAX_PER_POSITION, TRADING_MODE, ACCOUNT, MODE_LABEL
 from secrets_client import get_secret
 
 load_dotenv()
@@ -23,7 +23,7 @@ ANNUAL_TARGET = 100_000
 
 _version_file = Path(__file__).parent / "VERSION"
 _VERSION = f"v{_version_file.read_text().strip()}" if _version_file.exists() else "unknown"
-_FOOTER  = f"You Rock Volatility Income Fund · {_VERSION}"
+_FOOTER  = f"You Rock Volatility Income Fund · {_VERSION} · {MODE_LABEL}"
 
 COLOR_GREEN  = 0x2ECC71   # yield ≥ 1%
 COLOR_YELLOW = 0xF1C40F   # yield 0.5–1%

@@ -7,7 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from config import NUM_POSITIONS, TOTAL_FUND_BUDGET, IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, get_settings
+from config import NUM_POSITIONS, TOTAL_FUND_BUDGET, IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, get_settings, MODE_LABEL
 from secrets_client import get_secret
 from market_calendar import is_first_trading_day_of_week, is_market_holiday
 
@@ -63,7 +63,7 @@ def _discord_alert(message: str) -> None:
         _vf = Path(__file__).parent / "VERSION"
         _v  = f"v{_vf.read_text().strip()}" if _vf.exists() else "?"
         _tag = f"`{_v} · {ACCOUNT}`" if ACCOUNT else f"`{_v}`"
-        requests.post(webhook_url, json={"content": f"{message}\n{_tag}"}, timeout=5)
+        requests.post(webhook_url, json={"content": f"{message}\n{MODE_LABEL} · {_tag}"}, timeout=5)
     except Exception as e:
         log.warning(f"Discord alert failed: {e}")
 

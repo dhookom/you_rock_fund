@@ -30,6 +30,9 @@ def account_type_for_port(port: int) -> str:
 
 
 ACCOUNT_TYPE = account_type_for_port(IBKR_PORT)
+# Human-readable badge for Discord alerts so every message says which account
+# it came from (live MacBook vs paper mini) at a glance.
+MODE_LABEL   = "🔴 LIVE" if ACCOUNT_TYPE == "live" else "📄 PAPER"
 
 
 def probe_port(host: str, port: int, timeout: float = 3.0) -> bool:
