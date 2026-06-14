@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from ib_insync import IB, Option, Stock, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, NUM_POSITIONS, TOTAL_FUND_BUDGET, MAX_PER_POSITION, DRY_RUN, get_settings
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, ACCOUNT, NUM_POSITIONS, TOTAL_FUND_BUDGET, MAX_PER_POSITION, DRY_RUN, get_settings, ACCOUNT_TYPE, gateway_unreachable_message, probe_port
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +51,7 @@ def _append_trade_log(record: dict) -> None:
 
 
 def connect() -> IB:
-    account_type = "paper" if IBKR_PORT == 4002 else "live"
+    log.info(f"🔌 Connecting to IB Gateway {IBKR_HOST}:{IBKR_PORT} ({ACCOUNT_TYPE}, clientId={IBKR_CLIENT_ID})")
     for attempt in range(1, 4):
         try:
             ib = IB()
@@ -61,13 +61,14 @@ def connect() -> IB:
             _wait_for_usopt(ib)
             return ib
         except TimeoutError:
-            log.warning(f"⚠️  IBKR connect attempt {attempt}/3 timed out ({account_type}, {IBKR_HOST}:{IBKR_PORT})")
+            port_open = probe_port(IBKR_HOST, IBKR_PORT)
+            log.warning(
+                f"⚠️  IBKR connect attempt {attempt}/3 timed out ({ACCOUNT_TYPE}, {IBKR_HOST}:{IBKR_PORT}) — "
+                f"TCP port {'OPEN (API handshake hung)' if port_open else 'CLOSED (gateway not listening)'}"
+            )
             if attempt < 3:
                 time.sleep(10)
-    raise TimeoutError(
-        f"IB Gateway unreachable at {IBKR_HOST}:{IBKR_PORT} ({account_type} account) — "
-        f"is IB Gateway running? {'No 2FA needed for paper.' if account_type == 'paper' else 'Check 2FA login.'}"
-    )
+    raise TimeoutError(gateway_unreachable_message(IBKR_HOST, IBKR_PORT))
 
 
 def _wait_for_usopt(ib: IB, timeout: int = 30) -> None:

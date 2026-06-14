@@ -15,7 +15,7 @@ from datetime import datetime, date, timedelta
 
 from ib_insync import IB, Stock
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_RISK, ACCOUNT
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_RISK, ACCOUNT, ACCOUNT_TYPE, gateway_unreachable_message, probe_port
 from screener import get_all_candidates
 
 STATE_FILE = "state.json"
@@ -47,8 +47,17 @@ def _save_state(state: dict):
 
 
 def _connect() -> IB:
+    log.info(f"🔌 Connecting to IB Gateway {IBKR_HOST}:{IBKR_PORT} ({ACCOUNT_TYPE}, clientId={IBKR_CLIENT_ID_RISK})")
     ib = IB()
-    ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID_RISK)
+    try:
+        ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID_RISK)
+    except TimeoutError:
+        port_open = probe_port(IBKR_HOST, IBKR_PORT)
+        log.warning(
+            f"⚠️  IBKR connect timed out ({ACCOUNT_TYPE}, {IBKR_HOST}:{IBKR_PORT}) — "
+            f"TCP port {'OPEN (API handshake hung)' if port_open else 'CLOSED (gateway not listening)'}"
+        )
+        raise TimeoutError(gateway_unreachable_message(IBKR_HOST, IBKR_PORT))
     ib.reqMarketDataType(3)
     log.info(f"✅ Connected to IBKR (clientId={IBKR_CLIENT_ID_RISK})")
     return ib

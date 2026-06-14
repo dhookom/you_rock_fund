@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta
 from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
-from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, get_settings
+from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, get_settings, ACCOUNT_TYPE, gateway_unreachable_message, probe_port
 from screener import get_all_candidates
 import discord_poster
 
@@ -87,7 +87,7 @@ def _save_state(state: dict):
 
 def _connect(client_id: int = None) -> IB:
     client_id = client_id if client_id is not None else IBKR_CLIENT_ID_WHEEL
-    account_type = "paper" if IBKR_PORT == 4002 else "live"
+    log.info(f"🔌 Connecting to IB Gateway {IBKR_HOST}:{IBKR_PORT} ({ACCOUNT_TYPE}, clientId={client_id})")
     for attempt in range(1, 4):
         try:
             ib = IB()
@@ -96,13 +96,14 @@ def _connect(client_id: int = None) -> IB:
             log.info(f"✅ Connected to IBKR (clientId={client_id})")
             return ib
         except TimeoutError:
-            log.warning(f"⚠️  IBKR connect attempt {attempt}/3 timed out ({account_type}, {IBKR_HOST}:{IBKR_PORT})")
+            port_open = probe_port(IBKR_HOST, IBKR_PORT)
+            log.warning(
+                f"⚠️  IBKR connect attempt {attempt}/3 timed out ({ACCOUNT_TYPE}, {IBKR_HOST}:{IBKR_PORT}) — "
+                f"TCP port {'OPEN (API handshake hung)' if port_open else 'CLOSED (gateway not listening)'}"
+            )
             if attempt < 3:
                 time.sleep(10)
-    raise TimeoutError(
-        f"IB Gateway unreachable at {IBKR_HOST}:{IBKR_PORT} ({account_type} account) — "
-        f"is IB Gateway running? {'No 2FA needed for paper.' if account_type == 'paper' else 'Check 2FA login.'}"
-    )
+    raise TimeoutError(gateway_unreachable_message(IBKR_HOST, IBKR_PORT))
 
 
 def _is_nan(val) -> bool:
