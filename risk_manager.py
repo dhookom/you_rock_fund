@@ -144,7 +144,9 @@ def run_daily_monitor():
 
     # Fetch screener tickers once — used for all holdings
     log.info("\n📡 Checking screener eligibility...")
-    screener_tickers = get_all_candidates()
+    # Held-position membership check: use retention mode so a held name isn't
+    # flagged "dropped from screener" over an entry-only delta/buffer miss.
+    screener_tickers = get_all_candidates(retention=True)
     if screener_tickers:
         log.info(f"  {len(screener_tickers)} ticker(s) currently pass screener filters")
     else:

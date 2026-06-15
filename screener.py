@@ -178,7 +178,8 @@ def get_top_targets(n=5, always_include: set = None):
     print("\n" + "=" * 65)
     return top
 
-def get_all_candidates(ignore_earnings_filter=False, market_cap_min=None) -> dict[str, dict]:
+def get_all_candidates(ignore_earnings_filter=False, market_cap_min=None,
+                       retention=False) -> dict[str, dict]:
     """
     Returns a dict of ticker → metadata for tickers that pass all screener filters.
     Metadata keys: days_to_earnings (int|None), earnings_date (str|None).
@@ -194,6 +195,13 @@ def get_all_candidates(ignore_earnings_filter=False, market_cap_min=None) -> dic
     Used by wheel_manager for retention decisions: market cap is an *entry* criterion,
     so a held name that slips modestly below the 10B entry floor shouldn't be force-sold.
     A lower retention floor still triggers a sale if the name truly deteriorates.
+
+    retention: when True, skips the entry-only put-delta cap (MAX_DELTA) and buffer
+    floor (MIN_BUFFER_PCT). Those describe the *new* put we'd sell to open a position,
+    not whether a company we already hold is still wheel-worthy. Applying them to a
+    retention check force-sells held names over a borderline 20-delta (e.g. 0.219 vs
+    0.21) or buffer miss. Used by wheel_manager/risk_manager for held-position checks;
+    mirrors the market_cap_min retention override above.
     """
     try:
         params = dict(PARAMS)
@@ -221,11 +229,13 @@ def get_all_candidates(ignore_earnings_filter=False, market_cap_min=None) -> dic
             return 99
 
     rows = [r for r in rows if _dte(r) >= MIN_DAYS_TO_EXPIRY]
-    rows = [r for r in rows if abs(r.get("put_20d_delta", -1)) <= MAX_DELTA]
 
-    for r in rows:
-        r["_buffer_pct"] = (r["latest_price"] - r["put_20d_strike"]) / r["latest_price"]
-    rows = [r for r in rows if r["_buffer_pct"] >= MIN_BUFFER_PCT]
+    # Entry-only strike-selection filters: skipped in retention mode (see docstring).
+    if not retention:
+        rows = [r for r in rows if abs(r.get("put_20d_delta", -1)) <= MAX_DELTA]
+        for r in rows:
+            r["_buffer_pct"] = (r["latest_price"] - r["put_20d_strike"]) / r["latest_price"]
+        rows = [r for r in rows if r["_buffer_pct"] >= MIN_BUFFER_PCT]
 
     if not ignore_earnings_filter:
         safe_rows = []

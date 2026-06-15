@@ -695,6 +695,7 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             candidate_info = get_all_candidates(
                 ignore_earnings_filter=cc_ignore_earnings,
                 market_cap_min=retention_market_cap_min,
+                retention=True,
             )
             if candidate_info:
                 log.info(f"  ✅ {len(candidate_info)} ticker(s) pass screener filters")
