@@ -266,7 +266,7 @@ def _wheel_plan_lines(wheel_plan: list) -> list:
             )
         elif action == "cc_deferred":
             lines.append(
-                f"⏳ **{ticker}** — CC priced Monday at open (market closed); "
+                f"⏳ **{ticker}** — CC could not be priced (deferred); "
                 f"{a.get('shares', '')} sh kept, no sale"
             )
         elif action in ("cc_already_open", "held_covered"):

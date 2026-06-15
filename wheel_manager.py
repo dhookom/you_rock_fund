@@ -23,6 +23,7 @@ from ib_insync import IB, Stock, Option, LimitOrder, MarketOrder
 
 from config import IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID_WHEEL, ACCOUNT, get_settings, ACCOUNT_TYPE, gateway_unreachable_message, probe_port
 from screener import get_all_candidates
+from market_calendar import is_market_holiday
 import discord_poster
 
 STATE_FILE       = "state.json"
@@ -133,7 +134,15 @@ def _next_friday_expiry() -> str:
     days_ahead = 4 - today.weekday()   # Monday=0 → days_ahead=4 (this Friday)
     if days_ahead <= 0:
         days_ahead += 7
-    return (today + timedelta(days=days_ahead)).strftime("%Y%m%d")
+    expiry = today + timedelta(days=days_ahead)
+    # When that Friday is a market holiday (e.g. Juneteenth), weekly options
+    # roll their expiration back to the prior trading day — usually Thursday.
+    # Without this the chain lookup asks for a date IBKR never lists and the CC
+    # is silently deferred. The CSP path avoids this because it uses the
+    # screener's actual tradable expiry.
+    while is_market_holiday(expiry):
+        expiry -= timedelta(days=1)
+    return expiry.strftime("%Y%m%d")
 
 
 # ── Option chain ───────────────────────────────────────────────
@@ -857,15 +866,14 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             cc_info = _find_cc_strike(ib, ticker, expiry, assigned_strike)
 
             # ── Step 4: Decision ──────────────────────────────
-            # CC_NO_DATA means IBKR couldn't price any call (no greeks) — almost
-            # always a closed market during a weekend preview. Don't sell shares
-            # on missing data: defer the CC decision to Monday's open and keep
-            # the shares. (Live runs happen while the market is open, so this
-            # path is effectively preview-only; if it ever hits live, deferring
-            # and keeping shares is the safe choice over dumping on a data gap.)
+            # CC_NO_DATA means _find_cc_strike couldn't price any call — the
+            # specific reason (market closed during a weekend preview, an
+            # unlisted/holiday expiry, no chain, or a live data gap) is already
+            # logged above by _find_cc_strike. Don't sell shares on missing
+            # data: defer the CC decision and keep the shares either way.
             if cc_info == CC_NO_DATA:
-                log.info(f"  ⏳ {ticker}: CC cannot be priced now "
-                         f"(market closed) — deferring to Monday open, keeping shares")
+                log.info(f"  ⏳ {ticker}: CC could not be priced "
+                         f"(see reason above) — deferring, keeping shares")
                 wheel_activity.append({
                     "ticker": ticker,
                     "action": "cc_deferred",
