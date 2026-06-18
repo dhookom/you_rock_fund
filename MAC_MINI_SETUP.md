@@ -317,7 +317,33 @@ docker compose --env-file .env.compose restart ib_gateway
 | Containers don't start after reboot | Open Docker Desktop manually and wait for "Engine running", then run `./setup_docker.sh --paper` |
 | Dashboard shows Gateway red | Run `docker compose --env-file .env.compose logs -f ib_gateway` and check for errors |
 | Secret files missing error | Run `./setup_docker.sh --paper` — secrets are re-fetched from the secrets container |
-| IB Gateway needs 2FA | Set the VNC password at `http://localhost:8001`, recreate gateway, connect via Finder → Go → Connect to Server → `vnc://localhost:5900` |
+| IB Gateway needs 2FA | Set the VNC password at `http://localhost:8001`, recreate gateway, then connect to the gateway screen on port 5900 — via Finder → Go → Connect to Server → `vnc://localhost:5900`, **or** RealVNC Viewer (see below). |
+
+### Remote Access to the IB Gateway Screen (RealVNC Viewer)
+
+The IB Gateway **container** already serves its own VNC on **port 5900** — that's how
+you reach the login/2FA screen. [RealVNC Viewer](https://www.realvnc.com/en/connect/download/viewer/)
+is a great client for it: nicer than Finder's "Connect to Server," and it runs on
+**Windows** too, so you can babysit a 2FA from any machine.
+
+> ✅ This is **client-side only** — you are *connecting to* the container's VNC, not
+> running a VNC **server** on the Mac. So there is **no port-5900 conflict** (unlike
+> enabling macOS Screen Sharing, which would try to *bind* 5900 itself — see Phase 2).
+> Install RealVNC **Viewer**, not RealVNC **Server**. Recommended on **both minis**.
+
+**Setup (do this on each machine you'll connect *from*):**
+1. Download and install **RealVNC Viewer** (free) — Mac or Windows.
+2. Set the gateway's VNC password once at `http://localhost:8001` (on the mini).
+3. In RealVNC Viewer, add a new connection:
+   - **Address (on the mini itself):** `localhost:5900`
+   - **Address (from another machine over LAN/VPN):** `<mini-ip>:5900` (e.g. `192.168.5.67:5900`)
+   - **Name:** `IB-Gateway <mini> 5900`
+   - **Encryption:** *Let the remote device choose*
+4. Connect and enter the VNC password from step 2. You'll see the gateway desktop —
+   complete the IB Key 2FA there (live) or confirm the auto-login (paper).
+
+> 💡 The Viewer thumbnail shows the gateway's status bars at a glance, so it doubles as
+> a quick "is the gateway alive?" check without opening a full session.
 
 ---
 
