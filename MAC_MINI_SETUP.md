@@ -8,7 +8,7 @@ This guide walks You Rock Club members through setting up a Mac Mini as a dedica
 
 | Component | Spec | Notes |
 |-----------|------|-------|
-| Computer | Mac Mini M4 (Apple Silicon) | M4 Pro (48GB) is ideal but base M4 works fine |
+| Computer | Mac Mini M4 (Apple Silicon) | M4 Pro (48GB) is ideal but base M4 works fine. Intel minis (macOS 15+) also work — see Intel notes in Phases 3–4. All images build locally on the device, so amd64 builds natively. |
 | RAM | 16GB minimum | Base config is fine for YRVI |
 | Storage | 256GB SSD | Base config is fine |
 | Network | Ethernet (recommended) | More reliable than WiFi |
@@ -107,10 +107,19 @@ A popup will appear — click **Install** (not "Get Xcode"). Takes a few minutes
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-### 3. Add Homebrew to PATH (required on Apple Silicon)
+### 3. Add Homebrew to PATH (Apple Silicon only)
 ```bash
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
+
+> **⚠️ Intel Macs:** Homebrew installs to `/usr/local`, **not** `/opt/homebrew`. The
+> line above will silently fail on an Intel mini. On Intel, `/usr/local/bin` is
+> already on the default PATH, so you usually don't need a shellenv line at all —
+> just run `brew --version` (Step below) and if it works, skip this step. If it
+> reports "command not found," use the Intel path instead:
+> ```bash
+> echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile && eval "$(/usr/local/bin/brew shellenv)"
+> ```
 
 Verify:
 ```bash
@@ -138,7 +147,7 @@ Choose: **GitHub.com → SSH → Yes → Login with a web browser** — this upl
 
 ## Phase 4 — Docker Desktop
 
-1. Download **Docker Desktop for Mac (Apple Silicon)** from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+1. Download **Docker Desktop for Mac** from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) — choose the **Apple Silicon** build for M-series minis, or the **Intel chip** build for an Intel mini
 2. Drag Docker to Applications and open it
 3. Accept the license agreement
 4. At setup: select **Use recommended settings** → Finish
