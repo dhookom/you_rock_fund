@@ -97,6 +97,14 @@ The Mac Mini runs headless and must never **system-sleep**, or macOS freezes the
   - Turn **Power Nap OFF** if shown (avoids maintenance wake/sleep cycles).
 - Display sleep itself is harmless on a headless box, but you can set it to **Never** too.
 
+**Or set it all from the terminal (equivalent, also persistent):**
+```bash
+sudo pmset -a sleep 0          # never system-sleep (the one that matters)
+sudo pmset -a autorestart 1    # power back on automatically after an outage
+sudo pmset -a powernap 0       # no maintenance wake/sleep cycles
+```
+Verify: `pmset -g | grep -iE "^ *sleep |autorestart|powernap"` → expect `sleep 0`, `autorestart 1`, `powernap 0`.
+
 > **Mac mini vs. a lid-closed MacBook — do you need `pmset disablesleep 1`?**
 > **No, not on a mini.** A Mac mini has no lid, so the GUI "prevent sleep" setting above is sufficient and persistent. The `pmset disablesleep 1` flag exists for **laptops running lid-closed**, where macOS clamshell/"maintenance sleep" can freeze Docker even on AC. If you ever run the live stack on a **MacBook** with the lid shut, run `sudo pmset -a disablesleep 1` — and **reapply it after every reboot**, because (unlike the GUI setting) it does **not** persist.
 
