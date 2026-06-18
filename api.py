@@ -25,7 +25,7 @@ except (ValueError, ImportError):
     pass
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -295,6 +295,23 @@ def _restart_scheduler() -> None:
     # than from .env.compose (which upgrades reset to paper/4004).
     subprocess.run(
         ["docker", "restart", "yrvi-scheduler-1"],
+        capture_output=True, text=True, timeout=60,
+    )
+
+
+def _restart_api_self() -> None:
+    # The api process reads IBKR_PORT/TRADING_MODE once at import (config.py),
+    # so a trading-mode switch only takes effect after the api restarts and the
+    # shared entrypoint re-derives them from /data/gw_trading_mode. The api can't
+    # restart itself synchronously (the docker restart kills this process before
+    # the HTTP response is sent), so this runs as a BackgroundTask: a brief sleep
+    # lets the response flush to the client, then we ask the daemon to restart us.
+    # Once the daemon receives the request it tears down and recreates the
+    # container independently, even though this process dies mid-call.
+    import time
+    time.sleep(1.5)
+    subprocess.run(
+        ["docker", "restart", "yrvi-api-1"],
         capture_output=True, text=True, timeout=60,
     )
 
@@ -1895,7 +1912,7 @@ class TradingModeRequest(BaseModel):
     confirmation: str
 
 @app.post("/api/trading-mode")
-def set_trading_mode(body: TradingModeRequest):
+def set_trading_mode(body: TradingModeRequest, background_tasks: BackgroundTasks):
     if body.confirmation != "CONFIRM":
         raise HTTPException(status_code=400, detail="confirmation must be exactly 'CONFIRM'")
     if body.mode not in ("paper", "live"):
@@ -1950,6 +1967,12 @@ def set_trading_mode(body: TradingModeRequest):
     # Restart scheduler too so it re-reads /data/gw_trading_mode and re-derives
     # IBKR_PORT — otherwise it keeps trading on the previous mode's port.
     _restart_scheduler()
+
+    # Restart the api as well: like the scheduler it caches IBKR_PORT from its
+    # env at import (config.py), so without this it keeps dialing the previous
+    # mode's port (e.g. screener "Run Now" hitting 4004 after switching to live).
+    # Deferred to a BackgroundTask so the response below reaches the client first.
+    background_tasks.add_task(_restart_api_self)
 
     save_settings(current)
 
