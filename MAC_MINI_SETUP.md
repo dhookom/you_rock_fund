@@ -131,7 +131,15 @@ brew --version
 brew install git gh python node
 ```
 
-### 5. Set Up SSH Key and GitHub Auth
+### 5. (Optional — developers only) Set Up SSH Key and GitHub Auth
+
+> **Skip this step for a normal operator install.** The repo is **public**, so you
+> can clone it anonymously over HTTPS (see Phase 5) — no SSH key or GitHub login
+> required, and the dashboard upgrade button pulls updates anonymously too.
+>
+> Only do this if you'll be **pushing code changes back** to GitHub (i.e., setting
+> up a dev machine).
+
 ```bash
 ssh-keygen -t ed25519 -C "your@email.com"
 ```
@@ -170,9 +178,12 @@ Should print "Hello from Docker!"
 
 ### Clone the Repo
 ```bash
-cd ~ && git clone git@github.com:controllinghand/you_rock_fund.git
+cd ~ && git clone https://github.com/controllinghand/you_rock_fund.git
 cd you_rock_fund
 ```
+
+> The repo is public, so this HTTPS clone needs no authentication. If you set up
+> SSH in Step 5 (developers), you can use `git clone git@github.com:controllinghand/you_rock_fund.git` instead.
 
 ### Register the Upgrade URL Scheme (one-time)
 ```bash
