@@ -1939,8 +1939,13 @@ def set_trading_mode(body: TradingModeRequest, background_tasks: BackgroundTasks
     except Exception as e:
         print(f"[api/trading-mode] failed to write gw_trading_mode: {e}")
 
-    # Keep .env.compose in sync so containers always get the right port on restart.
-    env_file = BASE_DIR / ".env.compose"
+    # Keep .env.compose in sync so a plain `docker compose up` (no entrypoint
+    # re-derivation, e.g. before /data/gw_trading_mode exists) still lands on the
+    # right port. When containerized this must target the bind-mounted host file
+    # at /host_repo/.env.compose — BASE_DIR is /app inside the container, so
+    # writing there only touches the ephemeral copy and the host file goes stale.
+    host_env_file = Path("/host_repo/.env.compose")
+    env_file = host_env_file if host_env_file.exists() else BASE_DIR / ".env.compose"
     try:
         if env_file.exists():
             lines = env_file.read_text().splitlines()
