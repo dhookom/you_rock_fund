@@ -87,9 +87,18 @@ This ensures the Mac Mini logs itself in automatically after a power outage or r
 
 > ⚠️ Automatic Login is only available when FileVault is disabled. This is why we skip FileVault above.
 
-### Optional: Prevent Display Sleep
-- System Settings → Energy → set display sleep to **Never**
-- The Mac Mini runs headless — no display needed after initial setup
+### Prevent Sleep (important — keeps trading running 24/7)
+
+The Mac Mini runs headless and must never **system-sleep**, or macOS freezes the Docker VM and the scheduler misses trade windows. The key setting is *computer* sleep, not display sleep.
+
+- **System Settings → Energy:**
+  - ✅ **"Prevent automatic sleeping when the display is off"** — this is the one that matters (stops *system* sleep, which is what freezes Docker). Set via the GUI, it **persists across reboots**.
+  - ✅ **"Start up automatically after a power failure"**
+  - Turn **Power Nap OFF** if shown (avoids maintenance wake/sleep cycles).
+- Display sleep itself is harmless on a headless box, but you can set it to **Never** too.
+
+> **Mac mini vs. a lid-closed MacBook — do you need `pmset disablesleep 1`?**
+> **No, not on a mini.** A Mac mini has no lid, so the GUI "prevent sleep" setting above is sufficient and persistent. The `pmset disablesleep 1` flag exists for **laptops running lid-closed**, where macOS clamshell/"maintenance sleep" can freeze Docker even on AC. If you ever run the live stack on a **MacBook** with the lid shut, run `sudo pmset -a disablesleep 1` — and **reapply it after every reboot**, because (unlike the GUI setting) it does **not** persist.
 
 ---
 
