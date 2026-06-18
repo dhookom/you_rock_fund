@@ -318,17 +318,19 @@ docker compose --env-file .env.compose up -d --build
 | Dashboard shows Gateway red | Run `docker compose --env-file .env.compose logs -f ib_gateway` and check for errors |
 | Task Scheduler job not registered | Rerun `bash setup_docker.sh --paper` from Git Bash opened as Administrator |
 | `docker` not found in Git Bash | Docker Desktop isn't running. Open it and wait for the engine indicator to go green. |
-| IB Gateway needs 2FA or shows a login dialog | Connect via RealVNC Viewer (see below) |
+| IB Gateway needs 2FA or shows a login dialog | Connect via TigerVNC (see below) |
 
 ### Connecting via VNC (2FA / login dialogs)
 
-The IB Gateway runs headless inside Docker but exposes a VNC session on port 5900. Windows does not have a built-in VNC viewer — use **RealVNC Viewer** (free):
+The IB Gateway runs headless inside Docker but exposes a VNC session on `127.0.0.1:5900`. Windows does not have a built-in VNC viewer — use **TigerVNC** (free, open-source, no account):
 
-1. Download from [realvnc.com/en/connect/download/viewer](https://www.realvnc.com/en/connect/download/viewer/)
-2. Open RealVNC Viewer and connect to: `127.0.0.1:5900`
-3. Password: `ibgateway123!test` (default — change it via `http://localhost:8001` if desired)
+1. Download the Windows installer from [tigervnc.org](https://tigervnc.org/) (or the [GitHub releases](https://github.com/TigerVNC/tigervnc/releases)) and run `vncviewer64.exe`.
+2. Connect to: **`127.0.0.1:5900`** (leave Username blank).
+3. Password: `ibgateway123!test` (default — its first 8 chars, `ibgatewa`, are what count; change it via `http://localhost:8001`, keeping it **≤ 8 characters**).
 
 You'll see the IB Gateway GUI and can dismiss any dialog that's blocking login.
+
+> We switched from RealVNC because its current viewer forces you to create an account before it will connect. TigerVNC connects directly.
 
 ---
 

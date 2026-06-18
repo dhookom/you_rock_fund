@@ -217,15 +217,15 @@ Most first-time IB Gateway logins complete automatically without any VNC interac
 
 Windows does not have a built-in VNC viewer. If you do need VNC:
 
-1. Install [RealVNC Viewer](https://www.realvnc.com/en/connect/download/viewer/) (free).
-2. Set `VNC_SERVER_PASSWORD` in `.env.compose`.
+1. Install [TigerVNC](https://tigervnc.org/) (free, open-source, no account) — run `vncviewer64.exe`.
+2. Set `VNC_SERVER_PASSWORD` in `.env.compose` (keep it **≤ 8 characters** — classic VNC auth truncates the rest).
 3. Recreate the gateway container:
 
    ```powershell
    docker compose --env-file .env.compose up -d --force-recreate ib_gateway
    ```
 
-4. Connect RealVNC Viewer to `localhost:5900` using the password from step 2.
+4. Connect TigerVNC to `127.0.0.1:5900` (literal IPv4, not `localhost`) using the password from step 2.
 5. Complete the IBKR dialog in the VNC session.
 
 The VNC port is bound to `127.0.0.1` only.
@@ -257,7 +257,7 @@ The container stack separates the original YRVI processes from the new infrastru
 
 | Container | What it runs | Role in the system | Relationship to upstream |
 |---|---|---|---|
-| `ib_gateway` | `ghcr.io/gnzsnz/ib-gateway:latest`, which packages Interactive Brokers Gateway with IBC | Provides the IBKR API endpoint that YRVI uses for account data and order placement. It logs in to the paper account, exposes paper trading inside the Compose network on `4004`, and optionally exposes VNC on `localhost:5900` for 2FA or manual dialogs. | New containerization infrastructure. The upstream project expected IB Gateway/IBC to run on macOS through launchd; this replaces that host dependency with a container. |
+| `ib_gateway` | `ghcr.io/gnzsnz/ib-gateway:latest`, which packages Interactive Brokers Gateway with IBC | Provides the IBKR API endpoint that YRVI uses for account data and order placement. It logs in to the paper account, exposes paper trading inside the Compose network on `4004`, and optionally exposes VNC on `127.0.0.1:5900` for 2FA or manual dialogs. | New containerization infrastructure. The upstream project expected IB Gateway/IBC to run on macOS through launchd; this replaces that host dependency with a container. |
 | `api` | `api.py` via `uvicorn` | Serves the dashboard API on `localhost:8000`. It reads state, settings, and performance files, checks IBKR status through `ib_gateway`, runs the screener preview endpoint, and serves dashboard actions that are safe in container mode. | Wraps an upstream component. `api.py` already existed; the container adds environment wiring, Docker secrets, shared data volume access, and container-aware health checks. |
 | `scheduler` | `scheduler.py` | Runs the APScheduler jobs for the trading system: Saturday preview, Monday Discord preview, Monday wheel check, Monday CSP execution, Tue-Thu risk monitor, and Friday assignment detection. It writes a heartbeat file so the API can show scheduler health across containers. | Wraps an upstream component. `scheduler.py` already existed; the heartbeat and shared volume behavior are new to support container health reporting. |
 | `web` | Built `yrvi-app` React assets served by nginx | Serves the dashboard at `localhost:3000` and proxies `/api/...` requests to the `api` container. The nginx config uses Docker DNS so it can recover when the API container is recreated. | Wraps an upstream component with new infrastructure. `yrvi-app` already existed; nginx static serving and proxying replace local Vite preview for production-like container use. |
@@ -395,8 +395,8 @@ image: ghcr.io/gnzsnz/ib-gateway:${IB_GATEWAY_TAG:-latest}
 container_name: ib_gateway
 ```
 
-For first login or 2FA recovery, set a strong temporary `VNC_SERVER_PASSWORD` in `.env.compose`, recreate `ib_gateway`, and connect to `localhost:5900` with a VNC client:
-[NOTE: VNC is built into MacOS (Screen Share), most Linux (Desktop-Sharing), but not Windows (try RealVNC or other).]
+For first login or 2FA recovery, set a temporary `VNC_SERVER_PASSWORD` (**≤ 8 chars**) in `.env.compose`, recreate `ib_gateway`, and connect to `127.0.0.1:5900` with a VNC client:
+[NOTE: Use TigerVNC (free, no account) on any OS — `brew install --cask tigervnc` on macOS, or the installer from tigervnc.org on Windows. macOS's built-in Screen Sharing can't connect to the local gateway. Always use the literal `127.0.0.1:5900`, never `localhost` (which resolves to IPv6 ::1 → macOS Screen Sharing).]
 
 ```bash
 docker compose --env-file .env.compose up -d --force-recreate ib_gateway
@@ -755,13 +755,13 @@ docker compose --env-file .env.compose restart web
 ```
 
 If `ibkr_connected` is false, check `ib_gateway` logs and use VNC if needed:
-[NOTE: VNC is built into MacOS (Screen Share), most Linux (Desktop-Sharing), but not Windows (try RealVNC or other).]
+[NOTE: Use TigerVNC (free, no account) on any OS — `brew install --cask tigervnc` on macOS, or the installer from tigervnc.org on Windows. Always connect to the literal `127.0.0.1:5900`, never `localhost`.]
 
 ```bash
 docker compose --env-file .env.compose logs -f ib_gateway
 ```
 
-Set `VNC_SERVER_PASSWORD` in `.env.compose`, recreate `ib_gateway`, and connect to `localhost:5900` if IBKR needs 2FA, a warning confirmation, or credential correction.
+Set `VNC_SERVER_PASSWORD` (**≤ 8 chars**) in `.env.compose`, recreate `ib_gateway`, and connect to `127.0.0.1:5900` if IBKR needs 2FA, a warning confirmation, or credential correction.
 
 If IB Gateway shows a growing number of API client tabs, check the API logs:
 

@@ -6,35 +6,36 @@ Common issues and fixes for You Rock Club members setting up YRVI on a Mac Mini.
 
 ### Q: Docker fails with "address already in use" on port 5900
 
-**A:** macOS Screen Sharing uses port 5900, which conflicts with IB Gateway's VNC port.
+**A:** macOS Screen Sharing is binding port 5900 in a way that collides with IB Gateway's VNC port. (Normally they coexist — the gateway binds IPv4 `127.0.0.1:5900` while Screen Sharing answers on the LAN IP / IPv6 — but a boot-order race can occasionally cause this.)
 
-Turn it off before starting YRVI:
-
-**System Settings → General → Sharing → Screen Sharing → toggle OFF**
-
-Then restart the stack:
+Easiest fix — give the gateway its own port. In `.env.compose` set:
+```
+IB_GATEWAY_VNC_PORT=5901
+```
+then restart:
 ```bash
 docker compose --env-file .env.compose down
 ./setup_docker.sh --paper
 ```
+Now connect your VNC client to `127.0.0.1:5901` instead.
 
-> Use SSH for remote terminal access instead — Screen Sharing cannot run alongside YRVI.
->
-> Enable SSH: **System Settings → General → Sharing → Remote Login → On**
->
-> Then connect with: `ssh [your-user]@[MAC_MINI_IP]`
+Alternatively, turn Screen Sharing off (**System Settings → General → Sharing → Screen Sharing → OFF**) and keep the gateway on 5900.
+
+> For remote *terminal* access, use SSH: **System Settings → General → Sharing → Remote Login → On**, then `ssh [your-user]@[MAC_MINI_IP]`.
 
 ---
 
 ### Q: I need to check the IB Gateway screen (e.g. it's stuck on a 2FA or confirmation dialog)
 
-**A:** The IB Gateway runs headless inside Docker but exposes a VNC session on port 5900. macOS's built-in Screen Sharing won't work for this — it refuses to connect to localhost. Use **RealVNC Viewer** (free) instead:
+**A:** The IB Gateway runs headless inside Docker but exposes a VNC session on `127.0.0.1:5900`. macOS's built-in Screen Sharing won't work for this — it refuses to connect to your own machine ("you cannot control your own screen"). Use **TigerVNC** (free, open-source, no account) instead:
 
-1. Download: https://www.realvnc.com/en/connect/download/viewer/
-2. Open RealVNC Viewer and connect to: `127.0.0.1:5900`
-3. Password: `ibgateway123!test` (unless you set a custom VNC Password in secrets)
+1. Install: `brew install --cask tigervnc` (macOS) — or grab the Windows installer from https://tigervnc.org/
+2. Launch TigerVNC and connect to: **`127.0.0.1:5900`** — use the literal IPv4, **not `localhost`** (on macOS `localhost` → IPv6 `::1` → hits Screen Sharing → "authentication failed" against the wrong server).
+3. Leave **Username blank**. Password: `ibgateway123!test` (truncated to its first 8 chars, `ibgatewa`) unless you set a custom VNC Password in secrets — keep custom ones **≤ 8 characters**.
 
 You'll see the IB Gateway GUI and can dismiss whatever dialog is blocking it.
+
+> We switched from RealVNC because its current viewer forces an account/trial before it will connect. TigerVNC doesn't.
 
 ---
 

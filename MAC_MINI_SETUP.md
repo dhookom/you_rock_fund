@@ -29,7 +29,7 @@ You will need the following physical hardware to complete the initial setup. Aft
 | USB keyboard | Any USB or Bluetooth keyboard |
 | USB mouse | Any USB or Bluetooth mouse |
 
-> 💡 Once Screen Sharing is configured (Phase 2), you can disconnect all of this and control the Mac Mini remotely forever after — from a Mac via Finder, or from a Windows PC using a free VNC client like RealVNC Viewer.
+> 💡 Once Screen Sharing is configured (Phase 2), you can disconnect all of this and control the Mac Mini remotely forever after — from another Mac via Finder/Screen Sharing, or from a Windows PC using a free VNC client like TigerVNC.
 
 ---
 
@@ -64,18 +64,19 @@ When you first power on the Mac Mini, follow these decisions at each setup scree
 
 ## Phase 2 — macOS System Settings
 
-### Remote Access — Use SSH, Not Screen Sharing
+### Remote Access — SSH + Screen Sharing
 
-> ⚠️ **Do NOT enable macOS Screen Sharing.** IB Gateway uses port 5900 for VNC (required for 2FA). macOS Screen Sharing also binds port 5900 and will cause `docker compose up` to fail with an "address already in use" error.
+Enable both:
+- **SSH (Remote Login)** for terminal access: **System Settings → General → Sharing → Remote Login → On**
+- **Screen Sharing** (optional but recommended) to view the Mac's full desktop from another Mac: **System Settings → General → Sharing → Screen Sharing → On**
 
-Use SSH for remote terminal access instead:
 ```bash
 ssh [your-user]@[MAC_MINI_IP]
 ```
 
-Make sure SSH is enabled: **System Settings → General → Sharing → Remote Login → On**
-
 > 💡 Connect over your local network (Ethernet on both machines is most reliable) or via your router's remote access / VPN if accessing from outside your home.
+
+> ⚠️ **VNC port note (important).** The IB Gateway container serves its own VNC on **`127.0.0.1:5900`** for 2FA/dialogs. macOS Screen Sharing also uses port 5900, but on different addresses (your LAN IP and IPv6 `::1`), so the two **coexist fine**. The catch: when you point a VNC client at the gateway, **always use `127.0.0.1:5900` (literal IPv4) — never `localhost:5900`.** On macOS `localhost` resolves to IPv6 `::1` first, which macOS Screen Sharing answers, so `localhost` sends you to the wrong server and you get an "authentication failed". If `docker compose up` ever fails with *"address already in use"* on 5900, either turn Screen Sharing off or set `IB_GATEWAY_VNC_PORT` to a free port in `.env.compose`.
 
 ### Enable Automatic Login
 1. System Settings → Users & Groups (search "automatic" in Settings search bar)
@@ -317,33 +318,43 @@ docker compose --env-file .env.compose restart ib_gateway
 | Containers don't start after reboot | Open Docker Desktop manually and wait for "Engine running", then run `./setup_docker.sh --paper` |
 | Dashboard shows Gateway red | Run `docker compose --env-file .env.compose logs -f ib_gateway` and check for errors |
 | Secret files missing error | Run `./setup_docker.sh --paper` — secrets are re-fetched from the secrets container |
-| IB Gateway needs 2FA | Set the VNC password at `http://localhost:8001`, recreate gateway, then connect to the gateway screen on port 5900 — via Finder → Go → Connect to Server → `vnc://localhost:5900`, **or** RealVNC Viewer (see below). |
+| IB Gateway needs 2FA | Set the VNC password at `http://localhost:8001` (**≤ 8 characters**), recreate the gateway, then connect a VNC client (TigerVNC — see below) to **`127.0.0.1:5900`**. |
 
-### Remote Access to the IB Gateway Screen (RealVNC Viewer)
+### Remote Access to the IB Gateway Screen (TigerVNC)
 
-The IB Gateway **container** already serves its own VNC on **port 5900** — that's how
-you reach the login/2FA screen. [RealVNC Viewer](https://www.realvnc.com/en/connect/download/viewer/)
-is a great client for it: nicer than Finder's "Connect to Server," and it runs on
-**Windows** too, so you can babysit a 2FA from any machine.
+The IB Gateway **container** serves its own VNC on **`127.0.0.1:5900`** — that's how you
+reach the login/2FA screen. Use **TigerVNC** (free, open-source, no account) as the client.
 
-> ✅ This is **client-side only** — you are *connecting to* the container's VNC, not
-> running a VNC **server** on the Mac. So there is **no port-5900 conflict** (unlike
-> enabling macOS Screen Sharing, which would try to *bind* 5900 itself — see Phase 2).
-> Install RealVNC **Viewer**, not RealVNC **Server**. Recommended on **both minis**.
+> We switched away from RealVNC: its current "RealVNC Connect Viewer" forces you to create
+> an account and start a trial before it will connect to anything. TigerVNC just connects.
 
-**Setup (do this on each machine you'll connect *from*):**
-1. Download and install **RealVNC Viewer** (free) — Mac or Windows.
-2. Set the gateway's VNC password once at `http://localhost:8001` (on the mini).
-3. In RealVNC Viewer, add a new connection:
-   - **Address (on the mini itself):** `localhost:5900`
-   - **Address (from another machine over LAN/VPN):** `<mini-ip>:5900` (e.g. `192.168.5.67:5900`)
-   - **Name:** `IB-Gateway <mini> 5900`
-   - **Encryption:** *Let the remote device choose*
-4. Connect and enter the VNC password from step 2. You'll see the gateway desktop —
+> ✅ This is **client-side only** — you are *connecting to* the container's VNC, not running
+> a VNC **server** on the Mac, so it coexists with macOS Screen Sharing (see Phase 2).
+
+**Install TigerVNC:**
+- **macOS:** `brew install --cask tigervnc`
+- **Windows:** download the installer from [tigervnc.org](https://tigervnc.org/) (or the
+  [GitHub releases](https://github.com/TigerVNC/tigervnc/releases)) and run `vncviewer64.exe`.
+
+**Connect:**
+1. Set the gateway's VNC password once at `http://localhost:8001` (on the mini). Keep it
+   **≤ 8 characters** — classic VNC auth silently truncates anything longer, which looks
+   like a wrong password.
+2. Launch TigerVNC and connect to:
+   - **On the mini itself:** **`127.0.0.1:5900`**  ← literal IPv4, **never `localhost`**
+   - **From another machine (LAN/VPN):** open an SSH tunnel first, then connect locally —
+     ```bash
+     ssh -L 5901:127.0.0.1:5900 <user>@<mini-ip>
+     ```
+     then point TigerVNC at `127.0.0.1:5901`. (You can't reach the gateway via
+     `<mini-ip>:5900` directly — that address is macOS Screen Sharing, not the gateway.)
+3. Leave **Username blank**, enter the VNC password. You'll see the gateway desktop —
    complete the IB Key 2FA there (live) or confirm the auto-login (paper).
 
-> 💡 The Viewer thumbnail shows the gateway's status bars at a glance, so it doubles as
-> a quick "is the gateway alive?" check without opening a full session.
+> ⚠️ **Always `127.0.0.1:5900`, never `localhost:5900`.** On macOS `localhost` resolves to
+> IPv6 `::1`, which macOS Screen Sharing answers — connecting there fails authentication
+> against the wrong server. The literal IPv4 address always lands on the gateway. Recommended
+> on **both minis**.
 
 ---
 

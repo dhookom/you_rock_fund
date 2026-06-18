@@ -152,13 +152,13 @@ Setup polls silently until the browser form is submitted, then auto-proceeds —
 
 > **Note:** The `docker/secrets/` directory holds empty placeholder files for the file-based fallback path; it's git-ignored and the real values never live there.
 
-#### Disable macOS Screen Sharing
+#### VNC / macOS Screen Sharing
 
-IB Gateway uses port 5900 for VNC (required for 2FA). macOS Screen Sharing also uses port 5900 and will cause `docker compose up` to fail with a "address already in use" error.
+The IB Gateway container serves its own VNC on `127.0.0.1:5900` (IPv4) for 2FA/dialogs. macOS Screen Sharing also uses port 5900 but on different addresses (LAN IP + IPv6 `::1`), so **the two coexist** — you can leave Screen Sharing on to view the Mac's desktop from another Mac.
 
-Before running setup, go to **System Settings → General → Sharing → Screen Sharing → toggle OFF**.
+> **Always connect a VNC client to the gateway via `127.0.0.1:5900` — never `localhost:5900`.** On macOS `localhost` resolves to IPv6 `::1`, which Screen Sharing answers, giving an "authentication failed" against the wrong server.
 
-> **Note:** Use SSH for remote terminal access to the Mac Mini instead — Screen Sharing cannot run alongside YRVI.
+> If `docker compose up` ever fails with *"address already in use"* on 5900, turn Screen Sharing off (**System Settings → General → Sharing → Screen Sharing → OFF**) or set `IB_GATEWAY_VNC_PORT` to a free port in `.env.compose`. For remote terminal access, use SSH (**Remote Login → On**).
 
 #### macOS Setup (Paper)
 
@@ -227,7 +227,7 @@ Docker Desktop's WSL2 integration makes the `docker` CLI available inside Ubuntu
 
 > **Auto-start after reboot:** The script registers a Windows Task Scheduler job so containers restart automatically on every login. If the registration fails, rerun your terminal as Administrator and run `bash setup_docker.sh --paper` again.
 
-> **VNC for 2FA:** Windows has no built-in VNC viewer. If IBKR requires 2FA on first login, install [RealVNC Viewer](https://www.realvnc.com/en/connect/download/viewer/) (free) and connect to `localhost:5900`. Most first-time logins complete automatically without needing VNC.
+> **VNC for 2FA:** Windows has no built-in VNC viewer. If IBKR requires 2FA on first login, install [TigerVNC](https://tigervnc.org/) (free, no account) and connect to `127.0.0.1:5900`. Most first-time logins complete automatically without needing VNC.
 
 #### Verifying secrets
 
