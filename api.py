@@ -84,6 +84,7 @@ _watchdog_state: dict = {
     "last_gateway_alert":   None,
     "last_ibkr_alert":      None,
     "last_scheduler_alert": None,
+    "ibkr_soft_restart_at": None,   # when we fired an auto soft restart this outage
 }
 _gateway_login_status: str = "unknown"
 _gateway_last_event:   str = ""
@@ -91,6 +92,7 @@ _gateway_recent_lines: list = []   # rolling buffer of relevant log lines
 
 WATCHDOG_INTERVAL = 300   # seconds between checks
 ALERT_THRESHOLD   = 600   # seconds a failure must persist before we alert
+SOFT_RESTART_GRACE = 240  # seconds to let an auto soft restart recover before paging
 
 # Auto-restart suppression: read the gateway's configured restart time and
 # suppress gateway/IBKR alerts for this many seconds after it fires.
@@ -288,6 +290,40 @@ def _restart_ibgateway() -> None:
     )
 
 
+# Port the IBC command server listens on inside the gateway container (enabled on
+# loopback by the gateway entrypoint). Sending "RESTART" to it triggers the same
+# soft restart as the nightly AutoRestartTime: the gateway relaunches reusing its
+# authenticated session token, so there is NO re-login and NO 2FA. That's what lets
+# the watchdog self-heal a wedged API listener (port open, handshake dead) without
+# paging a human or risking a 2FA lockout on the live account — unlike a full
+# `docker restart`, which forces a fresh login.
+IBC_COMMAND_PORT = int(os.environ.get("IBC_COMMAND_PORT", "7462"))
+
+
+def _soft_restart_ibgateway() -> bool:
+    """Ask IBC for an on-demand soft restart via its command server.
+
+    Returns True only if the command server accepted the RESTART (replies
+    'OK Restarting at ...'). Returns False if the command server is unreachable
+    (e.g. an older gateway image without it enabled), so the caller can fall back
+    to paging a human.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "ib_gateway", "sh", "-c",
+             f"printf 'RESTART\\n' | socat -T5 - "
+             f"TCP:127.0.0.1:{IBC_COMMAND_PORT},connect-timeout=5"],
+            capture_output=True, text=True, timeout=20,
+        )
+        out = ((result.stdout or "") + (result.stderr or "")).strip()
+        accepted = "Restarting" in out
+        print(f"[api/watchdog] IBC soft restart → {out!r} (accepted={accepted})")
+        return accepted
+    except Exception as e:
+        print(f"[api/watchdog] IBC soft restart failed: {e}")
+        return False
+
+
 def _restart_scheduler() -> None:
     # Plain restart re-runs the shared entrypoint, which re-reads the durable
     # /data/gw_trading_mode file and re-derives IBKR_PORT. Mirrors the gateway:
@@ -409,11 +445,23 @@ def _watchdog_check() -> None:
             if _watchdog_state["ibkr_down_since"] is None:
                 _watchdog_state["ibkr_down_since"] = now
             down_sec = (now - _watchdog_state["ibkr_down_since"]).total_seconds()
-            if (down_sec >= ALERT_THRESHOLD
-                    and _watchdog_state["last_ibkr_alert"] is None):
-                _watchdog_state["last_ibkr_alert"] = now
-                err = ibkr.get("error") or "unknown error"
+            err = ibkr.get("error") or "unknown error"
+            soft_at = _watchdog_state["ibkr_soft_restart_at"]
+
+            # "Port open but handshake dead" is the wedge signature — a hung API
+            # listener that an IBC soft restart clears by relaunching the gateway
+            # process (no 2FA, no container bounce). So self-heal FIRST and only
+            # page a human if that fails. State machine, all gated on a persistent
+            # outage (>= ALERT_THRESHOLD) and firing each step once per outage:
+            #   1. in the auto-restart window → don't self-heal (gateway is already
+            #      cycling); just inform, matching the old behavior.
+            #   2. first response → send a soft restart. If the command server
+            #      accepts it, note the time and wait. If it doesn't (older image
+            #      without the command server), page a human immediately.
+            #   3. soft restart didn't recover within the grace window → escalate.
+            if down_sec >= ALERT_THRESHOLD and _watchdog_state["last_ibkr_alert"] is None:
                 if _in_auto_restart_window(now):
+                    _watchdog_state["last_ibkr_alert"] = now
                     _send_discord_alert(
                         f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
                         f"for {int(down_sec / 60)} min (`{err}`). "
@@ -423,29 +471,55 @@ def _watchdog_check() -> None:
                         f"🔴 Manual restart: "
                         f"`docker compose --env-file .env.compose restart ib_gateway`"
                     )
-                else:
+                elif soft_at is None:
+                    if _soft_restart_ibgateway():
+                        _watchdog_state["ibkr_soft_restart_at"] = now
+                        _send_discord_alert(
+                            f"🔄 **YRVI** IBKR API unreachable for {int(down_sec / 60)} min "
+                            f"(`{err}`). Auto-recovery: sent an IB Gateway soft restart "
+                            f"(reuses the session — no login, no 2FA). Confirming recovery "
+                            f"or escalating in ~{SOFT_RESTART_GRACE // 60} min…"
+                        )
+                    else:
+                        _watchdog_state["last_ibkr_alert"] = now
+                        _send_discord_alert(
+                            f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
+                            f"for {int(down_sec / 60)} min. Error: `{err}`. "
+                            f"Auto soft-restart unavailable (command server not reachable). "
+                            f"VNC available on host port 5900.\n"
+                            f"🔴 Manual restart required: "
+                            f"`docker compose --env-file .env.compose restart ib_gateway`"
+                        )
+                elif (now - soft_at).total_seconds() >= SOFT_RESTART_GRACE:
+                    _watchdog_state["last_ibkr_alert"] = now
                     _send_discord_alert(
-                        f"🚨 **YRVI** IB Gateway port is open but IBKR API connection failed "
-                        f"for {int(down_sec / 60)} min. Error: `{err}`. "
-                        f"Gateway may be slow to reconnect or stuck on a login dialog. "
-                        f"VNC available on host port 5900.\n"
+                        f"🚨 **YRVI** IB Gateway API still failing {int(down_sec / 60)} min in — "
+                        f"the auto soft-restart did not recover it (`{err}`). "
+                        f"Manual intervention needed. VNC available on host port 5900.\n"
                         f"🔴 Manual restart required: "
                         f"`docker compose --env-file .env.compose restart ib_gateway`"
                     )
         else:
             if (_watchdog_state["ibkr_down_since"] is not None
-                    and _watchdog_state["last_ibkr_alert"] is not None):
+                    and (_watchdog_state["last_ibkr_alert"] is not None
+                         or _watchdog_state["ibkr_soft_restart_at"] is not None)):
                 down_sec = (now - _watchdog_state["ibkr_down_since"]).total_seconds()
+                # Healed by the soft restart = we fired one and never had to page.
+                healed = (_watchdog_state["ibkr_soft_restart_at"] is not None
+                          and _watchdog_state["last_ibkr_alert"] is None)
                 _send_discord_alert(
                     f"✅ **YRVI** IBKR API connection restored "
-                    f"(was failing for {int(down_sec / 60)} min)."
+                    f"(was failing for {int(down_sec / 60)} min"
+                    f"{' — auto soft-restart recovered it' if healed else ''})."
                 )
             _watchdog_state["ibkr_down_since"] = None
             _watchdog_state["last_ibkr_alert"] = None
+            _watchdog_state["ibkr_soft_restart_at"] = None
     else:
         # Gateway port is down — clear IBKR state; its episode timer resets when port returns
         _watchdog_state["ibkr_down_since"] = None
         _watchdog_state["last_ibkr_alert"] = None
+        _watchdog_state["ibkr_soft_restart_at"] = None
 
     # ── Scheduler heartbeat ───────────────────────────────────────
     sched_ok = _scheduler_pid() is not None

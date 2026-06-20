@@ -74,27 +74,49 @@ send_discord_alert() {
     return 0
 }
 
-# Patch the IBC config.ini to add LoginFailed=terminate so IBC exits on a
-# failed login instead of retrying (which can trigger IBKR account lockout).
-# Searches known paths; logs a warning and continues if none is writable.
-patch_ibc_login_failed() {
-    for path in \
-        /opt/ibc/config.ini \
-        /home/ibgateway/ibc/config.ini \
-        /root/ibc/config.ini
-    do
-        if [ -f "$path" ] && [ -w "$path" ]; then
-            if grep -q "^LoginFailed=" "$path" 2>/dev/null; then
-                sed -i 's/^LoginFailed=.*/LoginFailed=terminate/' "$path"
-                echo "yrvi-gw-entrypoint: patched IBC config at $path (LoginFailed=terminate, replaced existing)"
-            else
-                printf '\nLoginFailed=terminate\n' >> "$path"
-                echo "yrvi-gw-entrypoint: patched IBC config at $path (LoginFailed=terminate, appended)"
-            fi
-            return 0
+# Patch the IBC config *template* so our settings survive. The image's common.sh
+# regenerates config.ini from this template (envsubst) on every start, so anything
+# we write to config.ini directly gets clobbered — the template is the only thing
+# that sticks. Applies two settings:
+#   1. CommandServerPort=7462 on loopback — lets the YRVI API trigger an on-demand
+#      IBC soft restart (same path as AutoRestartTime: relaunches the gateway
+#      reusing its authenticated session, so no re-login and no 2FA). This is what
+#      the watchdog uses to self-heal a wedged API listener without a human.
+#   2. LoginFailed=terminate — IBC exits on a bad login instead of retrying into an
+#      account lockout. (Previously patched on config.ini, which was then silently
+#      regenerated away — this moves it to the template where it actually takes.)
+# Logs a warning and continues if no writable template is found.
+patch_ibc_template() {
+    tmpl="${IBC_INI_TMPL:-}"
+    if [ -z "$tmpl" ] || [ ! -f "$tmpl" ]; then
+        for p in \
+            /home/ibgateway/ibc/config.ini.tmpl \
+            /opt/ibc/config.ini.tmpl \
+            /root/ibc/config.ini.tmpl
+        do
+            if [ -f "$p" ]; then tmpl="$p"; break; fi
+        done
+    fi
+    if [ -z "$tmpl" ] || [ ! -f "$tmpl" ] || [ ! -w "$tmpl" ]; then
+        echo "yrvi-gw-entrypoint: WARNING — IBC template not found/writable; command server + LoginFailed=terminate not applied" >&2
+        return 0
+    fi
+
+    # set_kv KEY VALUE — replace the line if present, else append.
+    set_kv() {
+        key="$1"; val="$2"
+        if grep -q "^${key}=" "$tmpl" 2>/dev/null; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "$tmpl"
+        else
+            printf '%s=%s\n' "$key" "$val" >> "$tmpl"
         fi
-    done
-    echo "yrvi-gw-entrypoint: WARNING — IBC config.ini not found in known paths; LoginFailed=terminate not applied" >&2
+    }
+
+    set_kv CommandServerPort 7462
+    set_kv ControlFrom 127.0.0.1
+    set_kv BindAddress 127.0.0.1
+    set_kv LoginFailed terminate
+    echo "yrvi-gw-entrypoint: patched IBC template $tmpl (CommandServerPort=7462 loopback, LoginFailed=terminate)"
     return 0
 }
 
@@ -127,7 +149,7 @@ fi
 
 # ── Patch IBC config and prepare env ─────────────────────────────
 
-patch_ibc_login_failed
+patch_ibc_template
 
 # Allow the YRVI API to override AUTO_RESTART_TIME via a file on the shared volume
 # without requiring a .env.compose edit + full stack restart.
