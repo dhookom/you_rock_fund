@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Sun, Moon, Monitor } from 'lucide-react'
 import axios from 'axios'
 import { useThemeContext } from '../ThemeProvider.jsx'
+import AlertsBell from './AlertsBell.jsx'
 
 function Indicator({ ok, label }) {
   return (
@@ -332,6 +333,9 @@ export default function StatusBar() {
         {status?.account && (
           <span className="text-xs text-gray-500 dark:text-gray-600">{status.account}</span>
         )}
+
+        {/* Alerts bell */}
+        <AlertsBell />
 
         {/* Theme toggle */}
         <button

@@ -69,6 +69,17 @@ WEEKLY_TOKEN_FILE = (
     Path("/data/weekly_token_established") if CONTAINERIZED
     else BASE_DIR / "weekly_token_established"
 )
+# In-app alert feed (v4): every alert that goes to Discord is also persisted here so
+# the dashboard has a first-class, standalone record — no dependency on Discord being
+# configured or reachable. File-backed (not in-memory) because the api container
+# restarts on trading-mode switches and upgrades, exactly when the history matters.
+# Capped ring buffer; each box keeps its OWN feed (no cross-box aggregation by design).
+ALERTS_FILE = (
+    Path("/data/alerts.json") if CONTAINERIZED
+    else BASE_DIR / "alerts.json"
+)
+ALERTS_MAX = 200
+_alerts_lock = threading.Lock()
 SECRETS_SERVICE_URL = "http://secrets:8001"
 # Feedback webhook — configure via discord_feedback_webhook_url secret in the secrets container
 _FEEDBACK_WEBHOOK_DEFAULT = ""
@@ -402,8 +413,62 @@ def _restart_api_self() -> None:
 
 # ── Watchdog helpers ───────────────────────────────────────────
 
+def _alert_severity(message: str) -> str:
+    """Derive a severity from the leading emoji every alert already carries.
+
+    Keeps the in-app feed colour/priority in sync with the Discord convention
+    without threading a separate severity arg through all ~24 call sites.
+    """
+    msg = message.lstrip()
+    if msg.startswith("✅"):
+        return "resolved"
+    if msg[:1] in ("🚨", "❌", "🔒"):
+        return "critical"
+    if msg[:1] in ("🔄", "⚠"):
+        return "warning"
+    return "info"
+
+
+def _record_alert(message: str) -> None:
+    """Append an alert to the persisted in-app feed (capped ring buffer).
+
+    Thread-safe: called from the watchdog background thread and (via
+    _send_discord_alert) from request handlers. Best-effort — a feed write must
+    never break the alert path, so all errors are swallowed with a log line.
+    """
+    try:
+        with _alerts_lock:
+            alerts: list = []
+            if ALERTS_FILE.exists():
+                try:
+                    alerts = json.loads(ALERTS_FILE.read_text())
+                except Exception:
+                    alerts = []
+            next_id = (alerts[-1].get("id", 0) + 1) if alerts else 1
+            alerts.append({
+                "id":       next_id,
+                "ts":       datetime.now(PST).isoformat(),
+                "severity": _alert_severity(message),
+                "message":  message,
+            })
+            if len(alerts) > ALERTS_MAX:
+                alerts = alerts[-ALERTS_MAX:]
+            # Atomic write so a concurrent reader never sees a half-written file.
+            tmp = ALERTS_FILE.with_name(ALERTS_FILE.name + ".tmp")
+            tmp.write_text(json.dumps(alerts))
+            tmp.replace(ALERTS_FILE)
+    except Exception as e:
+        print(f"[api/alerts] failed to record alert: {e}")
+
+
 def _send_discord_alert(message: str) -> None:
-    """Post a plain-text message to the main Discord webhook. No-ops if not configured."""
+    """Post an alert to the in-app feed AND the main Discord webhook.
+
+    The in-app record happens first and unconditionally, so the dashboard feed
+    works even when Discord isn't configured or is unreachable. The Discord post
+    no-ops if no webhook is set.
+    """
+    _record_alert(message)
     try:
         webhook_url = _read_secret_or_env("discord_webhook_url", "DISCORD_WEBHOOK_URL")
         if not webhook_url:
@@ -1788,6 +1853,42 @@ def _build_diag() -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────
+
+@app.get("/api/alerts")
+def get_alerts(limit: int = 100):
+    """Return the in-app alert feed for this box, newest first.
+
+    `latest_id` lets the client compute its own unread count against a
+    locally-stored 'last seen' id — no server-side read state, so the feed stays
+    per-browser and the api never needs to write on a plain view.
+    """
+    with _alerts_lock:
+        alerts: list = []
+        if ALERTS_FILE.exists():
+            try:
+                alerts = json.loads(ALERTS_FILE.read_text())
+            except Exception:
+                alerts = []
+    recent = alerts[-max(1, min(limit, ALERTS_MAX)):][::-1]
+    return {
+        "alerts":    recent,
+        "latest_id": alerts[-1]["id"] if alerts else 0,
+        "count":     len(alerts),
+    }
+
+
+@app.delete("/api/alerts")
+def clear_alerts():
+    """Clear the in-app alert feed (history only — does not touch Discord)."""
+    with _alerts_lock:
+        try:
+            tmp = ALERTS_FILE.with_name(ALERTS_FILE.name + ".tmp")
+            tmp.write_text(json.dumps([]))
+            tmp.replace(ALERTS_FILE)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Could not clear alerts: {e}")
+    return {"success": True}
+
 
 @app.get("/api/status")
 def get_status():
