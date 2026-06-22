@@ -21,7 +21,8 @@ TRADE_LOG_JSON      = "trade_log.json"
 MAX_SPREAD_PCT      = 0.20  # fallback default — settings.json overrides via check_liquidity
 MIN_BID_YIELD_PCT   = 0.01  # fallback default — bid yield threshold to proceed despite wide spread
 MAX_SPREAD_HARD_CAP = 0.50  # fallback default — spread above this is always skipped
-MIN_OPEN_INTEREST   = 100
+MIN_OI_NOTIONAL     = 1_000_000  # fallback default — min open-interest notional (OI × strike × 100); settings.json overrides
+MIN_OI_FLOOR        = 10         # fallback default — absolute min contracts; rejects totally-dead strikes that math past the notional floor
 MAX_DELTA           = 0.21  # hard ceiling — never sell a CSP with abs(delta) above this
 MIN_DELTA           = 0.15  # floor — if live delta drops below this, scan upward for a better strike
 MID_WAIT_SECS       = 120
@@ -310,6 +311,7 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
                 "bid_yield": simulated_bid_yield,
                 "mid_yield": simulated_mid_yield,
                 "open_interest": 999,
+                "strike": strike,
                 "simulated": True
             }
         return None
@@ -330,6 +332,7 @@ def get_market_data(ib: IB, contract, screener_premium: float) -> dict | None:
         "bid_yield": bid_yield,
         "mid_yield": mid_yield,
         "open_interest": oi,
+        "strike": strike,
         "simulated": False
     }
 
@@ -388,9 +391,21 @@ def check_liquidity(mkt: dict, ticker: str) -> dict | None:
                     "max_spread_pct": max_spread, "min_bid_yield_pct": min_bid_yield,
                     "max_spread_hard_cap": hard_cap}
 
-    if mkt["open_interest"] < MIN_OPEN_INTEREST:
-        log.warning(f"⚠️  {ticker} OI too low: {mkt['open_interest']} — skipping")
-        return {"reason": "oi", "open_interest": mkt["open_interest"]}
+    # Open-interest gate: use notional (OI × strike × 100), not a flat contract
+    # count. A flat count penalises high-strike underlyings — the same dollar
+    # liquidity shows fewer contracts on a $300 name than a $30 one. The notional
+    # floor is price-neutral; a tiny absolute floor still kills dead strikes.
+    oi              = mkt["open_interest"]
+    strike          = mkt.get("strike", 0)
+    oi_notional     = oi * strike * 100
+    min_oi_notional = s.get("min_oi_notional", MIN_OI_NOTIONAL)
+    min_oi_floor    = s.get("min_oi_floor",    MIN_OI_FLOOR)
+    if oi < min_oi_floor or oi_notional < min_oi_notional:
+        log.warning(f"⚠️  {ticker} open interest too thin: OI {oi:.0f} "
+                    f"(${oi_notional:,.0f} notional) < ${min_oi_notional:,.0f} floor — skipping")
+        return {"reason": "oi",
+                "open_interest": oi, "oi_notional": oi_notional,
+                "min_oi_notional": min_oi_notional, "min_oi_floor": min_oi_floor}
     return None
 
 

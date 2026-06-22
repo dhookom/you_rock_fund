@@ -15,6 +15,8 @@
   "max_spread_pct": 0.20,
   "min_bid_yield_pct": 0.01,
   "max_spread_hard_cap": 0.50,
+  "min_oi_notional": 1000000,
+  "min_oi_floor": 10,
   "dry_run": false,
   "ibkr_port": 4002,
   "discord_webhook_enabled": true,

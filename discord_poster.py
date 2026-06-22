@@ -175,16 +175,26 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
 
         else:
             label = SKIP_LABEL.get(status, status)
-            if status == "skipped_liquidity" and ex.get("spread_pct") is not None:
+            if status == "skipped_liquidity":
                 reason = ex.get("reason")
-                if reason == "spread_illiquid":
-                    label = f"skipped — spread too wide (illiquid) ({ex['spread_pct']*100:.1f}%)"
-                elif reason == "spread_low_yield":
-                    label = f"skipped — spread too wide, low yield ({ex['spread_pct']*100:.1f}%)"
-                elif reason == "spread_low_yield_unfilled":
-                    label = f"skipped — spread too wide, limit unfilled ({ex['spread_pct']*100:.1f}%)"
-                else:
-                    label = f"skipped — spread too wide ({ex['spread_pct']*100:.1f}%)"
+                if reason == "oi":
+                    oi   = ex.get("open_interest")
+                    notl = ex.get("oi_notional")
+                    if oi is not None and notl is not None:
+                        label = f"skipped — open interest too thin (OI {oi:.0f}, ${notl:,.0f} notional)"
+                    elif oi is not None:
+                        label = f"skipped — open interest too thin (OI {oi:.0f})"
+                    else:
+                        label = "skipped — open interest too thin"
+                elif ex.get("spread_pct") is not None:
+                    if reason == "spread_illiquid":
+                        label = f"skipped — spread too wide (illiquid) ({ex['spread_pct']*100:.1f}%)"
+                    elif reason == "spread_low_yield":
+                        label = f"skipped — spread too wide, low yield ({ex['spread_pct']*100:.1f}%)"
+                    elif reason == "spread_low_yield_unfilled":
+                        label = f"skipped — spread too wide, limit unfilled ({ex['spread_pct']*100:.1f}%)"
+                    else:
+                        label = f"skipped — spread too wide ({ex['spread_pct']*100:.1f}%)"
             strike_str = f"{_fmt_strike(strike)} strike  |  " if strike is not None else ""
             lines.append(f"{emoji} **{ticker}**  |  {strike_str}{label}")
 
@@ -216,6 +226,12 @@ def _build_trades_section(state: dict) -> tuple[str, str]:
         if "spread_low_yield_unfilled" in reasons:
             footnotes.append(
                 "* Spread too wide, limit unfilled = mid yield qualified but no fill at limit price"
+            )
+        if "oi" in reasons:
+            sample_oi       = next((ex for ex in skip_exs if ex.get("min_oi_notional") is not None), {})
+            min_oi_notional = sample_oi.get("min_oi_notional", 1_000_000)
+            footnotes.append(
+                f"* Open interest too thin = OI × strike × 100 < ${min_oi_notional:,.0f} notional (price-neutral liquidity floor)"
             )
     if "skipped_contract_size" in statuses:
         footnotes.append(f"* Contract too large = single contract exceeds ${MAX_PER_POSITION:,.0f} max position size")
