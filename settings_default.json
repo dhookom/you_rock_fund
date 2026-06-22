@@ -6,7 +6,7 @@
   "max_delta": 0.21,
   "min_buffer_pct": 0.05,
   "earnings_filter_days": 7,
-  "wheel_cc_ignore_earnings_filter": false,
+  "wheel_cc_ignore_earnings_filter": true,
   "wheel_retention_market_cap_min": 5000000000,
   "wheel_sell_when_cc_below_assigned": false,
   "wheel_stop_loss_enabled": false,

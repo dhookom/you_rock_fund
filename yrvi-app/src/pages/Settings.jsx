@@ -422,11 +422,12 @@ export default function SettingsPage() {
   const DEFAULTS = {
     fund_budget: 250000, num_positions: 5, min_position_size: 10000,
     max_position_size: 70000, max_delta: 0.21, min_buffer_pct: 0.05,
-    earnings_filter_days: 7, wheel_cc_ignore_earnings_filter: false,
+    earnings_filter_days: 7, wheel_cc_ignore_earnings_filter: true,
     wheel_retention_market_cap_min: 5000000000,
     wheel_sell_when_cc_below_assigned: false,
     wheel_stop_loss_enabled: false, stop_loss_pct: 0.10, compound_enabled: true,
     max_spread_pct: 0.20, min_bid_yield_pct: 0.01, max_spread_hard_cap: 0.50,
+    min_oi_notional: 1000000,
     dry_run: false, discord_webhook_enabled: true, execution_time: '10:00',
     auto_restart_time: '11:59 PM', auto_restart_suppress_mins: 30,
     auto_update_enabled: false,
@@ -559,11 +560,11 @@ export default function SettingsPage() {
       <Section title="Screener Filters" emoji="📐">
         <SliderRow label="Max Delta"      value={settings.max_delta}            min={0.10} max={0.30} step={0.01} format={v => v.toFixed(2)}                onChange={v => set('max_delta', v)} />
         <SliderRow label="Min Buffer %"   value={settings.min_buffer_pct}       min={0.03} max={0.20} step={0.01} format={v => `${(v * 100).toFixed(0)}%`} onChange={v => set('min_buffer_pct', v)} />
-        <SliderRow label="Earnings Filter" value={settings.earnings_filter_days} min={0}    max={30}              format={v => `${v} days`}                  onChange={v => set('earnings_filter_days', v)} />
+        <SliderRow label="Earnings Window" value={settings.earnings_filter_days} min={0}    max={30}              format={v => `${v} days`}                  onChange={v => set('earnings_filter_days', v)} />
         <div className="border-t border-gray-200 dark:border-gray-800 pt-3">
           <Toggle
-            label="Ignore Earnings Filter for Wheel CCs"
-            sub="Allow CCs on held positions through earnings — no effect on new CSP entries"
+            label="Ignore Earnings for Wheel CCs"
+            sub="ON (default): keep held positions through earnings and write the CC. OFF: sell shares before earnings to dodge the gap. No effect on new CSP entries."
             checked={!!settings.wheel_cc_ignore_earnings_filter}
             onChange={v => set('wheel_cc_ignore_earnings_filter', v)}
           />
@@ -633,6 +634,14 @@ export default function SettingsPage() {
           format={v => `${(v * 100).toFixed(0)}%`}
           onChange={v => set('max_spread_hard_cap', v)}
           description="Always skip regardless of yield if spread exceeds this %"
+        />
+        <SliderRow
+          label="Min OI Notional"
+          value={settings.min_oi_notional ?? 1000000}
+          min={250000} max={5000000} step={250000}
+          format={v => `$${(v / 1e6).toFixed(2)}M`}
+          onChange={v => set('min_oi_notional', v)}
+          description="Skip if open-interest notional (OI × strike × 100) is below this — price-neutral liquidity floor, fairer to high-strike names than a flat contract count"
         />
       </Section>
 

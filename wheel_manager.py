@@ -636,7 +636,7 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     # live Monday job honor the current Settings toggles too, so Run Screener,
     # Run Now and the live 9:55 run all act on the same values.
     _s                        = get_settings()
-    cc_ignore_earnings        = _s.get("wheel_cc_ignore_earnings_filter", False)
+    cc_ignore_earnings        = _s.get("wheel_cc_ignore_earnings_filter", True)
     # Default: write a 20-delta CC below cost rather than force-sell an underwater
     # holding. Opt in to force-selling (the old behavior) via this setting.
     sell_when_cc_below        = _s.get("wheel_sell_when_cc_below_assigned", False)
