@@ -85,6 +85,9 @@ _watchdog_state: dict = {
     "last_ibkr_alert":      None,
     "last_scheduler_alert": None,
     "ibkr_soft_restart_at": None,   # when we fired an auto soft restart this outage
+    "gateway_full_restart_at": None,  # one-shot full restart this gateway-port-down episode
+    "ibkr_full_restart_at":    None,  # one-shot full restart this handshake-dead episode
+    "last_full_restart_at":    None,  # cross-episode cooldown (lockout guard)
 }
 _gateway_login_status: str = "unknown"
 _gateway_last_event:   str = ""
@@ -93,6 +96,17 @@ _gateway_recent_lines: list = []   # rolling buffer of relevant log lines
 WATCHDOG_INTERVAL = 300   # seconds between checks
 ALERT_THRESHOLD   = 600   # seconds a failure must persist before we alert
 SOFT_RESTART_GRACE = 240  # seconds to let an auto soft restart recover before paging
+FULL_RESTART_GRACE = 360  # seconds to let an auto full restart recover before paging
+                          # (longer than soft: a full restart re-runs login, and on
+                          #  LIVE it waits on the human approving the IB Key 2FA push)
+FULL_RESTART_COOLDOWN = 1800  # min seconds between auto full restarts of the gateway.
+                              # Lockout guard: combined with the one-shot-per-episode
+                              # cap, the watchdog can never loop fresh logins into an
+                              # IBKR account lockout.
+
+# Ports that mean a LIVE IBKR session (vs paper: 4002/4004). A full restart forces a
+# fresh login, which on live triggers an IB Key 2FA push the human must approve.
+_LIVE_IBKR_PORTS = (4001, 4003)
 
 # Auto-restart suppression: read the gateway's configured restart time and
 # suppress gateway/IBKR alerts for this many seconds after it fires.
@@ -324,6 +338,41 @@ def _soft_restart_ibgateway() -> bool:
         return False
 
 
+def _full_restart_ibgateway() -> bool:
+    """Full restart of the gateway container — re-runs IBC's login from scratch.
+
+    Unlike the soft restart (which reuses the authenticated session token), this
+    forces a FRESH login by relaunching the container, which is the only thing that
+    clears IBKR's routine "security tokens … have expired … please manually enter
+    your username and password" dialog. That dialog leaves the API port refused and
+    the gateway LOGGED_OUT; the dead session token can't be reused, so a soft restart
+    just relaunches into the same dialog. A fresh login completes automatically on
+    PAPER (no 2FA) and waits on an IB Key 2FA approval on LIVE.
+
+    Scope is the gateway container only — never the whole stack — because the watchdog
+    runs inside the api container and must stay alive to confirm recovery or escalate.
+    Returns True if docker accepted the restart.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "restart", "ib_gateway"],
+            capture_output=True, text=True, timeout=90,
+        )
+        ok = result.returncode == 0
+        print(f"[api/watchdog] full gateway restart → rc={result.returncode} "
+              f"{(result.stderr or '').strip()!r} (ok={ok})")
+        return ok
+    except Exception as e:
+        print(f"[api/watchdog] full gateway restart failed: {e}")
+        return False
+
+
+def _full_restart_in_cooldown(now: datetime) -> bool:
+    """True if a full restart fired too recently (cross-episode lockout guard)."""
+    last = _watchdog_state.get("last_full_restart_at")
+    return last is not None and (now - last).total_seconds() < FULL_RESTART_COOLDOWN
+
+
 def _restart_scheduler() -> None:
     # Plain restart re-runs the shared entrypoint, which re-reads the durable
     # /data/gw_trading_mode file and re-derives IBKR_PORT. Mirrors the gateway:
@@ -379,62 +428,134 @@ def _watchdog_check() -> None:
     if not gw_up:
         if _watchdog_state["gateway_down_since"] is None:
             _watchdog_state["gateway_down_since"] = now
-        down_sec = (now - _watchdog_state["gateway_down_since"]).total_seconds()
+        down_sec  = (now - _watchdog_state["gateway_down_since"]).total_seconds()
+        host      = os.environ.get("IBKR_HOST", "ib_gateway")
+        is_live   = port in _LIVE_IBKR_PORTS
+        mins      = int(down_sec / 60)
+        full_at   = _watchdog_state["gateway_full_restart_at"]
+
+        # A refused API port with the gateway LOGGED_OUT is the signature of IBKR's
+        # routine token-expiry dialog ("security tokens … have expired … manually
+        # enter your username and password"). The soft restart can't clear it (the
+        # session token is dead); only a FULL restart re-runs login. So self-heal
+        # with one full restart, then page if it doesn't take. But some port-down
+        # causes must NEVER auto-restart:
+        #   • exit 4   → image/version mismatch, needs a Reset Installation
+        #   • locked   → account locked; restarting risks a deeper lockout
+        #   • failed   → wrong password; restarting just loops failed logins → lockout
+        #   • in the auto-restart window → gateway is already cycling on its own
+        docker_st = _get_docker_container_state()
+        c_exit    = docker_st["exit_code"]
+        login_st  = _gateway_login_status
+        no_restart = (c_exit == 4 or login_st in ("locked", "failed")
+                      or _in_auto_restart_window(now))
+
         if (down_sec >= ALERT_THRESHOLD
-                and _watchdog_state["last_gateway_alert"] is None):
-            _watchdog_state["last_gateway_alert"] = now
-            host = os.environ.get("IBKR_HOST", "ib_gateway")
-            # Check container state for a more specific alert message
-            docker_st  = _get_docker_container_state()
-            c_state    = docker_st["state"]
-            c_exit     = docker_st["exit_code"]
-            login_st   = _gateway_login_status
-            if c_exit == 4:
-                _send_discord_alert(
-                    f"🚨 **YRVI** IB Gateway version mismatch — installed Gateway version not found "
-                    f"(exit code 4). The Docker image updated to a newer Gateway version.\n"
-                    f"🔧 **Fix:** Open the dashboard → Help → Run Diagnostics → click **Reset Installation**. "
-                    f"No CLI needed."
-                )
-            elif login_st == "locked":
-                _send_discord_alert(
-                    f"🔒 **YRVI** IB Gateway account locked out — too many failed login attempts. "
-                    f"Reset your IBKR password in Client Portal, then restart the gateway.\n"
-                    f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
-                )
-            elif login_st == "failed":
-                _send_discord_alert(
-                    f"❌ **YRVI** IB Gateway login failed — wrong IBKR username or password. "
-                    f"Update credentials in the dashboard Settings page, then restart the gateway.\n"
-                    f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
-                )
-            elif _in_auto_restart_window(now):
-                _send_discord_alert(
-                    f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
-                    f"(`{host}:{port}`). This is likely the scheduled daily restart — "
-                    f"a ✅ recovery message will follow once it's back up. "
-                    f"If it doesn't recover, VNC is available on host port 5900.\n"
-                    f"🔴 Manual restart: "
-                    f"`docker compose --env-file .env.compose restart ib_gateway`"
-                )
+                and _watchdog_state["last_gateway_alert"] is None
+                and full_at is None):
+            if not no_restart:
+                # Restartable cause: fire ONE full restart this episode, gated by the
+                # cross-episode cooldown (lockout guard). Don't set last_gateway_alert
+                # yet — leave the escalation path open in case it doesn't recover.
+                if _full_restart_in_cooldown(now):
+                    _watchdog_state["last_gateway_alert"] = now
+                    _send_discord_alert(
+                        f"🚨 **YRVI** IB Gateway API port unreachable for {mins} min "
+                        f"(`{host}:{port}`) and not logged in. Auto full-restart "
+                        f"suppressed — one fired < {FULL_RESTART_COOLDOWN // 60} min ago "
+                        f"(lockout guard). Manual restart / VNC on host port 5900.\n"
+                        f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
+                    )
+                elif _full_restart_ibgateway():
+                    _watchdog_state["gateway_full_restart_at"] = now
+                    _watchdog_state["last_full_restart_at"]    = now
+                    if is_live:
+                        _send_discord_alert(
+                            f"🔄 **YRVI** LIVE IB Gateway unreachable for {mins} min "
+                            f"(`{host}:{port}`) — likely IBKR's routine token-expiry "
+                            f"dialog. Auto-recovery: sent a full gateway restart to "
+                            f"re-run login. ⚠️ **LIVE re-login needs IB Key 2FA — check "
+                            f"your phone and approve.** Confirming recovery or escalating "
+                            f"in ~{FULL_RESTART_GRACE // 60} min…"
+                        )
+                    else:
+                        _send_discord_alert(
+                            f"🔄 **YRVI** IB Gateway unreachable for {mins} min "
+                            f"(`{host}:{port}`) — likely IBKR's routine token-expiry "
+                            f"dialog. Auto-recovery: sent a full gateway restart to "
+                            f"re-run login (paper logs in automatically — no 2FA). "
+                            f"Confirming recovery or escalating in ~{FULL_RESTART_GRACE // 60} min…"
+                        )
+                else:
+                    _watchdog_state["last_gateway_alert"] = now
+                    _send_discord_alert(
+                        f"🚨 **YRVI** IB Gateway API port unreachable for {mins} min "
+                        f"(`{host}:{port}`) and not logged in. Auto full-restart could "
+                        f"not be sent (docker error). VNC available on host port 5900.\n"
+                        f"🔴 Manual restart required: "
+                        f"`docker compose --env-file .env.compose restart ib_gateway`"
+                    )
             else:
-                _send_discord_alert(
-                    f"🚨 **YRVI** IB Gateway API port unreachable for {int(down_sec / 60)} min "
-                    f"(`{host}:{port}`). Gateway may not have logged in or is stuck on a dialog. "
-                    f"VNC available on host port 5900.\n"
-                    f"🔴 Manual restart required: "
-                    f"`docker compose --env-file .env.compose restart ib_gateway`"
-                )
+                # Non-restartable cause → targeted page, no auto-restart.
+                _watchdog_state["last_gateway_alert"] = now
+                if c_exit == 4:
+                    _send_discord_alert(
+                        f"🚨 **YRVI** IB Gateway version mismatch — installed Gateway version not found "
+                        f"(exit code 4). The Docker image updated to a newer Gateway version.\n"
+                        f"🔧 **Fix:** Open the dashboard → Help → Run Diagnostics → click **Reset Installation**. "
+                        f"No CLI needed."
+                    )
+                elif login_st == "locked":
+                    _send_discord_alert(
+                        f"🔒 **YRVI** IB Gateway account locked out — too many failed login attempts. "
+                        f"Reset your IBKR password in Client Portal, then restart the gateway.\n"
+                        f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
+                    )
+                elif login_st == "failed":
+                    _send_discord_alert(
+                        f"❌ **YRVI** IB Gateway login failed — wrong IBKR username or password. "
+                        f"Update credentials in the dashboard Settings page, then restart the gateway.\n"
+                        f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
+                    )
+                else:  # auto-restart window
+                    _send_discord_alert(
+                        f"🚨 **YRVI** IB Gateway API port unreachable for {mins} min "
+                        f"(`{host}:{port}`). This is likely the scheduled daily restart — "
+                        f"a ✅ recovery message will follow once it's back up. "
+                        f"If it doesn't recover, VNC is available on host port 5900.\n"
+                        f"🔴 Manual restart: "
+                        f"`docker compose --env-file .env.compose restart ib_gateway`"
+                    )
+        elif (full_at is not None
+                and _watchdog_state["last_gateway_alert"] is None
+                and (now - full_at).total_seconds() >= FULL_RESTART_GRACE):
+            # Full restart fired but the gateway is still down past the grace window.
+            _watchdog_state["last_gateway_alert"] = now
+            twofa = (" — did you approve the IB Key 2FA push on your phone?"
+                     if is_live else "")
+            _send_discord_alert(
+                f"🚨 **YRVI** IB Gateway still unreachable {mins} min in — the auto "
+                f"full-restart did not recover it{twofa}. Manual intervention needed. "
+                f"VNC available on host port 5900.\n"
+                f"🔴 Manual restart required: "
+                f"`docker compose --env-file .env.compose restart ib_gateway`"
+            )
     else:
         if (_watchdog_state["gateway_down_since"] is not None
-                and _watchdog_state["last_gateway_alert"] is not None):
+                and (_watchdog_state["last_gateway_alert"] is not None
+                     or _watchdog_state["gateway_full_restart_at"] is not None)):
             down_sec = (now - _watchdog_state["gateway_down_since"]).total_seconds()
+            # Healed by the auto full-restart = we fired one and never had to page.
+            healed = (_watchdog_state["gateway_full_restart_at"] is not None
+                      and _watchdog_state["last_gateway_alert"] is None)
             _send_discord_alert(
                 f"✅ **YRVI** IB Gateway port is reachable again "
-                f"(was down {int(down_sec / 60)} min)."
+                f"(was down {int(down_sec / 60)} min"
+                f"{' — auto full-restart recovered it' if healed else ''})."
             )
-        _watchdog_state["gateway_down_since"] = None
-        _watchdog_state["last_gateway_alert"] = None
+        _watchdog_state["gateway_down_since"]      = None
+        _watchdog_state["last_gateway_alert"]      = None
+        _watchdog_state["gateway_full_restart_at"] = None
 
     # ── IBKR API connection (only when gateway port is up) ────────
     # Port open but ib_insync failing → gateway logged in but API broken (Scenario 3)
@@ -490,11 +611,50 @@ def _watchdog_check() -> None:
                             f"🔴 Manual restart required: "
                             f"`docker compose --env-file .env.compose restart ib_gateway`"
                         )
-                elif (now - soft_at).total_seconds() >= SOFT_RESTART_GRACE:
+                elif (_watchdog_state["ibkr_full_restart_at"] is None
+                        and (now - soft_at).total_seconds() >= SOFT_RESTART_GRACE):
+                    # Soft restart (session reuse) didn't clear it within grace →
+                    # escalate to ONE full restart (re-runs login; live = 2FA),
+                    # gated by the cross-episode cooldown (lockout guard).
+                    is_live = port in _LIVE_IBKR_PORTS
+                    if _full_restart_in_cooldown(now):
+                        _watchdog_state["last_ibkr_alert"] = now
+                        _send_discord_alert(
+                            f"🚨 **YRVI** IB Gateway API still failing {int(down_sec / 60)} min in — "
+                            f"the soft restart did not recover it (`{err}`) and a full-restart "
+                            f"escalation is suppressed (one fired < {FULL_RESTART_COOLDOWN // 60} min "
+                            f"ago — lockout guard). Manual intervention / VNC on host port 5900.\n"
+                            f"🔴 `docker compose --env-file .env.compose restart ib_gateway`"
+                        )
+                    elif _full_restart_ibgateway():
+                        _watchdog_state["ibkr_full_restart_at"] = now
+                        _watchdog_state["last_full_restart_at"] = now
+                        twofa = ("; ⚠️ **LIVE re-login needs IB Key 2FA — check your phone**"
+                                 if is_live else " (paper — no 2FA)")
+                        _send_discord_alert(
+                            f"🔄 **YRVI** IBKR API still failing {int(down_sec / 60)} min in — the "
+                            f"soft restart didn't clear it, so escalated to a full gateway restart "
+                            f"that re-runs login{twofa}. Confirming recovery or escalating in "
+                            f"~{FULL_RESTART_GRACE // 60} min…"
+                        )
+                    else:
+                        _watchdog_state["last_ibkr_alert"] = now
+                        _send_discord_alert(
+                            f"🚨 **YRVI** IB Gateway API still failing {int(down_sec / 60)} min in — "
+                            f"the soft restart did not recover it (`{err}`) and the full-restart "
+                            f"escalation could not be sent (docker error). VNC on host port 5900.\n"
+                            f"🔴 Manual restart required: "
+                            f"`docker compose --env-file .env.compose restart ib_gateway`"
+                        )
+                elif (_watchdog_state["ibkr_full_restart_at"] is not None
+                        and (now - _watchdog_state["ibkr_full_restart_at"]).total_seconds()
+                            >= FULL_RESTART_GRACE):
                     _watchdog_state["last_ibkr_alert"] = now
+                    twofa = (" — did you approve the IB Key 2FA push on your phone?"
+                             if port in _LIVE_IBKR_PORTS else "")
                     _send_discord_alert(
                         f"🚨 **YRVI** IB Gateway API still failing {int(down_sec / 60)} min in — "
-                        f"the auto soft-restart did not recover it (`{err}`). "
+                        f"neither the soft nor the full auto-restart recovered it (`{err}`){twofa}. "
                         f"Manual intervention needed. VNC available on host port 5900.\n"
                         f"🔴 Manual restart required: "
                         f"`docker compose --env-file .env.compose restart ib_gateway`"
@@ -502,24 +662,30 @@ def _watchdog_check() -> None:
         else:
             if (_watchdog_state["ibkr_down_since"] is not None
                     and (_watchdog_state["last_ibkr_alert"] is not None
-                         or _watchdog_state["ibkr_soft_restart_at"] is not None)):
+                         or _watchdog_state["ibkr_soft_restart_at"] is not None
+                         or _watchdog_state["ibkr_full_restart_at"] is not None)):
                 down_sec = (now - _watchdog_state["ibkr_down_since"]).total_seconds()
-                # Healed by the soft restart = we fired one and never had to page.
-                healed = (_watchdog_state["ibkr_soft_restart_at"] is not None
+                # Healed by an auto-restart = we fired one (soft or full) and never paged.
+                healed = ((_watchdog_state["ibkr_soft_restart_at"] is not None
+                           or _watchdog_state["ibkr_full_restart_at"] is not None)
                           and _watchdog_state["last_ibkr_alert"] is None)
+                which = ("full" if _watchdog_state["ibkr_full_restart_at"] is not None
+                         else "soft")
                 _send_discord_alert(
                     f"✅ **YRVI** IBKR API connection restored "
                     f"(was failing for {int(down_sec / 60)} min"
-                    f"{' — auto soft-restart recovered it' if healed else ''})."
+                    f"{f' — auto {which}-restart recovered it' if healed else ''})."
                 )
             _watchdog_state["ibkr_down_since"] = None
             _watchdog_state["last_ibkr_alert"] = None
             _watchdog_state["ibkr_soft_restart_at"] = None
+            _watchdog_state["ibkr_full_restart_at"] = None
     else:
         # Gateway port is down — clear IBKR state; its episode timer resets when port returns
         _watchdog_state["ibkr_down_since"] = None
         _watchdog_state["last_ibkr_alert"] = None
         _watchdog_state["ibkr_soft_restart_at"] = None
+        _watchdog_state["ibkr_full_restart_at"] = None
 
     # ── Scheduler heartbeat ───────────────────────────────────────
     sched_ok = _scheduler_pid() is not None
