@@ -153,11 +153,16 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     """
     Find the best call strike to sell as a covered call.
 
-    Priority 1: assigned_strike — if its delta >= CC_DELTA_MIN, sell there.
-                Higher premium, smaller buffer, but getting called away at
-                cost basis is acceptable.
-    Priority 2: Highest strike with delta >= CC_DELTA_MIN (20-delta CC).
-                Used when the stock has rallied well above assigned_strike.
+    Priority 1: cost basis — the lowest viable strike (delta >= CC_DELTA_MIN)
+                at or above assigned_strike. Higher premium, smaller buffer, but
+                getting called away at/above cost basis is acceptable. Matched by
+                nearest-strike-above, not exact equality, so a netted cost basis
+                that isn't a tradeable strike (e.g. avgCost fallback) still maps
+                to the right strike.
+    Priority 2: Highest strike with delta >= CC_DELTA_MIN (20-delta CC). Reached
+                when no viable strike sits at/above assigned_strike — the stock
+                is underwater (and below-cost CCs are allowed) or assigned_strike
+                is unknown.
 
     The assigned_strike is always included in the scan even if below the
     effective price floor, so its delta can be evaluated.
@@ -301,20 +306,33 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
         log.info(f"  ❌ No call strike with delta ≥ {CC_DELTA_MIN:.2f} available")
         return None
 
-    # Prefer assigned_strike: selling at cost basis captures higher premium
-    # and a clean exit if called away.
-    assigned_result = next(
-        ((s, d, m) for s, d, m in viable if s == assigned_strike), None
+    # Priority 1 — sell at cost basis: the LOWEST viable strike at or above
+    # assigned_strike (viable is sorted ascending). Selling there captures higher
+    # premium and is a clean exit if called away. We match the nearest strike
+    # >= assigned_strike rather than an exact equality, because assigned_strike is
+    # sometimes a net cost basis rather than a tradeable strike — e.g. the IBKR
+    # avgCost fallback records strike-minus-premium (AAOI's $164.28 for a $165
+    # put), which never equals a real strike. An exact `==` match silently skips
+    # this path and always falls through to the 20-delta strike below.
+    at_or_above = (
+        [(s, d, m) for s, d, m in viable if s >= assigned_strike]
+        if assigned_strike > 0 else []
     )
-    if assigned_result:
-        s, d, m = assigned_result
-        log.info(f"  🎯 Assigned strike ${s:.2f} has delta={d:.3f} — selling CC there")
-        return (*assigned_result, current_price)
+    if at_or_above:
+        s, d, m = at_or_above[0]
+        log.info(f"  🎯 Cost-basis strike ${s:.2f} (≥ assigned ${assigned_strike:.2f}) "
+                 f"delta={d:.3f} — selling CC there")
+        return (s, d, m, current_price)
 
-    # Fallback: highest qualifying strike (closest to CC_DELTA_MIN from above)
+    # Priority 2 — no viable strike at/above cost basis (stock is underwater, or
+    # assigned_strike unknown). Use the highest qualifying strike (~20-delta CC).
+    # With below-cost CCs enabled this writes below assigned_strike; otherwise the
+    # assigned_strike scan floor means this is only reached when nothing qualifies
+    # and the caller force-sells.
     s, d, m = viable[-1]
-    log.info(f"  🎯 Assigned strike below delta threshold — using ${s:.2f} (delta={d:.3f})")
-    return (*viable[-1], current_price)
+    log.info(f"  🎯 No viable strike at/above assigned ${assigned_strike:.2f} — "
+             f"using ${s:.2f} (delta={d:.3f})")
+    return (s, d, m, current_price)
 
 
 # ── Orders ─────────────────────────────────────────────────────
