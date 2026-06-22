@@ -116,6 +116,7 @@ WEEKLY_INCOME_GOAL  = 0.01       # 1% per week
 DRY_RUN                          = _s.get("dry_run",                          False)
 WHEEL_CC_IGNORE_EARNINGS_FILTER  = _s.get("wheel_cc_ignore_earnings_filter",  False)
 WHEEL_RETENTION_MARKET_CAP_MIN   = _s.get("wheel_retention_market_cap_min",    5_000_000_000)
+WHEEL_SELL_WHEN_CC_BELOW_ASSIGNED = _s.get("wheel_sell_when_cc_below_assigned", False)
 WHEEL_STOP_LOSS_ENABLED          = _s.get("wheel_stop_loss_enabled",          False)
 STOP_LOSS_PCT                    = _s.get("stop_loss_pct",                    0.10)
 COMPOUND_ENABLED                 = _s.get("compound_enabled",                 True)

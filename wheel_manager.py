@@ -148,7 +148,8 @@ def _next_friday_expiry() -> str:
 # ── Option chain ───────────────────────────────────────────────
 
 def _find_cc_strike(ib: IB, ticker: str, expiry: str,
-                    assigned_strike: float) -> tuple | None:
+                    assigned_strike: float,
+                    allow_below_assigned: bool = False) -> tuple | None:
     """
     Find the best call strike to sell as a covered call.
 
@@ -160,6 +161,15 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
 
     The assigned_strike is always included in the scan even if below the
     effective price floor, so its delta can be evaluated.
+
+    allow_below_assigned: when True, drop the assigned_strike floor and scan
+        from current_price * 0.95 (the standard 20-delta floor) instead. For an
+        underwater holding this lets us write a CC BELOW cost basis rather than
+        force-selling the shares — collect premium and keep the shares, at the
+        cost of being called away below cost if the stock rebounds past the
+        strike. This is the DEFAULT (callers pass True); set
+        wheel_sell_when_cc_below_assigned=true to force False and force-sell an
+        underwater holding instead.
 
     Returns (strike, delta, mid_price, stock_price), or:
       • CC_NO_DATA — IBKR returned no greeks/chain at all (can't price; e.g. a
@@ -193,7 +203,12 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
         return CC_NO_DATA
 
     price_floor     = current_price * 0.95 if current_price > 0 else assigned_strike
-    effective_floor = max(assigned_strike, price_floor) if assigned_strike > 0 else price_floor
+    if allow_below_assigned:
+        # Below-cost CCs permitted: scan from the standard 20-delta floor and
+        # ignore the assigned_strike floor (it may sit far above current price).
+        effective_floor = price_floor
+    else:
+        effective_floor = max(assigned_strike, price_floor) if assigned_strike > 0 else price_floor
     candidates_set  = {s for s in all_strikes if s >= effective_floor}
     # Always include assigned_strike so we can check its delta regardless of
     # where the stock is trading now.
@@ -202,7 +217,8 @@ def _find_cc_strike(ib: IB, ticker: str, expiry: str,
     candidates = sorted(candidates_set)
     log.info(f"  📍 {ticker}: current=${current_price:.2f}  "
              f"assigned_strike=${assigned_strike:.2f}  "
-             f"scan_floor=${effective_floor:.2f}")
+             f"scan_floor=${effective_floor:.2f}"
+             f"{'  (below-cost CCs allowed)' if allow_below_assigned else ''}")
     if not candidates:
         log.warning(f"  ⚠️  {ticker}: no strikes >= effective floor ${effective_floor:.2f}")
         return None
@@ -603,6 +619,10 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
     # Run Now and the live 9:55 run all act on the same values.
     _s                        = get_settings()
     cc_ignore_earnings        = _s.get("wheel_cc_ignore_earnings_filter", False)
+    # Default: write a 20-delta CC below cost rather than force-sell an underwater
+    # holding. Opt in to force-selling (the old behavior) via this setting.
+    sell_when_cc_below        = _s.get("wheel_sell_when_cc_below_assigned", False)
+    allow_cc_below_assigned   = not sell_when_cc_below
     retention_market_cap_min  = _s.get("wheel_retention_market_cap_min", 5_000_000_000)
     stop_loss_enabled         = _s.get("wheel_stop_loss_enabled", False)
     stop_loss_pct             = _s.get("stop_loss_pct", 0.10)
@@ -690,6 +710,10 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             log.info("\n📡 Fetching screener candidates...")
             if cc_ignore_earnings:
                 log.info("  ⚠️  wheel_cc_ignore_earnings_filter=true — earnings filter bypassed for CC decisions")
+            if sell_when_cc_below:
+                log.info("  ⚠️  wheel_sell_when_cc_below_assigned=true — underwater names with no CC ≥ cost are force-sold (not written below cost)")
+            else:
+                log.info("  ℹ️  Below-cost CCs enabled (default) — underwater names write a 20-delta CC below cost instead of force-selling")
             log.info(f"  📉 Retention market-cap floor: ${retention_market_cap_min/1e9:.1f}B "
                      f"(vs entry floor — held names below entry floor are kept if above this)")
             candidate_info = get_all_candidates(
@@ -864,7 +888,8 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
             log.info(f"  ✅ {ticker}: earnings check passed — querying option chain")
 
             # ── Step 3: Find best CC strike ───────────────────
-            cc_info = _find_cc_strike(ib, ticker, expiry, assigned_strike)
+            cc_info = _find_cc_strike(ib, ticker, expiry, assigned_strike,
+                                      allow_below_assigned=allow_cc_below_assigned)
 
             # ── Step 4: Decision ──────────────────────────────
             # CC_NO_DATA means _find_cc_strike couldn't price any call — the
@@ -910,9 +935,15 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
                 continue
 
             cc_strike, cc_delta, cc_mid, cc_stock_price = cc_info
+            below_assigned = assigned_strike > 0 and cc_strike < assigned_strike
             mid_display = f"${cc_mid:.2f}" if cc_mid else "?"
             log.info(f"  🎯 Selling CC: ${cc_strike:.2f} strike  "
                      f"delta={cc_delta:.3f}  mid={mid_display}")
+            if below_assigned:
+                locked_loss = round((cc_strike - assigned_strike) * shares, 2)
+                log.warning(f"  ⚠️  {ticker}: CC strike ${cc_strike:.2f} is BELOW "
+                            f"assigned ${assigned_strike:.2f} — if called away, "
+                            f"locks ${locked_loss:,.0f} (kept shares + premium instead of force-sell)")
 
             cc_opt = Option(ticker, expiry, cc_strike, "C", "SMART", currency="USD")
             try:
@@ -940,12 +971,13 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None) -> dict:
                 h["current_cc_premium"] = prem
                 h["cc_status"]          = "open"
                 wheel_activity.append({
-                    "ticker":     ticker,
-                    "action":     "cc_opened",
-                    "cc_strike":  cc_strike,
-                    "cc_delta":   round(cc_delta, 3),
-                    "cc_premium": prem,
-                    "cc_expiry":  expiry,
+                    "ticker":         ticker,
+                    "action":         "cc_opened",
+                    "cc_strike":      cc_strike,
+                    "cc_delta":       round(cc_delta, 3),
+                    "cc_premium":     prem,
+                    "cc_expiry":      expiry,
+                    "below_assigned": below_assigned,
                 })
                 log.info(f"  💰 CC premium: ${prem:,.0f}")
                 # Capture execution metadata for dashboard enrichment
