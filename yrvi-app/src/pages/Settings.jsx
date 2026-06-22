@@ -145,6 +145,14 @@ export default function SettingsPage() {
   const [timezone, setTimezone]                 = useState('')
   const [timezoneOriginal, setTimezoneOriginal] = useState('')
   const [tzSaving, setTzSaving]                 = useState(false)
+  // What the running scheduler is actually using. Tracked separately from
+  // `original` (the saved-to-disk baseline) because persisting a new time does
+  // NOT live-reschedule the scheduler — only a restart does. Gating the "restart
+  // scheduler" prompt on these (not on the dirty/saved state) keeps the button
+  // visible after a plain Save, until the scheduler has actually been restarted
+  // onto the new value. Initialized at load assuming disk and scheduler agree.
+  const [appliedExecTime, setAppliedExecTime]   = useState(null)
+  const [appliedTimezone, setAppliedTimezone]   = useState('')
   const [confirmReset, setConfirmReset]           = useState(false)
   const [showShutdownModal, setShowShutdownModal] = useState(false)
   const [shuttingDown, setShuttingDown]           = useState(false)
@@ -174,9 +182,11 @@ export default function SettingsPage() {
     axios.get('/api/settings').then(r => {
       setSettings(r.data)
       setOriginal(r.data)
+      setAppliedExecTime(r.data?.execution_time ?? '10:00')
       const tz = r.data?.timezone || 'America/Los_Angeles'
       setTimezone(tz)
       setTimezoneOriginal(tz)
+      setAppliedTimezone(tz)
     })
   }, [])
 
@@ -279,8 +289,23 @@ export default function SettingsPage() {
     setRestarting(true)
     setRestartResult(null)
     try {
+      // Persist any pending schedule/timezone edits BEFORE restarting, so the
+      // scheduler reads the new values on startup. This is what makes the button
+      // a true one-click "apply" — no separate Save step required.
+      const saved = await axios.post('/api/settings', settings)
+      setSettings(saved.data)
+      setOriginal(saved.data)
+      if (timezone !== appliedTimezone) {
+        const tzRes = await axios.post('/api/settings/timezone', { timezone })
+        setTimezone(tzRes.data.timezone)
+        setTimezoneOriginal(tzRes.data.timezone)
+      }
       const res = await axios.post('/api/restart-scheduler')
       const detail = res.data.container ?? (res.data.pid ? `PID ${res.data.pid}` : 'success')
+      // Scheduler is now running on the persisted values — mark them applied so
+      // the prompt clears (it only clears here, never on a plain Save).
+      setAppliedExecTime(saved.data?.execution_time ?? settings.execution_time)
+      setAppliedTimezone(timezone)
       setRestartResult({ ok: true, text: `Scheduler restarted (${detail})` })
     } catch (err) {
       setRestartResult({ ok: false, text: err.response?.data?.detail ?? 'Restart failed — check logs' })
@@ -648,10 +673,10 @@ export default function SettingsPage() {
               </span>
             )}
           </div>
-          {settings.execution_time !== original?.execution_time && (
+          {settings.execution_time !== appliedExecTime && (
             <div className="mt-2 flex items-center gap-3 flex-wrap">
               <span className="text-xs text-amber-600 dark:text-amber-500">
-                ⚠ Save + restart scheduler for new time to take effect.
+                ⚠ Restart scheduler for the new time to take effect (saves automatically).
               </span>
               <button
                 onClick={restartScheduler}
@@ -843,9 +868,9 @@ export default function SettingsPage() {
               <Save size={11} />
               {tzSaving ? 'Saving…' : 'Save Timezone'}
             </button>
-            {timezone !== timezoneOriginal && (
+            {timezone !== appliedTimezone && (
               <span className="text-xs text-amber-600 dark:text-amber-500">
-                ⚠ Save and then restart scheduler for change to take effect.
+                ⚠ Restart scheduler for the change to take effect (saves automatically).
               </span>
             )}
             <button
