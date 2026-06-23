@@ -1803,18 +1803,35 @@ def _build_diag() -> dict:
                     raise ValueError(f"Could not qualify SPY {expiry} ${strike:.0f}P")
                 contract = qualified[0]
 
+                # The delayed options farm (usopt) takes time to wake up on a
+                # fresh connection — a flat 5s wait routinely misses quotes that
+                # are perfectly available, false-flagging healthy data as
+                # "no bid/ask". The real trader waits 60s for exactly this
+                # (see trader.py near market open). Poll up to ~30s here and
+                # stop as soon as we have a usable two-sided quote.
                 otkr = ib.reqMktData(contract, genericTickList="106", snapshot=False)
-                ib.sleep(5)
+
+                def _greek_delta(t):
+                    for g in (t.modelGreeks, t.lastGreeks, t.bidGreeks, t.askGreeks):
+                        if g is not None and not _diag_is_nan(g.delta):
+                            return g.delta
+                    return None
+
+                bid = ask = delta = None
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    ib.sleep(2)
+                    bid   = otkr.bid
+                    ask   = otkr.ask
+                    delta = _greek_delta(otkr)
+                    ask_seen = not _diag_is_nan(ask) and ask is not None and ask > 0
+                    bid_seen = not _diag_is_nan(bid) and bid is not None and bid > 0
+                    # Stop early once the feed is clearly flowing (ask plus a
+                    # bid or greeks) — matches the success test below.
+                    if ask_seen and (bid_seen or delta is not None):
+                        break
                 ib.cancelMktData(contract)
                 ib.sleep(0.5)
-
-                bid   = otkr.bid
-                ask   = otkr.ask
-                delta = None
-                for greeks in (otkr.modelGreeks, otkr.lastGreeks, otkr.bidGreeks, otkr.askGreeks):
-                    if greeks is not None and not _diag_is_nan(greeks.delta):
-                        delta = greeks.delta
-                        break
 
                 bid_ok   = not _diag_is_nan(bid)   and bid   is not None and bid   > 0
                 ask_ok   = not _diag_is_nan(ask)    and ask   is not None and ask   > 0

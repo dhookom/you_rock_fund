@@ -236,7 +236,8 @@ export default function Help() {
         <div className="text-xs text-gray-500 dark:text-gray-600 leading-relaxed">
           Checks scheduler health, IB Gateway connectivity, last run times, market status,
           and live SPY market data (stock price + options bid/ask/delta).
-          No trades are placed — read-only. Takes ~10 seconds when the gateway is running.
+          No trades are placed — read-only. Takes ~10–40 seconds when the gateway is running
+          (it waits for the delayed options feed to populate, like the trader does).
         </div>
 
         <button
