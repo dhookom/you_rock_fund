@@ -233,6 +233,7 @@ def _backfill_trade_log() -> None:
 
         strike      = pos.get("strike")
         delta       = pos.get("delta")
+        iv          = pos.get("iv_atm")
         stock_price = pos.get("latest_price")
         contracts   = pos.get("contracts")
         premium_col = ex.get("premium_collected")
@@ -244,6 +245,7 @@ def _backfill_trade_log() -> None:
             "right":                "P",
             "entry_date":           ex.get("timestamp"),
             "delta_at_entry":       round(delta, 4) if delta is not None else None,
+            "iv_at_entry":          round(iv, 4) if iv is not None else None,
             "buffer_pct_at_entry":  round(((stock_price - strike) / stock_price) * 100, 2)
                                     if stock_price and strike else None,
             "premium_per_contract": fill_price,
@@ -1402,6 +1404,12 @@ def _get_ibkr_data(settings: dict) -> dict:
                     # Derive per-share price from total value: value / (position * multiplier)
                     denom    = (pos.position or 0) * mult
                     mkt_px   = round(mkt_val / denom, 4) if (mkt_val is not None and denom) else None
+                    # IBKR avgCost for options is the per-contract dollar cost (premium ×
+                    # multiplier); divide by the multiplier so Avg Price is per-share and
+                    # directly comparable to marketPrice (Price). Stocks are unaffected.
+                    avg_cost = _safe_float(pos.avgCost, 4)
+                    if is_opt and avg_cost is not None and mult:
+                        avg_cost = round(avg_cost / mult, 4)
                     portfolio.append({
                         "symbol":        c.symbol,
                         "secType":       c.secType,
@@ -1409,7 +1417,7 @@ def _get_ibkr_data(settings: dict) -> dict:
                         "strike":        _safe_float(c.strike, 4) if is_opt else None,
                         "expiry":        c.lastTradeDateOrContractMonth if is_opt else None,
                         "position":      _safe_float(pos.position, 0),
-                        "avgCost":       _safe_float(pos.avgCost, 4),
+                        "avgCost":       avg_cost,
                         "marketPrice":   mkt_px,
                         "marketValue":   mkt_val,
                         "unrealizedPNL": unrl,
@@ -1958,6 +1966,7 @@ def get_positions():
             "simulated":             ex.get("simulated", False),
             "exec_timestamp":        ex.get("exec_timestamp") or ex.get("timestamp"),
             "delta_at_entry":        tl.get("delta_at_entry") or ex.get("delta_at_entry"),
+            "iv_at_entry":           tl.get("iv_at_entry") or ex.get("iv_at_entry"),
             "stock_price_at_entry":  stock_at_entry,
             "buffer_pct_at_entry":   buffer_at_entry,
         })
@@ -1973,6 +1982,7 @@ def get_positions():
         enriched_portfolio.append({
             **item,
             "delta_at_entry":       tl.get("delta_at_entry"),
+            "iv_at_entry":          tl.get("iv_at_entry"),
             "buffer_pct_at_entry":  tl.get("buffer_pct_at_entry"),
             "premium_per_contract": tl.get("premium_per_contract"),
             "total_premium":        tl.get("total_premium"),
@@ -1987,6 +1997,7 @@ def get_positions():
         "monday_context":  state.get("monday_context", {}),
         "portfolio":       enriched_portfolio,
         "account_summary": ibkr.get("account_summary"),  # None when IBKR disconnected
+        "excluded_tickers": load_settings().get("excluded_tickers", []),
     }
 
 @app.get("/api/performance")
@@ -2134,6 +2145,7 @@ class SettingsUpdate(BaseModel):
     wheel_sell_when_cc_below_assigned: Optional[bool]  = None
     wheel_stop_loss_enabled:           Optional[bool]  = None
     stop_loss_pct:                     Optional[float] = None
+    excluded_tickers:                  Optional[list[str]] = None
     compound_enabled:                  Optional[bool]  = None
     max_spread_pct:           Optional[float] = None
     min_bid_yield_pct:        Optional[float] = None
@@ -2153,9 +2165,36 @@ class SettingsUpdate(BaseModel):
 def update_settings(body: SettingsUpdate):
     current = load_settings()
     updates = {k: v for k, v in body.dict().items() if v is not None}
+    if "excluded_tickers" in updates:
+        updates["excluded_tickers"] = sorted({
+            t.strip().upper() for t in updates["excluded_tickers"] if t and t.strip()
+        })
     current.update(updates)
     save_settings(current)
     return current
+
+
+class ExcludeToggle(BaseModel):
+    ticker:   str
+    excluded: bool
+
+@app.post("/api/excluded-tickers")
+def toggle_excluded(body: ExcludeToggle):
+    """Add/remove a single ticker from the wheel-exclusion list — backs the
+    per-holding checkbox on the dashboard. Excluded tickers get no new CSPs, no
+    covered calls, are never sold, and are never adopted into wheel_holdings."""
+    s   = load_settings()
+    cur = {t.strip().upper() for t in s.get("excluded_tickers", []) if t and t.strip()}
+    sym = body.ticker.strip().upper()
+    if not sym:
+        raise HTTPException(status_code=400, detail="ticker is required")
+    if body.excluded:
+        cur.add(sym)
+    else:
+        cur.discard(sym)
+    s["excluded_tickers"] = sorted(cur)
+    save_settings(s)
+    return {"excluded_tickers": s["excluded_tickers"]}
 
 @app.get("/api/settings/timezone")
 def get_timezone():
