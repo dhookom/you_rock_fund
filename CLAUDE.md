@@ -52,8 +52,8 @@ cat state.json               # Full system state (see schema below)
 config.py          → All fund parameters, IBKR credentials, API keys
 screener.py        → Fetches CSP candidates from Render API, filters + scores them
 position_sizer.py  → Allocates capital across up to 5 positions (accepts budget override)
-trader.py          → IBKR CSP execution: qualify → liquidity check → limit/market escalation
-wheel_manager.py   → Assignment detection, screener-based exits, 0.20-delta covered call execution
+trader.py          → IBKR CSP execution: qualify → liquidity check (spread + OI-notional floor) → limit/market escalation
+wheel_manager.py   → Assignment detection, screener-based exits, ~0.20-delta covered call execution (prefers nearest strike ≥ cost basis; writes below-cost CC instead of force-selling underwater holdings; keeps holdings through earnings by default)
 risk_manager.py    → Daily price checks, stop loss alerts, weekly P&L tracking
 scheduler.py       → APScheduler orchestration for all 5 jobs
 state.json         → Persisted system state (see schema below)
@@ -86,7 +86,7 @@ Each module connects with a distinct client ID to allow concurrent connections:
       "current_cc_expiry":  "20260501",
       "current_cc_premium": 320.0,
       "weeks_held":         1,
-      "cc_status":          "open",  // pending|open|failed|sold_dropped_screener|sold_no_viable_cc
+      "cc_status":          "open",  // pending|open|failed|sold_dropped_screener|sold_stop_loss|sold_earnings_this_week|sold_no_viable_cc
       "current_price":      62.50,
       "last_checked":       "ISO timestamp"
     }
@@ -127,9 +127,12 @@ hand-off, so the pipeline can never start before the wheel check finishes).
 ```
 Step A — wheel_check (run_wheel_check):
   → call get_all_candidates() to get screener ticker set
-  → Step 1: if ticker not in screener → sell at market (freed_capital += proceeds)
-  → Step 2: query IBKR option chain for calls >= assigned_strike on nearest Friday
-  → Step 3: if highest call delta >= 0.20 → sell CC; else → sell at market
+  → Step 1: if ticker not in screener (down to wheel-retention mkt-cap floor) → sell at market (freed_capital += proceeds)
+  → Step 2: earnings — KEPT through earnings by default (wheel_cc_ignore_earnings_filter=true);
+            only sells pre-earnings if that toggle is off
+  → Step 3: query IBKR option chain for calls on nearest Friday; prefer nearest strike >= cost basis, delta <= ~0.20
+  → Step 4: write the CC. Underwater + no strike >= cost → write ~0.20-delta CC BELOW cost (keep shares),
+            unless wheel_sell_when_cc_below_assigned=true → force-sell at market
   → write monday_context to state.json (for the Discord preview / recovery)
     AND return it: skip_tickers, freed_capital, reserved_capital,
     active_wheel_count, cc_premium, shares_sold_pnl, wheel_activity,
@@ -158,10 +161,20 @@ All orders — CSPs, covered calls, stop loss sells — use the same escalation:
 ### Key Rules
 
 - Never buy back covered calls
-- Sell shares Monday 9:55AM if: ticker dropped from screener OR no CC strike with delta ≥ 0.20
+- Excluded tickers (per-holding Exclude checkbox + Settings "Excluded Tickers") are NEVER traded, adopted, or sold:
+  no CSP, no CC, no wheel adoption — enforced in the screener, both adoption paths, the per-holding loop, and risk monitor
+- Sell shares Monday 9:55AM if: ticker dropped from screener (below the wheel-retention mkt-cap floor),
+  OR stop-loss tripped (if enabled), OR (underwater with no CC ≥ cost AND wheel_sell_when_cc_below_assigned=true)
+- DEFAULT for underwater holdings: write a ~0.20-delta CC BELOW cost (keep shares + premium) — do NOT force-sell
+- DEFAULT through earnings: keep the holding and write the CC (wheel_cc_ignore_earnings_filter=true);
+  earnings filter still applies to NEW CSP entries via the Earnings Window setting
+- CSP liquidity gate is spread + OI-NOTIONAL floor (OI × strike × 100 ≥ min_oi_notional, default $1M),
+  NOT a flat open-interest count — fairer to high-strike names
 - Freed capital from share sales is added to that week's CSP deployment budget
 - Sold tickers are skipped in the same week's CSP screener
 - Daily monitor (Tue–Thu) alerts if a ticker drops from screener mid-week
+- All operational alerts are persisted in-app (/data/alerts.json) AND sent to Discord via the single
+  _send_discord_alert chokepoint in api.py; the dashboard bell reads GET /api/alerts (per-box, standalone)
 
 ## Key Configuration (config.py)
 

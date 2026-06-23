@@ -1,6 +1,6 @@
 # You Rock Volatility Income Fund (YRVI)
 
-![Version](https://img.shields.io/badge/version-3.7.0-blue)
+![Version](https://img.shields.io/badge/version-5.0.2-blue)
 
 An automated Python algorithmic options trading system that generates weekly income through the complete wheel strategy — selling cash-secured puts (CSPs), managing assignments with covered calls (CCs), and enforcing automatic stop losses — all running 24/7 on a Mac Mini with zero manual intervention.
 
@@ -26,13 +26,14 @@ An automated Python algorithmic options trading system that generates weekly inc
 
 2. **Position Sizer** — allocates $250K across up to 5 positions (~$50K each, last position gets remainder up to $70K max)
 
-3. **Wheel Manager** — Monday 9:55 AM (four-step logic per holding):
-   - **Step 1 — Screener check:** if ticker no longer passes screener filters → sell shares at market and free capital
-   - **Step 2 — Option chain:** query IBKR for CALL options on the nearest Friday, strike ≥ assigned strike; collect delta for each candidate
-   - **Step 3 — Decision:** sell the highest-delta (≥ 0.20) covered call found. If no strike with delta ≥ 0.20 exists → sell shares at market
-   - **Step 4 — Accounting:** freed capital (from any sales) returns to the CSP pool; sold tickers are skipped in that week's screener
+3. **Wheel Manager** — Monday 9:55 AM (per holding):
+   - **Step 1 — Screener check:** if ticker no longer passes screener filters (down to the wheel-retention market-cap floor) → sell shares at market and free capital
+   - **Step 2 — Earnings:** by default the holding is **kept through earnings** and a covered call is written (`Ignore Earnings for Wheel CCs` is on by default). Turn the toggle off to sell shares before earnings instead
+   - **Step 3 — Option chain:** query IBKR for CALL options on the nearest Friday; prefer the nearest strike **≥ cost basis** with delta ≤ ~0.20
+   - **Step 4 — Decision:** write the covered call. If the holding is underwater and no acceptable strike sits at/above cost, it writes a ~0.20-delta call **below cost** (keeps the shares + premium) rather than force-selling — unless `Sell Shares Instead of Below-Cost CC` is on
+   - **Step 5 — Accounting:** freed capital (from any sales) returns to the CSP pool; sold tickers are skipped in that week's screener
 
-4. **Trader** — connects to IBKR, qualifies contracts, checks liquidity (spread ≤ 20%, OI ≥ 100), executes with limit-mid → limit-bid → market escalation; automatically replaces failed positions with the next ranked ticker
+4. **Trader** — connects to IBKR, qualifies contracts, checks liquidity (spread within limits + open-interest notional floor), executes with limit-mid → limit-bid → market escalation; automatically replaces failed positions with the next ranked ticker
 
 5. **Risk Manager** — daily Tue–Thu monitor checks all wheel holdings against the 10% stop loss threshold, logs unrealized P&L, and sends alerts
 
@@ -59,10 +60,11 @@ Each cycle generates income whether the option expires or gets exercised.
 |---------|------|
 | Delta filter | Only sell puts with delta ≤ 0.21 (~20Δ) |
 | Buffer requirement | Strike must be ≥ 5% below current price |
-| Liquidity check | Spread ≤ 20%, Open Interest ≥ 100 |
-| Screener exit | Sell shares if ticker drops from screener filters |
-| Delta exit | Sell shares if no CC strike with delta ≥ 0.20 available |
-| Earnings protection | Skip tickers with earnings within 7 days |
+| Liquidity check | Spread within limits + open-interest **notional** ≥ $1M (price-neutral, replaces the old flat OI ≥ 100 count) |
+| Screener exit | Sell shares if ticker drops from screener filters (down to the wheel-retention floor) |
+| Underwater holdings | Keep the shares and write a below-cost covered call by default, rather than force-selling (toggle to restore force-sell) |
+| Earnings protection | New CSP entries skip tickers with earnings within 7 days; held wheel positions are kept through earnings by default (covered call still written) |
+| Exclude from wheel | Per-holding Exclude checkbox (and a Settings field) — an excluded ticker is never traded, adopted, or sold: no CSP, no CC, no wheel adoption |
 | Auto-replacement | Failed position → automatically try next ranked ticker |
 
 ## Getting Started
@@ -426,8 +428,10 @@ All settings are managed from the dashboard **Settings** page and hot-reload on 
 |---------|---------|-------|-------------|
 | Max Delta | 0.21 | 0.10 – 0.30 | Maximum absolute delta for CSPs sold. Higher = more aggressive strikes and more premium, but more assignment risk. |
 | Min Buffer % | 5% | 3% – 20% | The strike must be at least this far below the current stock price. Higher = more downside cushion. |
-| Earnings Filter | 7 days | 0 – 30 days | Skip tickers with earnings within this many days. Protects against earnings-driven gap moves. |
-| Ignore Earnings Filter for Wheel CCs | Off | On / Off | When on, covered calls are still sold on held positions even during earnings weeks. Has no effect on new CSP entries. |
+| Earnings Window | 7 days | 0 – 30 days | Skip new CSP entries on tickers with earnings within this many days. Protects against earnings-driven gap moves. |
+| Ignore Earnings for Wheel CCs | **On** | On / Off | On (default): held positions are kept through earnings and the covered call is still written. Off: shares are sold before earnings to dodge the gap. No effect on new CSP entries. |
+| Wheel Retention Mkt Cap | $5.0B | $1.0B – $10.0B | Keep wheeling a held name down to this market cap, even if below the 10B entry floor — sell only if it falls further. New CSP entries still use the 10B entry floor. |
+| Sell Shares Instead of Below-Cost CC | Off | On / Off | Off (default): an underwater holding with no covered call at/above cost writes a ~20-delta call below cost (keeps shares + premium). On: force-sell those shares at market instead (the old behavior). |
 | Stop Loss on Wheel Holdings | Off | On / Off | When on, a holding is sold on Monday if its price has fallen more than the Stop Loss % below its assigned strike. The screener exit is the primary exit — this is an optional additional layer. |
 | Stop Loss % | 10% | 0% – 50% | How far below the assigned strike triggers a stop loss sale. Only active when Stop Loss on Wheel Holdings is enabled. |
 
@@ -438,6 +442,7 @@ All settings are managed from the dashboard **Settings** page and hot-reload on 
 | Max Spread % | 20% | 5% – 50% | Skip a CSP if the bid/ask spread exceeds this percentage of the mid price. Protects against poor fills on illiquid options. |
 | Min Bid Yield % | 1% | 0.5% – 3% | Override the spread filter if the bid yield meets this threshold — useful when wide spreads are justified by high premium. |
 | Max Spread Hard Cap % | 50% | 25% – 100% | Always skip regardless of yield if spread exceeds this. An absolute ceiling that cannot be overridden by bid yield. |
+| Min OI Notional | $1.0M | $0.25M – $5.0M | Skip if the option's open-interest notional (open interest × strike × 100) is below this. A price-neutral liquidity floor that replaced the old flat "open interest ≥ 100" count, which unfairly penalized high-strike names (the same dollar liquidity shows fewer contracts on a $300 stock than a $30 one). A small absolute floor (10 contracts) still rejects totally-dead strikes. |
 
 ### Execution
 
@@ -461,7 +466,7 @@ Each position escalates through three stages (120 seconds each):
 2. **Limit @ bid** — accepts bid to ensure fill
 3. **Market order** — last resort
 
-Liquidity checks: spread ≤ 20%, open interest ≥ 100.
+Liquidity checks: spread within the configured limits, and open-interest notional (OI × strike × 100) ≥ $1M (price-neutral floor; replaces the old flat OI ≥ 100 count).
 
 ## File Structure
 
@@ -481,6 +486,14 @@ docker/                            — Dockerfiles, entrypoint, secrets, preflig
 CONTAINERIZATION.md                — Full Docker setup and operations guide
 .env.compose.example               — Compose environment variable template
 ```
+
+## 🔔 In-App Alert Feed
+
+Since v4.0.0 the dashboard is **self-observing** — every operational alert (gateway down/restarting/back, login failed or locked, auto-restarts, weekly results) is recorded in-app, not just sent to Discord. A **bell** in the status bar shows an unread badge color-coded by severity (🚨/❌/🔒 critical, 🔄/⚠️ warning, ✅ resolved), and its dropdown lists recent history newest-first; **Clear** wipes it.
+
+- The in-app record happens **first and unconditionally**, so the feed works even with Discord unconfigured or down — Discord (push when away) and the bell (context when in the app) are complementary, not either/or.
+- **Standalone by design:** each box keeps its own feed. There is no cross-box aggregation — live and paper boxes run on different IBKR accounts and must not see each other.
+- History is file-backed (`/data/alerts.json`, last 200) so it survives the api restarts that happen on trading-mode switches and upgrades. Endpoints: `GET /api/alerts`, `DELETE /api/alerts`.
 
 ## 🔔 Optional: Discord Notifications
 
@@ -608,6 +621,35 @@ cat state.json               # Full system state
 ---
 
 ## Version History
+
+### v5.0.2 (June 2026)
+- **Diagnostics wait for the delayed options feed** — the Help → System Diagnostics options probe now polls up to ~30s for SPY bid/ask/delta instead of a flat 5s wait. On a fresh connection the delayed options farm (usopt) is slow to populate, so healthy data was being false-flagged as "no bid/ask — needs OPRA"; the real trader already waits 60s for exactly this. Stops the spurious red Options-Data error during market hours.
+
+### v5.0.1 (June 2026)
+- **Dashboard cleanups** — dropped the redundant Prem/Contract column from IBKR Holdings (option Avg Price is now per-share) and removed the duplicate top "Run Screener" button on This Week.
+
+### v5.0.0 (June 2026)
+- **Exclude holdings from the wheel** — a per-holding Exclude checkbox (IBKR Holdings table) plus a Settings "Excluded Tickers" field. An excluded name is never traded, adopted, or sold: no CSP, no covered call, never force-sold, and never adopted into `wheel_holdings`. Enforced across the screener, both wheel-adoption paths, the per-holding loop, and the risk monitor.
+- **Current Price column + per-share option Avg Price** in the holdings table.
+- **Entry IV at execution** — implied vol captured from the live greeks at fill time on both the CSP and CC paths, written to the trade log and shown as an Entry IV column / on PositionCards.
+- **Narrow-screen horizontal scroll** for the holdings table, and **live covered-call progress reporting** during the Monday run (per-holding status events surfaced in This Week).
+
+### v4.3.0 (June 2026)
+- **Min OI Notional slider** — the open-interest liquidity floor (from v4.2.0) is now tunable from Settings → Liquidity Filters ($0.25M–$5M, default $1M) instead of being a code constant; hot-reloads like the spread thresholds.
+- **CCs written *through* earnings by default** — `Ignore Earnings for Wheel CCs` now defaults **on**: a held position with earnings in the Monday–Friday window is kept and a covered call is written, rather than force-selling to dodge the gap. Turn it off to restore sell-before-earnings. No effect on new CSP entries. (Boxes that previously saved this off keep their saved value — toggle on + save once after upgrading.)
+- **Settings labels cleaned up** — dropped the redundant word "Filter": *Earnings Filter* → *Earnings Window*, *Ignore Earnings Filter for Wheel CCs* → *Ignore Earnings for Wheel CCs*.
+
+### v4.2.0 (June 2026)
+- **Notional-based open-interest floor** — replaced the flat `open interest ≥ 100` count with a price-neutral floor: `OI × strike × 100 ≥ $1M` plus a small absolute floor (10 contracts). A flat contract count penalized high-strike underlyings — the same dollar liquidity shows fewer contracts on a $300 name than a $30 one (e.g. BE $302.50 at OI 76 = $2.3M notional was wrongly skipped while a lower-strike name with similar dollars passed). Thresholds hot-reload from settings.
+- **Fix:** the Discord results card mislabeled open-interest skips as "spread too wide" (an `oi` skip fell through to the default label). It now reads "open interest too thin (OI N, $X notional)".
+
+### v4.1.0 / v4.1.1 (June 2026)
+- **Below-cost covered call instead of force-selling underwater holdings** — when a wheeled holding is underwater and no covered call sits at/above cost basis, the wheel now writes a ~0.20-delta call **below cost** (keeping the shares + premium) rather than dumping the shares at a loss. New `Sell Shares Instead of Below-Cost CC` toggle (default off) restores the old force-sell behavior.
+- **CC strike selection** prefers the nearest strike **≥ cost basis**, not the exact assigned strike.
+
+### v4.0.0 / v4.0.1 (June 2026)
+- **In-app alert feed — the dashboard is now self-observing** — every operational alert that flows through the single Discord chokepoint is also persisted to a capped ring buffer (`/data/alerts.json`, last 200) and surfaced via a status-bar bell with an unread badge color-coded by severity. The in-app record happens first and unconditionally, so the feed works even with Discord down or unconfigured. Standalone by design — each box keeps its own feed, no cross-box aggregation. New endpoints `GET /api/alerts` and `DELETE /api/alerts`.
+- **Fix (v4.0.1):** Restart Scheduler now saves settings first and stays visible until applied.
 
 ### v3.7.0 (June 2026)
 - **Run Now is now a recovery-safe tool** — its purpose is to complete a Monday that failed or partially filled (system down, partial fills, etc.) using whatever cash/securities are actually available. Re-running is now **idempotent**: it reconciles against the live IBKR account and only does what's *missing*, never duplicating what already succeeded.
