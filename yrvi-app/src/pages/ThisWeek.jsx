@@ -334,7 +334,7 @@ export default function ThisWeek() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-500 text-xs border-b border-gray-200 dark:border-gray-800">
-                    {['Ticker', 'Shares', 'Assigned @', 'Capital Tied', 'CC Status', 'CC Strike', 'Expiry'].map(h => (
+                    {['Ticker', 'Shares', 'Avg Cost', 'Capital Tied', 'CC Status', 'CC Strike', 'Expiry'].map(h => (
                       <th key={h} className={`${h === 'Ticker' ? 'text-left' : 'text-right'} px-4 py-3`}>{h}</th>
                     ))}
                   </tr>

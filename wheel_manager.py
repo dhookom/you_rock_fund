@@ -84,6 +84,44 @@ def _save_state(state: dict):
         json.dump(state, f, indent=2)
 
 
+# ── Cost basis (true strike-weighted average) ──────────────────
+# When the same ticker is assigned via multiple CSPs at different strikes,
+# `assigned_strike` holds the TRUE strike-weighted average — Σ(strike×shares)/
+# Σ(shares) — NOT IBKR's premium-netted avgCost. `tranches` is the source of
+# truth: one entry per assignment batch. Every downstream read of
+# `assigned_strike` (CC strike selection, stop-loss, P&L) inherits this average.
+
+def _avg_cost(tranches: list) -> float:
+    """Strike-weighted average cost per share across assignment tranches.
+    Σ(strike×shares) / Σ(shares), rounded to 2dp. Returns 0.0 for empty/zero."""
+    total_shares = sum(t.get("shares", 0) for t in tranches)
+    if total_shares <= 0:
+        return 0.0
+    return round(
+        sum(t.get("strike", 0.0) * t.get("shares", 0) for t in tranches) / total_shares,
+        2,
+    )
+
+
+def _ensure_tranches(h: dict) -> dict:
+    """Lazy migration: legacy holdings predate `tranches`. Synthesize a single
+    tranche from the existing assigned_strike/shares so the holding keeps working.
+    NOTE: a holding whose shares were already BLENDED from multiple assignments
+    (e.g. an over-written pre-fix holding) collapses to one tranche at the stale
+    assigned_strike — correct it via the dashboard tranche editor after deploy."""
+    if not h.get("tranches"):
+        shares = h.get("shares", 0)
+        if shares > 0:
+            h["tranches"] = [{
+                "shares": shares,
+                "strike": h.get("assigned_strike", 0.0),
+                "date":   h.get("assignment_date") or datetime.now().date().isoformat(),
+            }]
+        else:
+            h["tranches"] = []
+    return h
+
+
 # ── IBKR ───────────────────────────────────────────────────────
 
 def _connect(client_id: int = None) -> IB:
@@ -569,10 +607,39 @@ def detect_assignments():
     new_assignments = []
     for ticker, shares in stock_positions.items():
         if ticker in existing_holdings:
-            h             = existing_holdings[ticker]
-            h["shares"]   = shares
+            h            = _ensure_tranches(existing_holdings[ticker])
+            prior_shares = sum(t.get("shares", 0) for t in h["tranches"])
+            delta        = shares - prior_shares
+            if delta > 0:
+                # New tranche assigned at this week's CSP strike — blend it in.
+                new_strike = strike_lookup.get(ticker, 0.0)
+                if new_strike > 0:
+                    if delta % 100 != 0:
+                        log.warning(
+                            f"  ⚠️  {ticker}: assigned share delta {delta} is not a "
+                            f"round lot — two assignments may have collapsed into a "
+                            f"single tranche at ${new_strike:.2f}; verify/correct "
+                            f"tranches in the dashboard editor")
+                    h["tranches"].append({
+                        "shares": delta, "strike": new_strike,
+                        "date":   datetime.now().date().isoformat(),
+                    })
+                    h["assigned_strike"] = _avg_cost(h["tranches"])
+                    log.info(f"  ➕ {ticker}: +{delta} shares @ ${new_strike:.2f} "
+                             f"(new tranche) — avg cost now "
+                             f"${h['assigned_strike']:.2f} across {shares} shares")
+                else:
+                    log.warning(
+                        f"  ⚠️  {ticker}: +{delta} shares but no CSP strike in state — "
+                        f"cannot blend tranche; avg cost left at "
+                        f"${h.get('assigned_strike', 0.0):.2f}")
+            elif delta < 0:
+                log.info(f"  ✅ {ticker}: {shares} shares (down {-delta} — partial "
+                         f"call-away/sale; tranches & avg cost unchanged)")
+            else:
+                log.info(f"  ✅ {ticker}: {shares} shares (existing — unchanged)")
+            h["shares"]       = shares
             h["last_checked"] = datetime.now().isoformat()
-            log.info(f"  ✅ {ticker}: {shares} shares (existing — updated count)")
         else:
             if ticker.upper() in excluded:
                 log.info(f"  🚫 {ticker}: excluded from the wheel — not adopting "
@@ -591,6 +658,11 @@ def detect_assignments():
                 "ticker":             ticker,
                 "shares":             shares,
                 "assigned_strike":    assigned_strike,
+                "tranches":           [{
+                    "shares": shares,
+                    "strike": assigned_strike,
+                    "date":   datetime.now().date().isoformat(),
+                }],
                 "assignment_date":    datetime.now().date().isoformat(),
                 "current_cc_strike":  None,
                 "current_cc_expiry":  None,
@@ -611,10 +683,11 @@ def detect_assignments():
     log.info(f"\n💾 Saved {len(updated)} wheel holding(s) to state.json "
              f"({len(called_away)} called away, {len(new_assignments)} new assignment(s))")
     log.info("=" * 65)
-    return called_away
-
+    # Discord alert for new assignments. (Previously dead code: it sat after the
+    # return below and never fired — fixed alongside the tranche rewrite.)
     if new_assignments:
         discord_poster.post_assignment_alert(new_assignments)
+    return called_away
 
 
 def run_wheel_check(dry_run: bool = False, client_id: int = None,
@@ -660,7 +733,7 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None,
                 pass
 
     state    = _load_state()
-    holdings = state.get("wheel_holdings", [])
+    holdings = [_ensure_tranches(h) for h in state.get("wheel_holdings", [])]
 
     # Read wheel settings LIVE at execution time (not the import-time config
     # constants). The API preview/Run-Now paths reload config before calling, but
@@ -748,6 +821,11 @@ def run_wheel_check(dry_run: bool = False, client_id: int = None,
                         "ticker":             sym,
                         "shares":             int(p.position),
                         "assigned_strike":    strike,
+                        "tranches":           [{
+                            "shares": int(p.position),
+                            "strike": strike,
+                            "date":   datetime.now().date().isoformat(),
+                        }],
                         "assignment_date":    datetime.now().date().isoformat(),
                         "current_cc_strike":  None,
                         "current_cc_expiry":  None,
