@@ -2383,11 +2383,16 @@ def set_holding_tranches(body: HoldingTranches):
     total_shares = 0
     for i, t in enumerate(body.tranches):
         try:
-            shares = int(t.get("shares"))
-            strike = float(t.get("strike"))
+            raw_shares = float(t.get("shares"))
+            strike     = float(t.get("strike"))
         except (TypeError, ValueError):
             raise HTTPException(status_code=400,
                 detail=f"tranche {i}: shares and strike must be numeric")
+        # Reject fractional shares rather than silently truncating (e.g. 1000.5).
+        if raw_shares != int(raw_shares):
+            raise HTTPException(status_code=400,
+                detail=f"tranche {i}: shares must be a whole number")
+        shares = int(raw_shares)
         if shares <= 0 or shares > 1_000_000:
             raise HTTPException(status_code=400,
                 detail=f"tranche {i}: shares must be an integer 1..1,000,000")
