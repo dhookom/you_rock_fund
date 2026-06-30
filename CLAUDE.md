@@ -80,7 +80,10 @@ Each module connects with a distinct client ID to allow concurrent connections:
     {
       "ticker":             "OKLO",
       "shares":             800,
-      "assigned_strike":    60.00,
+      "assigned_strike":    60.00,         // TRUE strike-weighted avg cost = Σ(strike×shares)/Σ(shares), NOT IBKR's premium-netted avgCost
+      "tranches": [                        // source of truth for assigned_strike; one entry per CSP assignment batch
+        {"shares": 800, "strike": 60.00, "date": "2026-04-25"}
+      ],
       "assignment_date":    "2026-04-25",
       "current_cc_strike":  62.00,
       "current_cc_expiry":  "20260501",
